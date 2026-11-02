@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output and caches
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+.cache/
+
+# Environment and secrets (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Tests and coverage
+coverage/
+.vitest/
+
+# Database dumps and local data (never commit real data)
+*.dump
+*.backup
+*.sql.gz
+data/
+
+# Mobile app build output (apps/mobile, when created)
+.expo/
+android/app/build/
+ios/build/
+*.apk
+*.aab
+*.ipa
+
+# Editors and OS
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code personal settings (CLAUDE.md is shared and committed)
+.claude/settings.local.json

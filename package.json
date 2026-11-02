@@ -1,0 +1,21 @@
+{
+  "name": "ageless-platform",
+  "private": true,
+  "packageManager": "pnpm@9.12.3",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "boundaries": "depcruise apps/api/src --config .dependency-cruiser.cjs",
+    "db:generate": "pnpm --filter @ageless/api db:generate",
+    "db:migrate": "pnpm --filter @ageless/api db:migrate",
+    "db:reset": "pnpm --filter @ageless/api db:reset"
+  },
+  "devDependencies": {
+    "turbo": "2.1.3",
+    "typescript": "5.6.3",
+    "dependency-cruiser": "16.4.2"
+  }
+}

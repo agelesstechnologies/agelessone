@@ -1,0 +1,34 @@
+{
+  "name": "@ageless/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:reset": "node scripts/db-reset.mjs && drizzle-kit migrate"
+  },
+  "dependencies": {
+    "@ageless/core-contracts": "workspace:*",
+    "@nestjs/common": "10.4.4",
+    "@nestjs/core": "10.4.4",
+    "@nestjs/platform-express": "10.4.4",
+    "drizzle-orm": "0.44.4",
+    "pg": "8.12.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.1",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.7.5",
+    "@types/pg": "8.11.10",
+    "drizzle-kit": "0.31.4",
+    "dotenv": "16.4.5",
+    "ts-node-dev": "2.0.0",
+    "typescript": "5.6.3",
+    "vitest": "2.1.3"
+  }
+}

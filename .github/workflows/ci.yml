@@ -1,0 +1,21 @@
+name: CI
+on: [pull_request, push]
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://ageless:ageless_dev@localhost:5432/ageless_dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ankane/setup-postgres@v1          # installs PostgreSQL 16 directly on the runner (no Docker)
+        with: { postgres-version: 16, database: ageless_dev }
+      - run: psql -d ageless_dev -c "CREATE ROLE ageless LOGIN PASSWORD 'ageless_dev' CREATEDB" -c "ALTER DATABASE ageless_dev OWNER TO ageless"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm boundaries
+      - run: pnpm test
+      - run: pnpm db:migrate          # every migration must apply cleanly to a fresh database
+      - run: pnpm build
