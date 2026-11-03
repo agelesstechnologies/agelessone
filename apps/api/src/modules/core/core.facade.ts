@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { and, eq, isNull } from 'drizzle-orm';
 import { Tx } from '../../platform/db/db.module';
 import { personContacts, persons } from './schema';
 
@@ -6,8 +7,9 @@ export interface NewPerson {
   tenantId: number;
   personType: 'employee' | 'external_worker' | 'contractor_staff';
   displayName: string;
-  contacts: { kind: string; value: string; label?: string; isPrimary: boolean }[];
+  contacts: NewContact[];
 }
+export interface NewContact { kind: string; value: string; label?: string; isPrimary: boolean }
 
 /** The only Core entry point other modules may use. */
 @Injectable()
@@ -26,5 +28,29 @@ export class CoreFacade {
       await tx.insert(personContacts).values(p.contacts.map((c) => ({ tenantId: p.tenantId, personId: person.id, ...c })));
     }
     return person;
+  }
+
+  async updatePerson(tx: Tx, personId: number, patch: { displayName?: string; status?: string }): Promise<void> {
+    await tx.update(persons).set(patch).where(eq(persons.id, personId));
+  }
+
+  /** Adds a contact. A primary one first un-marks the person's current primary of the same kind. */
+  async addContact(tx: Tx, tenantId: number, personId: number, c: NewContact): Promise<string> {
+    if (c.isPrimary) {
+      await tx.update(personContacts).set({ isPrimary: false }).where(and(eq(personContacts.personId, personId),
+        eq(personContacts.kind, c.kind), eq(personContacts.isPrimary, true), isNull(personContacts.endedAt)));
+    }
+    const [row] = await tx.insert(personContacts).values({ tenantId, personId, ...c }).returning({ publicId: personContacts.publicId });
+    return row.publicId;
+  }
+
+  /** Ends a contact (never deleted). It keeps its old primary flag as history; the person has no current primary of that kind. */
+  async endContact(tx: Tx, tenantId: number, contactPublicId: string): Promise<'ended' | 'not_found' | 'already_ended'> {
+    const [c] = await tx.select({ id: personContacts.id, endedAt: personContacts.endedAt }).from(personContacts)
+      .where(and(eq(personContacts.tenantId, tenantId), eq(personContacts.publicId, contactPublicId))).for('update');
+    if (!c) return 'not_found';
+    if (c.endedAt) return 'already_ended';
+    await tx.update(personContacts).set({ endedAt: new Date() }).where(eq(personContacts.id, c.id));
+    return 'ended';
   }
 }

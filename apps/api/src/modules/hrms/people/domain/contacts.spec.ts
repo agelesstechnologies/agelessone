@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeContactValue, phoneSearchTerm, prepareContacts } from './contacts';
+import { normalizeContactValue, normalizeLookupValue, phoneSearchTerm, prepareContacts } from './contacts';
+
+describe('normalizeLookupValue', () => {
+  it('phone in any format matches the stored phone', () => expect(normalizeLookupValue('+91-00000 44444')).toBe(normalizeContactValue('phone', '+91 (00000) 44444')));
+  it('email matches regardless of case', () => expect(normalizeLookupValue('Demo@Example.com')).toBe('demo@example.com'));
+});
 
 describe('normalizeContactValue', () => {
   it('phone loses spaces, dashes and brackets', () => expect(normalizeContactValue('phone', ' +91 (00000) 111-11 ')).toBe('+910000011111'));

@@ -29,6 +29,13 @@
       "when": 1793645675994,
       "tag": "0003_people_company_and_contacts",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793646562232,
+      "tag": "0004_people_employment_exit",
+      "breakpoints": true
     }
   ]
 }

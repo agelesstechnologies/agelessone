@@ -1,0 +1,3 @@
+ALTER TABLE "hrms"."employments" ADD COLUMN "exit_reason" text;--> statement-breakpoint
+ALTER TABLE "hrms"."employments" ADD CONSTRAINT "employments_exit_after_join" CHECK (exit_on IS NULL OR exit_on >= joined_on);--> statement-breakpoint
+ALTER TABLE "hrms"."employments" ADD CONSTRAINT "employments_exited_has_date_and_reason" CHECK (status <> 'exited' OR (exit_on IS NOT NULL AND exit_reason IS NOT NULL));

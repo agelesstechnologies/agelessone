@@ -13,6 +13,7 @@ export const employments = hrms.table('employments', {
   employmentType: text('employment_type').notNull(),
   joinedOn: date('joined_on').notNull(),
   exitOn: date('exit_on'),
+  exitReason: text('exit_reason'),
   status: text('status').notNull().default('active'),
   isPrimary: boolean('is_primary').notNull().default(false),
   managerPersonId: bigint('manager_person_id', { mode: 'number' }).references(() => persons.id),
@@ -20,6 +21,8 @@ export const employments = hrms.table('employments', {
   designation: text('designation'),
 }, (t) => [
   check('employments_manager_not_self', sql`manager_person_id <> person_id`),
+  check('employments_exit_after_join', sql`exit_on IS NULL OR exit_on >= joined_on`),
+  check('employments_exited_has_date_and_reason', sql`status <> 'exited' OR (exit_on IS NOT NULL AND exit_reason IS NOT NULL)`),
   unique('employments_company_code_unique').on(t.legalEntityId, t.employeeCode),
   uniqueIndex('uq_active_employment_per_company').on(t.personId, t.legalEntityId).where(sql`status = 'active'`),
   uniqueIndex('uq_one_primary_employment').on(t.personId).where(sql`is_primary AND status = 'active'`),

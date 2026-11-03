@@ -1,11 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { AddEmploymentRequest, CreatePersonRequest, EmploymentInput, ListPeopleQuery, PersonDetail, PersonList } from '@ageless/core-contracts';
+import {
+  AddContactRequest, AddEmploymentRequest, CreatePersonRequest, EmploymentInput, ExitEmploymentRequest, ListPeopleQuery,
+  PersonDetail, PersonList, SharedContacts, UpdateEmploymentRequest, UpdatePersonRequest,
+} from '@ageless/core-contracts';
 import { DB, Db, Tx } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
 import { RequestContext } from '../../../../platform/http/request-context';
 import { CoreFacade } from '../../../core/core.facade';
 import { PeopleRepository } from '../infrastructure/people.repository';
-import { prepareContacts } from '../domain/contacts';
+import { normalizeContactValue, normalizeLookupValue, prepareContacts } from '../domain/contacts';
+import { isValidExitDate, pickNextPrimary } from '../domain/employments';
 
 /** Use cases live here: open the transaction, call repositories and other facades, write the outbox event. */
 @Injectable()
@@ -33,14 +37,77 @@ export class PeopleService {
   /** Another employment for an existing person (for example a second company). */
   async addEmployment(ctx: RequestContext, personPublicId: string, req: AddEmploymentRequest): Promise<{ publicId: string }> {
     return this.db.transaction(async (tx) => {
-      const personId = await this.repo.findPersonId(tx, ctx.tenantId, personPublicId);
-      if (!personId) throw new AppError('HRMS_PERSON_NOT_FOUND', 404, 'Person not found');
+      const personId = await this.personId(tx, ctx.tenantId, personPublicId);
       const refs = await this.employmentRefs(tx, ctx.tenantId, req);
       if (refs.managerPersonId === personId) throw new AppError('HRMS_SELF_MANAGER', 400, 'A person cannot be their own manager');
       if (req.isPrimary) await this.repo.clearPrimaryEmployment(tx, personId);
       const publicId = await this.repo.insertEmployment(tx, { ...this.employmentRow(ctx.tenantId, personId, req, refs), isPrimary: req.isPrimary === true });
       return { publicId };
     });
+  }
+
+  async update(ctx: RequestContext, publicId: string, req: UpdatePersonRequest): Promise<PersonDetail> {
+    await this.db.transaction(async (tx) => {
+      await this.core.updatePerson(tx, await this.personId(tx, ctx.tenantId, publicId), req);
+    });
+    return this.get(ctx, publicId);
+  }
+
+  async addContact(ctx: RequestContext, personPublicId: string, req: AddContactRequest): Promise<{ publicId: string }> {
+    return this.db.transaction(async (tx) => {
+      const personId = await this.personId(tx, ctx.tenantId, personPublicId);
+      const publicId = await this.core.addContact(tx, ctx.tenantId, personId, {
+        kind: req.kind, value: normalizeContactValue(req.kind, req.value), label: req.label, isPrimary: req.isPrimary === true,
+      });
+      return { publicId };
+    });
+  }
+
+  async endContact(ctx: RequestContext, contactPublicId: string): Promise<void> {
+    const result = await this.db.transaction((tx) => this.core.endContact(tx, ctx.tenantId, contactPublicId));
+    if (result === 'not_found') throw new AppError('HRMS_CONTACT_NOT_FOUND', 404, 'Contact not found');
+    if (result === 'already_ended') throw new AppError('HRMS_CONTACT_ALREADY_ENDED', 409, 'This contact has already ended');
+  }
+
+  async sharedContacts(ctx: RequestContext, value: string): Promise<SharedContacts> {
+    const stored = normalizeLookupValue(value);
+    return { value: stored, people: await this.repo.sharedContacts(ctx.tenantId, stored) };
+  }
+
+  /** Manager, department, designation, or make primary (the person's other primary is cleared in the same transaction). */
+  async updateEmployment(ctx: RequestContext, publicId: string, req: UpdateEmploymentRequest): Promise<PersonDetail> {
+    const personPublicId = await this.db.transaction(async (tx) => {
+      const job = await this.employment(tx, ctx.tenantId, publicId);
+      const patch: { managerPersonId?: number | null; department?: string | null; designation?: string | null } = {};
+      if (req.managerPublicId !== undefined) {
+        patch.managerPersonId = req.managerPublicId === null ? null : await this.managerId(tx, ctx.tenantId, req.managerPublicId);
+        if (patch.managerPersonId === job.personId) throw new AppError('HRMS_SELF_MANAGER', 400, 'A person cannot be their own manager');
+      }
+      if (req.department !== undefined) patch.department = req.department;
+      if (req.designation !== undefined) patch.designation = req.designation;
+      await this.repo.updateEmployment(tx, job.id, patch);
+      if (req.isPrimary) {
+        if (job.status !== 'active') throw new AppError('HRMS_EMPLOYMENT_NOT_ACTIVE', 409, 'Only an active employment can be primary');
+        await this.repo.makePrimary(tx, job.personId, job.id);
+      }
+      return job.personPublicId;
+    });
+    return this.get(ctx, personPublicId);
+  }
+
+  /** Exit one employment. Primary moves to another active one; with none left the person becomes inactive. */
+  async exitEmployment(ctx: RequestContext, publicId: string, req: ExitEmploymentRequest): Promise<PersonDetail> {
+    const personPublicId = await this.db.transaction(async (tx) => {
+      const job = await this.employment(tx, ctx.tenantId, publicId);
+      if (job.status === 'exited') throw new AppError('HRMS_EMPLOYMENT_NOT_ACTIVE', 409, 'This employment has already ended');
+      if (!isValidExitDate(job.joinedOn, req.exitOn)) throw new AppError('HRMS_EXIT_BEFORE_JOIN', 400, 'Exit date is before the joining date');
+      const nextPrimary = pickNextPrimary(await this.repo.otherActiveEmployments(tx, job.personId, job.id));
+      await this.repo.exitEmployment(tx, job.id, req.exitOn, req.exitReason, job.isPrimary && nextPrimary === undefined);
+      if (job.isPrimary && nextPrimary !== undefined) await this.repo.makePrimary(tx, job.personId, nextPrimary);
+      if (nextPrimary === undefined) await this.core.updatePerson(tx, job.personId, { status: 'inactive' });
+      return job.personPublicId;
+    });
+    return this.get(ctx, personPublicId);
   }
 
   list(ctx: RequestContext, q: ListPeopleQuery): Promise<PersonList> {
@@ -57,12 +124,26 @@ export class PeopleService {
   private async employmentRefs(tx: Tx, tenantId: number, e: EmploymentInput) {
     const legalEntityId = await this.repo.findLegalEntityId(tx, tenantId, e.legalEntityCode);
     if (!legalEntityId) throw new AppError('HRMS_UNKNOWN_COMPANY', 400, `Unknown company ${e.legalEntityCode}`);
-    let managerPersonId: number | null = null;
-    if (e.managerPublicId) {
-      managerPersonId = (await this.repo.findPersonId(tx, tenantId, e.managerPublicId)) ?? null;
-      if (!managerPersonId) throw new AppError('HRMS_MANAGER_NOT_FOUND', 400, 'Manager not found');
-    }
+    const managerPersonId = e.managerPublicId ? await this.managerId(tx, tenantId, e.managerPublicId) : null;
     return { legalEntityId, managerPersonId };
+  }
+
+  private async personId(tx: Tx, tenantId: number, publicId: string): Promise<number> {
+    const id = await this.repo.findPersonId(tx, tenantId, publicId);
+    if (!id) throw new AppError('HRMS_PERSON_NOT_FOUND', 404, 'Person not found');
+    return id;
+  }
+
+  private async managerId(tx: Tx, tenantId: number, publicId: string): Promise<number> {
+    const id = await this.repo.findPersonId(tx, tenantId, publicId);
+    if (!id) throw new AppError('HRMS_MANAGER_NOT_FOUND', 400, 'Manager not found');
+    return id;
+  }
+
+  private async employment(tx: Tx, tenantId: number, publicId: string) {
+    const job = await this.repo.findEmployment(tx, tenantId, publicId);
+    if (!job) throw new AppError('HRMS_EMPLOYMENT_NOT_FOUND', 404, 'Employment not found');
+    return job;
   }
 
   private employmentRow(tenantId: number, personId: number, e: EmploymentInput, refs: { legalEntityId: number; managerPersonId: number | null }) {

@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, count, desc, eq, exists, ilike, inArray, isNull, or, sql, SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, ilike, inArray, isNull, ne, or, sql, SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { ListPeopleQuery, PersonDetail, PersonList } from '@ageless/core-contracts';
+import { ListPeopleQuery, PersonDetail, PersonList, SharedContacts } from '@ageless/core-contracts';
 import { DB, Db, Tx, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
 import { legalEntities, personContacts, persons } from '../../../core/schema';
@@ -35,6 +35,47 @@ export class PeopleRepository {
 
   async clearPrimaryEmployment(tx: Tx, personId: number): Promise<void> {
     await tx.update(employments).set({ isPrimary: false }).where(and(eq(employments.personId, personId), eq(employments.isPrimary, true)));
+  }
+
+  /** Locks the employment and person rows so two changes to the same person's jobs can't interleave. */
+  async findEmployment(tx: Tx, tenantId: number, publicId: string) {
+    const [row] = await tx.select({ id: employments.id, personId: employments.personId, personPublicId: persons.publicId,
+      status: employments.status, isPrimary: employments.isPrimary, joinedOn: employments.joinedOn })
+      .from(employments).innerJoin(persons, eq(persons.id, employments.personId))
+      .where(and(eq(employments.tenantId, tenantId), eq(employments.publicId, publicId))).for('update');
+    return row;
+  }
+
+  async updateEmployment(tx: Tx, id: number, patch: { managerPersonId?: number | null; department?: string | null; designation?: string | null }) {
+    if (Object.keys(patch).length) await tx.update(employments).set(patch).where(eq(employments.id, id));
+  }
+
+  /** Clears the person's other primary first, then marks this one (the database allows one active primary per person). */
+  async makePrimary(tx: Tx, personId: number, employmentId: number): Promise<void> {
+    await tx.update(employments).set({ isPrimary: false })
+      .where(and(eq(employments.personId, personId), eq(employments.isPrimary, true), ne(employments.id, employmentId)));
+    await tx.update(employments).set({ isPrimary: true }).where(eq(employments.id, employmentId));
+  }
+
+  async otherActiveEmployments(tx: Tx, personId: number, exceptId: number) {
+    return tx.select({ id: employments.id, joinedOn: employments.joinedOn }).from(employments)
+      .where(and(eq(employments.personId, personId), eq(employments.status, 'active'), ne(employments.id, exceptId)));
+  }
+
+  /** Exit keeps the row as history. It stays primary only when no other active employment takes over. */
+  async exitEmployment(tx: Tx, id: number, exitOn: string, exitReason: string, stillPrimary: boolean): Promise<void> {
+    await tx.update(employments).set({ status: 'exited', exitOn, exitReason, isPrimary: stillPrimary }).where(eq(employments.id, id));
+  }
+
+  /** Everyone in the tenant currently using exactly this (stored-form) contact value. */
+  async sharedContacts(tenantId: number, value: string): Promise<SharedContacts['people']> {
+    const rows = await this.db.select({
+      publicId: persons.publicId, displayName: persons.displayName, status: persons.status,
+      contactPublicId: personContacts.publicId, kind: personContacts.kind, label: personContacts.label, isPrimary: personContacts.isPrimary,
+    }).from(personContacts).innerJoin(persons, eq(persons.id, personContacts.personId))
+      .where(and(eq(personContacts.tenantId, tenantId), eq(personContacts.value, value), isNull(personContacts.endedAt)))
+      .orderBy(asc(persons.displayName), asc(persons.id));
+    return rows.map(({ contactPublicId, kind, label, isPrimary, ...p }) => ({ ...p, contact: { publicId: contactPublicId, kind, label, isPrimary } }));
   }
 
   /** Turns the database's uniqueness rules into the HRMS error codes. */
@@ -109,7 +150,7 @@ export class PeopleRepository {
     const jobs = await this.db.select({
       publicId: employments.publicId, companyCode: legalEntities.code, companyName: legalEntities.name,
       employeeCode: employments.employeeCode, engagementType: employments.employmentType, status: employments.status,
-      isPrimary: employments.isPrimary, joinedOn: employments.joinedOn, exitOn: employments.exitOn,
+      isPrimary: employments.isPrimary, joinedOn: employments.joinedOn, exitOn: employments.exitOn, exitReason: employments.exitReason,
       department: employments.department, designation: employments.designation,
       managerPublicId: manager.publicId, managerName: manager.displayName,
     }).from(employments)

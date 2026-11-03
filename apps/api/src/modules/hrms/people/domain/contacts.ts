@@ -22,6 +22,11 @@ export function prepareContacts(contacts: Contact[]): (Contact & { isPrimary: bo
   });
 }
 
+/** A value typed by HR, in stored form, to find exact matches (phone if it looks like one, else email/other). */
+export function normalizeLookupValue(value: string): string {
+  return phoneSearchTerm(value) ?? normalizeContactValue(value.includes('@') ? 'email' : 'other', value);
+}
+
 /** A search term that looks like a phone number, in stored form; null for names, codes and emails. */
 export function phoneSearchTerm(term: string): string | null {
   const t = term.trim();

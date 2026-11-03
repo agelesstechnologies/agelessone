@@ -1,11 +1,11 @@
-import { Body, Controller, Get, Inject, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Patch, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
-import { AddEmploymentRequest, CreatePersonRequest, ListPeopleQuery } from '@ageless/core-contracts';
+import { AddContactRequest, AddEmploymentRequest, CreatePersonRequest, ListPeopleQuery, UpdatePersonRequest } from '@ageless/core-contracts';
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
 import { Ctx, Public, RequestContext } from '../../../../platform/http/request-context';
 import { PeopleService } from '../application/people.service';
 
-const PublicIdParam = new ZodValidationPipe(z.string().uuid());
+export const PublicIdParam = new ZodValidationPipe(z.string().uuid());
 
 /** Only: validate input, check permission, call one use case. */
 @Controller('hrms/people')
@@ -26,6 +26,18 @@ export class PeopleController {
   @Get(':publicId')
   get(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string) {
     return this.service.get(ctx, publicId);
+  }
+
+  @Patch(':publicId')
+  update(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string,
+    @Body(new ZodValidationPipe(UpdatePersonRequest)) body: UpdatePersonRequest) {
+    return this.service.update(ctx, publicId, body);
+  }
+
+  @Post(':publicId/contacts')
+  addContact(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string,
+    @Body(new ZodValidationPipe(AddContactRequest)) body: AddContactRequest) {
+    return this.service.addContact(ctx, publicId, body);
   }
 
   @Post(':publicId/employments')
