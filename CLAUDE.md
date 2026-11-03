@@ -24,11 +24,14 @@ It replaces the **Froid** app, so screens and flows must stay familiar to staff
 - `pnpm db:generate -- --name <what_changed>` — create a migration from schema changes
 - `pnpm db:migrate` — apply pending migrations to the database in `apps/api/.env`
 - `pnpm db:reset` — empty a development database and rebuild it (refuses non-dev databases)
+- `pnpm db:seed` — add fictional starter data (tenant 1, AE and ATPL, three demo people); safe to run again
+- Tests use their own database `TEST_DATABASE_URL` (`ageless_test`), reset and migrated before every `pnpm test`.
 
 ## Structure
 ```
 apps/api/src/
   platform/db/                 one shared database pool (inject DB)
+  platform/http/               AppError + error filter, ZodValidationPipe, RequestContext (caller), configureApp
   modules/
     core/                      shared foundation: persons, organisation, approvals, files, policies (core.facade.ts)
     tickets/                   ticket engine and service tickets
@@ -65,8 +68,12 @@ Each sub-module: `api/` (controllers) · `application/` (services, use cases) ·
 11. Keep it simple: no new frameworks, packages or layers without asking.
 
 ## Coding style
-- Controllers: validate with Zod, check permission, call one service method. No business logic.
-- Services: transactions, repositories, other modules' facades, outbox events.
+- Controllers: validate with `new ZodValidationPipe(Schema)` on `@Body`/`@Query`, check permission, call one service
+  method. No business logic. Get the caller with `@Ctx() ctx: RequestContext`; health routes are `@Public()`.
+- Services: transactions, repositories, other modules' facades, outbox events. Throw `AppError(code, status, message, details?)`.
+- Errors always leave the API as `{ code, message, details? }` (bad input: 400 `VALIDATION`; no caller: 401 `AUTH_MISSING`).
+- Constructor injection always uses explicit `@Inject(Class)`: Vitest does not emit decorator metadata.
+- The caller comes from `x-tenant-id` / `x-person-id` headers until login exists; those places are marked `// TEMP: replace with login`.
 - Names: tables plural snake_case; TypeScript camelCase; routes `/api/<module>/<sub-module>/...`.
 - Never log phone numbers, bank or ID numbers, or exact locations. Never put real staff data in seeds or tests.
 

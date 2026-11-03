@@ -5,8 +5,8 @@ import pg from 'pg';
 
 const url = new URL(process.env.DATABASE_URL ?? '');
 const dbName = url.pathname.slice(1);
-if (!dbName || /prod|staging/i.test(dbName) || !/^(dev_|ageless_dev|platform_test)/.test(dbName)) {
-  console.error(`Refusing to reset "${dbName}". Only development databases (dev_*, ageless_dev) can be reset.`);
+if (!dbName || /prod|staging/i.test(dbName) || !/^(dev_|ageless_dev|ageless_test|platform_test)/.test(dbName)) {
+  console.error(`Refusing to reset "${dbName}". Only development databases (dev_*, ageless_dev, ageless_test) can be reset.`);
   process.exit(1);
 }
 const admin = new URL(url); admin.pathname = '/postgres';

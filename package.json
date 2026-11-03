@@ -11,7 +11,8 @@
     "boundaries": "depcruise apps/api/src --config .dependency-cruiser.cjs",
     "db:generate": "pnpm --filter @ageless/api db:generate",
     "db:migrate": "pnpm --filter @ageless/api db:migrate",
-    "db:reset": "pnpm --filter @ageless/api db:reset"
+    "db:reset": "pnpm --filter @ageless/api db:reset",
+    "db:seed": "pnpm --filter @ageless/api db:seed"
   },
   "devDependencies": {
     "turbo": "2.1.3",

@@ -11,7 +11,7 @@ and shared contracts (`packages/core-contracts`). Web only for now: there is no 
 3. `git clone <repo> && cd ageless-platform`
 4. `cp apps/api/.env.example apps/api/.env` and set `DATABASE_URL` to your database
    (local: `postgres://ageless:ageless_dev@localhost:5432/ageless_dev`, office: `postgres://dev_anu:<password>@192.168.1.50:5432/dev_anu`).
-5. `pnpm install`, then `pnpm db:migrate`
+5. `pnpm install`, then `pnpm db:migrate`, then `pnpm db:seed` (fictional starter data)
 6. `pnpm --filter @ageless/api dev` → API on http://localhost:3000/api/hrms/attendance/health
 
 Every day: `git pull` → `pnpm install` → `pnpm db:migrate`.
