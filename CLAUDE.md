@@ -58,3 +58,12 @@ ageless/
 - **Correction**: request to fix a missed or wrong punch, approved by the supervisor.
 - **Supervisor**: approves the team's leave, expenses, corrections and ticket reassignments.
 - **Admin user**: creates service tickets and assigns employees.
+
+
+## Git rules (always follow)
+1. **Never run `git push`** (any branch, any remote, including `--force`). Pushing is always done by a person.
+2. **Never commit unless I ask.** When a task is done, show me the changed files and a suggested commit message, then stop.
+3. Never run `git reset --hard`, `git clean`, `git rebase`, `git checkout -- .`, or delete branches unless I ask for that exact command.
+4. Never change Git settings (`git config`), remotes, or hooks.
+5. Work only on the current branch. If a task needs a new branch, tell me the name to create.
+6. Never commit `.env` files, `node_modules`, build output, database dumps, or real staff data.
