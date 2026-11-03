@@ -1,14 +1,10 @@
-# CLAUDE.md — web
+# Web admin panel
 
-The admin panel for HR, supervisors and admin users. **Not created yet**: this file holds the plan until the
-React + Vite app is set up as its own step. Read the root `CLAUDE.md` first; its rules apply here too.
+React + Vite + TypeScript UI for the backend APIs that currently exist. Read the root `CLAUDE.md` first; its rules apply here too.
 
-## Plan
-- React + Vite + TypeScript, package name `@ageless/web`, created inside this folder (keep this file and the README).
-- Talks only to the backend API under `/api`. Request and response shapes come from `@ageless/shared`;
-  forms validate with the same Zod schemas the backend uses.
-- Until login exists, every request sends `x-tenant-id` and `x-person-id` headers (`// TEMP: replace with login`).
-- Errors from the API are `{ code, message, details? }`: show `message`, and map `VALIDATION` details to form fields.
-- Links and routes use `public_id`, never internal ids.
-- Screens stay familiar to Froid users: daily punch, Work Hours History, leave requests, expense tracking.
-- One folder per module under `src/modules/` (core, tickets, hrms ...).
+## Current implementation
+- People directory backed by `/api/hrms/people`: search, status/company filters, pagination, person detail, and create person.
+- Attendance, leave, expenses, login, and permissions are not implemented in the backend yet; do not present them as working screens.
+- Uses `@ageless/shared` schemas and response types. Until login exists, requests send `x-tenant-id` and `x-person-id` headers.
+- Configure the API URL and caller headers with `VITE_API_URL`, `VITE_TENANT_ID`, and `VITE_PERSON_ID`.
+- Run with `pnpm --filter @ageless/web dev`; build with `pnpm --filter @ageless/web build`.

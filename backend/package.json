@@ -5,7 +5,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
+    "dev": "ts-node-dev --respawn --transpile-only -r dotenv/config src/main.ts",
     "test": "vitest run",
     "boundaries": "depcruise src --config .dependency-cruiser.cjs",
     "db:generate": "drizzle-kit generate",
