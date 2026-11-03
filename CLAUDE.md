@@ -12,8 +12,8 @@ It replaces the **Froid** app, so screens and flows must stay familiar to staff
 ## Stack
 - pnpm workspaces + Turborepo; Node.js 22; TypeScript (strict)
 - Backend: NestJS 10 in `apps/api`; PostgreSQL 16; Drizzle ORM + drizzle-kit migrations
-- Shared types and Zod shapes: `packages/core-contracts` (used by api, web and mobile)
-- Web admin panel: `apps/web` (React, not created yet); field app: `apps/mobile` (React Native/Expo, not created yet)
+- Shared types and Zod shapes: `packages/core-contracts` (used by api and web)
+- Web app: `apps/web` (React, not created yet). Web only for now: no mobile app.
 - Tests: Vitest. No Docker: each developer has their own PostgreSQL database (own PC, or `dev_<name>` on the office server).
 
 ## Commands (run from the repository root)
@@ -58,7 +58,7 @@ Each sub-module: `api/` (controllers) · `application/` (services, use cases) ·
 5. Every table has `tenant_id`; records in APIs use `public_id` (uuid), never internal `id`.
 6. Money is integer **paise** (`bigint`). Times are `timestamptz` in UTC; work dates in IST (`Asia/Kolkata`).
 7. **Punches (`attendance_events`) are append-only.** Corrections add rows; the work day is recalculated.
-8. A request sent twice from the phone (same `public_id`) is stored once; return the existing record.
+8. A request sent twice (double click, retry on a bad connection; same `public_id`) is stored once; return the existing record.
 9. Nobody approves their own request (leave, expense, correction, reassignment).
 10. Company policies (shifts, grace, leave entitlement, overtime, expense limits) are **not final**: read them through
     `CoreFacade.getPolicy(...)` with a default; never hard-code them.

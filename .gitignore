@@ -33,14 +33,6 @@ coverage/
 *.sql.gz
 data/
 
-# Mobile app build output (apps/mobile, when created)
-.expo/
-android/app/build/
-ios/build/
-*.apk
-*.aab
-*.ipa
-
 # Editors and OS
 .vscode/*
 !.vscode/settings.json

@@ -1,7 +1,7 @@
 # Ageless Platform
 
-One repository for every Ageless module: one NestJS backend (`apps/api`), one React admin panel (`apps/web`),
-one React Native field app (`apps/mobile`), and shared contracts (`packages/core-contracts`).
+One repository for every Ageless module: one NestJS backend (`apps/api`), one React web app (`apps/web`),
+and shared contracts (`packages/core-contracts`). Web only for now: there is no mobile app.
 
 ## Start on your PC (no Docker)
 1. Install **Node.js 22**, **pnpm 9** (`npm i -g pnpm`), **Git**.
@@ -36,7 +36,7 @@ apps/api/src/
       reports/           read-only reports and CSV
     sales/ operations/ inventory/ workshop/ ...   later modules (README only for now)
 apps/api/drizzle/        ONE ordered list of migrations for the whole database
-packages/core-contracts/ event types, facade interfaces, Zod request shapes (shared with web and mobile)
+packages/core-contracts/ event types, facade interfaces, Zod request shapes (shared with web)
 docs/reference/          reference SQL with every table and database rule
 ```
 
