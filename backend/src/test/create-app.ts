@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { INestApplication, Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import request from 'supertest';
 import { configureApp } from '../platform/http/http.module';
 
 /** Starts the real app (same settings as main.ts) for Supertest; DATABASE_URL points at the test database. */
@@ -10,5 +11,19 @@ export async function createTestApp(rootModule: Type<unknown>): Promise<INestApp
   return app;
 }
 
-/** Caller headers for the seeded fictional supervisor. TEMP: replace with login. */
-export const callerHeaders = { 'x-tenant-id': '1', 'x-person-id': '00000000-0000-4000-8000-000000000001' };
+/** Seeded fictional logins (scripts/db-seed.mjs). All share the development password. */
+export const DEMO_PASSWORD = 'demo-pass-1';
+export const DEMO = {
+  supervisor: { login: '+91 00000 00001', publicId: '00000000-0000-4000-8000-000000000001' }, // Supervisor, team
+  technician: { login: '+910000000002', publicId: '00000000-0000-4000-8000-000000000002' },   // Employee, own; reports to the supervisor
+  engineer: { login: 'demo.engineer@example.com', publicId: '00000000-0000-4000-8000-000000000003' }, // Employee, own
+  hr: { login: 'demo.hr@example.com', publicId: '00000000-0000-4000-8000-000000000004' },       // HR, all
+  admin: { login: 'demo.admin@example.com', publicId: '00000000-0000-4000-8000-000000000005' }, // System admin, all
+};
+
+/** Signs in and returns the Authorization header to .set() on requests. */
+export async function signIn(app: INestApplication, login: string, password = DEMO_PASSWORD): Promise<Record<string, string>> {
+  const res = await request(app.getHttpServer()).post('/api/auth/login').send({ login, password });
+  if (res.status !== 200) throw new Error(`sign-in failed for ${login}: ${res.status} ${JSON.stringify(res.body)}`);
+  return { Authorization: `Bearer ${res.body.token}` };
+}

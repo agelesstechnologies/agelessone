@@ -3,15 +3,20 @@ import {
   AddContactRequest, AddEmploymentRequest, CreatePersonRequest, EmploymentInput, ExitEmploymentRequest, ListPeopleQuery,
   PersonDetail, PersonList, SharedContacts, UpdateEmploymentRequest, UpdatePersonRequest,
 } from '@ageless/shared';
-import { DB, Db, Tx } from '../../../../platform/db/db.module';
+import { Conn, DB, Db, Tx } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
-import { RequestContext } from '../../../../platform/http/request-context';
+import { RequestContext, requireAll } from '../../../../platform/http/request-context';
 import { CoreFacade } from '../../../core/core.facade';
 import { PeopleRepository } from '../infrastructure/people.repository';
 import { normalizeContactValue, normalizeLookupValue, prepareContacts } from '../domain/contacts';
 import { isValidExitDate, pickNextPrimary } from '../domain/employments';
+import { PEOPLE } from '../domain/permissions';
 
-/** Use cases live here: open the transaction, call repositories and other facades, write the outbox event. */
+/**
+ * Use cases live here: open the transaction, call repositories and other facades, write the outbox event.
+ * The guard has already checked the caller holds the permission; each use case checks the scope (own / team / all)
+ * against the person it reads or changes.
+ */
 @Injectable()
 export class PeopleService {
   constructor(
@@ -24,6 +29,7 @@ export class PeopleService {
 
   /** Person, contacts and first (primary) employment in one transaction: all saved or none. */
   async create(ctx: RequestContext, req: CreatePersonRequest): Promise<{ publicId: string }> {
+    requireAll(ctx, PEOPLE.create);
     return this.db.transaction(async (tx) => {
       const refs = await this.employmentRefs(tx, ctx.tenantId, req.employment);
       const person = await this.core.createPerson(tx, {
@@ -38,6 +44,7 @@ export class PeopleService {
   async addEmployment(ctx: RequestContext, personPublicId: string, req: AddEmploymentRequest): Promise<{ publicId: string }> {
     return this.db.transaction(async (tx) => {
       const personId = await this.personId(tx, ctx.tenantId, personPublicId);
+      await this.checkScope(tx, ctx, PEOPLE.manageEmployments, personId);
       const refs = await this.employmentRefs(tx, ctx.tenantId, req);
       if (refs.managerPersonId === personId) throw new AppError('HRMS_SELF_MANAGER', 400, 'A person cannot be their own manager');
       if (req.isPrimary) await this.repo.clearPrimaryEmployment(tx, personId);
@@ -48,14 +55,17 @@ export class PeopleService {
 
   async update(ctx: RequestContext, publicId: string, req: UpdatePersonRequest): Promise<PersonDetail> {
     await this.db.transaction(async (tx) => {
-      await this.core.updatePerson(tx, await this.personId(tx, ctx.tenantId, publicId), req);
+      const personId = await this.personId(tx, ctx.tenantId, publicId);
+      await this.checkScope(tx, ctx, PEOPLE.update, personId);
+      await this.core.updatePerson(tx, personId, req);
     });
-    return this.get(ctx, publicId);
+    return this.detail(ctx, publicId);
   }
 
   async addContact(ctx: RequestContext, personPublicId: string, req: AddContactRequest): Promise<{ publicId: string }> {
     return this.db.transaction(async (tx) => {
       const personId = await this.personId(tx, ctx.tenantId, personPublicId);
+      await this.checkScope(tx, ctx, PEOPLE.manageContacts, personId);
       const publicId = await this.core.addContact(tx, ctx.tenantId, personId, {
         kind: req.kind, value: normalizeContactValue(req.kind, req.value), label: req.label, isPrimary: req.isPrimary === true,
       });
@@ -64,12 +74,18 @@ export class PeopleService {
   }
 
   async endContact(ctx: RequestContext, contactPublicId: string): Promise<void> {
-    const result = await this.db.transaction((tx) => this.core.endContact(tx, ctx.tenantId, contactPublicId));
+    const result = await this.db.transaction(async (tx) => {
+      const personId = await this.repo.findContactPersonId(tx, ctx.tenantId, contactPublicId);
+      if (personId === undefined) return 'not_found' as const;
+      await this.checkScope(tx, ctx, PEOPLE.manageContacts, personId);
+      return this.core.endContact(tx, ctx.tenantId, contactPublicId);
+    });
     if (result === 'not_found') throw new AppError('HRMS_CONTACT_NOT_FOUND', 404, 'Contact not found');
     if (result === 'already_ended') throw new AppError('HRMS_CONTACT_ALREADY_ENDED', 409, 'This contact has already ended');
   }
 
   async sharedContacts(ctx: RequestContext, value: string): Promise<SharedContacts> {
+    requireAll(ctx, PEOPLE.reviewContacts);
     const stored = normalizeLookupValue(value);
     return { value: stored, people: await this.repo.sharedContacts(ctx.tenantId, stored) };
   }
@@ -78,6 +94,7 @@ export class PeopleService {
   async updateEmployment(ctx: RequestContext, publicId: string, req: UpdateEmploymentRequest): Promise<PersonDetail> {
     const personPublicId = await this.db.transaction(async (tx) => {
       const job = await this.employment(tx, ctx.tenantId, publicId);
+      await this.checkScope(tx, ctx, PEOPLE.updateEmployments, job.personId);
       const patch: { managerPersonId?: number | null; department?: string | null; designation?: string | null } = {};
       if (req.managerPublicId !== undefined) {
         patch.managerPersonId = req.managerPublicId === null ? null : await this.managerId(tx, ctx.tenantId, req.managerPublicId);
@@ -92,13 +109,14 @@ export class PeopleService {
       }
       return job.personPublicId;
     });
-    return this.get(ctx, personPublicId);
+    return this.detail(ctx, personPublicId);
   }
 
   /** Exit one employment. Primary moves to another active one; with none left the person becomes inactive. */
   async exitEmployment(ctx: RequestContext, publicId: string, req: ExitEmploymentRequest): Promise<PersonDetail> {
     const personPublicId = await this.db.transaction(async (tx) => {
       const job = await this.employment(tx, ctx.tenantId, publicId);
+      await this.checkScope(tx, ctx, PEOPLE.manageEmployments, job.personId);
       if (job.status === 'exited') throw new AppError('HRMS_EMPLOYMENT_NOT_ACTIVE', 409, 'This employment has already ended');
       if (!isValidExitDate(job.joinedOn, req.exitOn)) throw new AppError('HRMS_EXIT_BEFORE_JOIN', 400, 'Exit date is before the joining date');
       const nextPrimary = pickNextPrimary(await this.repo.otherActiveEmployments(tx, job.personId, job.id));
@@ -107,14 +125,21 @@ export class PeopleService {
       if (nextPrimary === undefined) await this.core.updatePerson(tx, job.personId, { status: 'inactive' });
       return job.personPublicId;
     });
-    return this.get(ctx, personPublicId);
+    return this.detail(ctx, personPublicId);
   }
 
   list(ctx: RequestContext, q: ListPeopleQuery): Promise<PersonList> {
-    return this.repo.list(ctx.tenantId, q);
+    const scope = ctx.permissions[PEOPLE.view];
+    return this.repo.list(ctx.tenantId, q, scope === 'all' ? undefined : { scope: scope === 'team' ? 'team' : 'own', personId: ctx.personId });
   }
 
   async get(ctx: RequestContext, publicId: string): Promise<PersonDetail> {
+    await this.checkScope(this.db, ctx, PEOPLE.view, await this.personId(this.db, ctx.tenantId, publicId));
+    return this.detail(ctx, publicId);
+  }
+
+  /** The person as the API shows them, without an access check (used after a change the caller was allowed to make). */
+  private async detail(ctx: RequestContext, publicId: string): Promise<PersonDetail> {
     const person = await this.repo.getDetail(ctx.tenantId, publicId);
     if (!person) throw new AppError('HRMS_PERSON_NOT_FOUND', 404, 'Person not found');
     return person;
@@ -128,8 +153,22 @@ export class PeopleService {
     return { legalEntityId, managerPersonId };
   }
 
-  private async personId(tx: Tx, tenantId: number, publicId: string): Promise<number> {
-    const id = await this.repo.findPersonId(tx, tenantId, publicId);
+  /**
+   * own: only yourself. team: yourself plus people whose active job lists you as manager; with team scope you may
+   * view yourself but not change yourself (nobody changes their own job). all: everyone in the tenant.
+   */
+  private async checkScope(conn: Conn, ctx: RequestContext, permission: string, personId: number): Promise<void> {
+    const scope = ctx.permissions[permission];
+    if (scope === 'all') return;
+    if (scope === 'own' && personId === ctx.personId) return;
+    if (scope === 'team') {
+      if (personId === ctx.personId ? permission === PEOPLE.view : await this.repo.managesPerson(conn, ctx.personId, personId)) return;
+    }
+    throw new AppError('FORBIDDEN', 403, 'This person is outside what you may see or change');
+  }
+
+  private async personId(conn: Conn, tenantId: number, publicId: string): Promise<number> {
+    const id = await this.repo.findPersonId(conn, tenantId, publicId);
     if (!id) throw new AppError('HRMS_PERSON_NOT_FOUND', 404, 'Person not found');
     return id;
   }

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../../../app.module';
-import { callerHeaders, createTestApp } from '../../../test/create-app';
+import { createTestApp, DEMO, signIn } from '../../../test/create-app';
 import { peopleApi, SUPERVISOR } from '../../../test/people';
 
 interface Job { publicId: string; company: { code: string }; status: string; isPrimary: boolean; exitOn: string | null; exitReason: string | null }
@@ -10,10 +10,15 @@ const job = (person: { employments: Job[] }, company: string) => person.employme
 describe('HRMS employments API', () => {
   let app: INestApplication;
   let api: ReturnType<typeof peopleApi>;
+  let callerHeaders: Record<string, string>; // signed in as Demo HR
   const patch = (id: string, body: object) => api.http().patch(`/api/hrms/employments/${id}`).set(callerHeaders).send(body);
   const exit = (id: string, body: object) => api.http().post(`/api/hrms/employments/${id}/exit`).set(callerHeaders).send(body);
 
-  beforeAll(async () => { app = await createTestApp(AppModule); api = peopleApi(app); });
+  beforeAll(async () => {
+    app = await createTestApp(AppModule);
+    callerHeaders = await signIn(app, DEMO.hr.login);
+    api = peopleApi(app, callerHeaders);
+  });
   afterAll(async () => { await app?.close(); });
 
   it('adds an employment in another company; the first one stays primary', async () => {

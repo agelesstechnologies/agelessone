@@ -1,37 +1,35 @@
-import { CanActivate, createParamDecorator, ExecutionContext, Inject, Injectable, SetMetadata } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { z } from 'zod';
+import { createParamDecorator, ExecutionContext, SetMetadata } from '@nestjs/common';
 import { AppError } from './app-error';
 
-/** Who is calling and for which tenant. person = core.persons.public_id. */
-export interface RequestContext { tenantId: number; personPublicId: string }
+export type Scope = 'own' | 'team' | 'all';
 
-// TEMP: replace with login. The caller is taken from headers until sign-in exists.
-const CallerHeaders = z.object({
-  'x-tenant-id': z.coerce.number().int().positive(),
-  'x-person-id': z.string().uuid(),
-});
+/**
+ * The signed-in caller, set by the auth guard from the login token.
+ * personId is internal (for queries); APIs only ever show public ids.
+ */
+export interface RequestContext {
+  tenantId: number;
+  personId: number;
+  personPublicId: string;
+  userPublicId: string;
+  /** permission code → widest scope the caller holds it with */
+  permissions: Record<string, Scope>;
+}
 
-const IS_PUBLIC = 'isPublic';
-/** Marks a route that needs no caller (health checks). */
+export const IS_PUBLIC = 'access:public';
+export const REQUIRED_PERMISSION = 'access:permission';
+export const ANY_SIGNED_IN = '*';
+
+/** A route that needs no sign-in (health checks, login). */
 export const Public = () => SetMetadata(IS_PUBLIC, true);
+/** A route the caller may use only with this permission (scope checked again by the service). */
+export const Permission = (code: string) => SetMetadata(REQUIRED_PERMISSION, code);
+/** A route any signed-in person may use (their own profile, password). */
+export const SignedIn = () => SetMetadata(REQUIRED_PERMISSION, ANY_SIGNED_IN);
 
-/** Global guard: every non-public request must name its caller. */
-@Injectable()
-export class RequestContextGuard implements CanActivate {
-  constructor(@Inject(Reflector) private readonly reflector: Reflector) {}
-
-  canActivate(ctx: ExecutionContext): boolean {
-    if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [ctx.getHandler(), ctx.getClass()])) return true;
-    const req = ctx.switchToHttp().getRequest<{ headers: Record<string, unknown>; context?: RequestContext }>();
-    // TEMP: replace with login. Read tenant and person from the session/token instead of headers.
-    const parsed = CallerHeaders.safeParse(req.headers);
-    if (!parsed.success) {
-      throw new AppError('AUTH_MISSING', 401, 'Send x-tenant-id (number) and x-person-id (uuid) headers');
-    }
-    req.context = { tenantId: parsed.data['x-tenant-id'], personPublicId: parsed.data['x-person-id'] };
-    return true;
-  }
+/** For actions that only make sense over the whole tenant (create people, manage logins): the permission must have scope all. */
+export function requireAll(ctx: RequestContext, permission: string): void {
+  if (ctx.permissions[permission] !== 'all') throw new AppError('FORBIDDEN', 403, `This needs ${permission} for everyone`);
 }
 
 /** Controller parameter: @Ctx() ctx: RequestContext */

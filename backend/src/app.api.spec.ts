@@ -4,20 +4,22 @@ import request from 'supertest';
 import { z } from 'zod';
 import { AppModule } from './app.module';
 import { ZodValidationPipe } from './platform/http/zod-validation.pipe';
-import { callerHeaders, createTestApp } from './test/create-app';
+import { SignedIn } from './platform/http/request-context';
+import { createTestApp, DEMO, signIn } from './test/create-app';
 
 // A test-only endpoint, so the validation format is checked without depending on a business endpoint.
 const Echo = z.object({ name: z.string().min(1), count: z.number().int() });
 @Controller('test/echo')
 class EchoController {
-  @Post() echo(@Body(new ZodValidationPipe(Echo)) body: z.infer<typeof Echo>) { return body; }
+  @SignedIn() @Post() echo(@Body(new ZodValidationPipe(Echo)) body: z.infer<typeof Echo>) { return body; }
 }
 @Module({ imports: [AppModule], controllers: [EchoController] })
 class TestAppModule {}
 
 describe('API basics', () => {
   let app: INestApplication;
-  beforeAll(async () => { app = await createTestApp(TestAppModule); });
+  let callerHeaders: Record<string, string>;
+  beforeAll(async () => { app = await createTestApp(TestAppModule); callerHeaders = await signIn(app, DEMO.technician.login); });
   afterAll(async () => { await app?.close(); });
 
   it('health endpoint answers without caller headers', async () => {
@@ -33,7 +35,7 @@ describe('API basics', () => {
     expect(res.body.details.map((d: { path: string }) => d.path).sort()).toEqual(['count', 'name']);
   });
 
-  it('a request without caller headers is rejected with AUTH_MISSING', async () => {
+  it('a request without a token is rejected with AUTH_MISSING', async () => {
     const res = await request(app.getHttpServer()).post('/api/test/echo').send({ name: 'a', count: 1 });
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ code: 'AUTH_MISSING', message: expect.any(String) });

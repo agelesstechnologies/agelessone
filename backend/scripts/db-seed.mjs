@@ -1,6 +1,7 @@
 // Fills YOUR development database (from DATABASE_URL) with fictional starter data. Safe to run again:
 // rows that already exist are left alone. Run `pnpm db:migrate` first.
 import 'dotenv/config';
+import bcrypt from 'bcrypt';
 import pg from 'pg';
 
 const url = new URL(process.env.DATABASE_URL ?? '');
@@ -10,11 +11,30 @@ if (!dbName || /prod|staging/i.test(dbName) || !/^(dev_|ageless_dev|ageless_test
   process.exit(1);
 }
 
-// Fixed public ids, so the same people exist on every PC (handy for x-person-id while login is TEMP).
+/** Development password for every demo login. Never use it anywhere real. */
+const DEMO_PASSWORD = 'demo-pass-1';
+const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+// Fixed public ids, so the same people, logins and roles exist on every PC.
 const people = [
-  { publicId: '00000000-0000-4000-8000-000000000001', employmentId: '00000000-0000-4000-8000-000000000101', display: 'Demo Supervisor', full: 'Demo Supervisor One', company: 'AE', code: 'AE-D001' },
-  { publicId: '00000000-0000-4000-8000-000000000002', employmentId: '00000000-0000-4000-8000-000000000102', display: 'Demo Technician', full: 'Demo Technician Two', company: 'AE', code: 'AE-D002' },
-  { publicId: '00000000-0000-4000-8000-000000000003', employmentId: '00000000-0000-4000-8000-000000000103', display: 'Demo Engineer', full: 'Demo Engineer Three', company: 'ATPL', code: 'ATPL-D001' },
+  { n: 1, display: 'Demo Supervisor', full: 'Demo Supervisor One', company: 'AE', code: 'AE-D001', phone: '+910000000001', email: 'demo.supervisor@example.com', role: 'supervisor', scope: 'team' },
+  { n: 2, display: 'Demo Technician', full: 'Demo Technician Two', company: 'AE', code: 'AE-D002', phone: '+910000000002', email: null, role: 'employee', scope: 'own', manager: 1 },
+  { n: 3, display: 'Demo Engineer', full: 'Demo Engineer Three', company: 'ATPL', code: 'ATPL-D001', phone: null, email: 'demo.engineer@example.com', role: 'employee', scope: 'own' },
+  { n: 4, display: 'Demo HR', full: 'Demo HR Four', company: 'AE', code: 'AE-D003', phone: null, email: 'demo.hr@example.com', role: 'hr', scope: 'all' },
+  { n: 5, display: 'Demo Admin', full: 'Demo Admin Five', company: 'ATPL', code: 'ATPL-D002', phone: null, email: 'demo.admin@example.com', role: 'system_admin', scope: 'all', grantedBy: 4 },
+];
+
+// Roles for tenant 1 and their permissions (the permission list itself comes from migration 0005).
+const HR = ['hrms.people.view', 'hrms.people.create', 'hrms.people.update', 'hrms.contacts.manage', 'hrms.contacts.review', 'hrms.employments.manage', 'hrms.employments.update',
+  'hrms.expenses.submit', 'hrms.expenses.approve', 'hrms.expenses.pay', 'hrms.expenses.report',
+  'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.rebuild'];
+const roles = [
+  { code: 'employee', name: 'Employee', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch'] },
+  { code: 'supervisor', name: 'Supervisor', permissions: ['hrms.people.view', 'hrms.employments.update', 'hrms.expenses.submit', 'hrms.expenses.approve',
+    'hrms.attendance.punch', 'hrms.attendance.view'] },
+  { code: 'hr', name: 'HR', permissions: HR },
+  { code: 'admin_user', name: 'Admin user', permissions: [] },
+  { code: 'system_admin', name: 'System admin', permissions: ['core.users.manage', 'hrms.people.view', 'hrms.attendance.rebuild'] },
 ];
 
 const client = new pg.Client({ connectionString: url.toString() });
@@ -28,23 +48,68 @@ try {
       (1, 'AE', 'Ageless Entertainments', 'other'),
       (1, 'ATPL', 'Ageless Technologies', 'private_limited')
     ON CONFLICT (tenant_id, code) DO NOTHING`);
+
+  // Expense categories for tenant 1 (receipt_required: whether a receipt file must be attached).
+  for (const [code, name, receiptRequired] of [
+    ['fuel', 'Fuel', true], ['travel', 'Travel', true], ['food', 'Food', false], ['materials', 'Materials', true], ['other', 'Other', true],
+  ]) {
+    await client.query(`INSERT INTO hrms.expense_categories (tenant_id, code, name, receipt_required) VALUES (1, $1, $2, $3)
+      ON CONFLICT (tenant_id, code) DO NOTHING`, [code, name, receiptRequired]);
+  }
+
+  for (const r of roles) {
+    await client.query(`INSERT INTO core.roles (tenant_id, code, name) VALUES (1, $1, $2) ON CONFLICT (tenant_id, code) DO NOTHING`, [r.code, r.name]);
+    await client.query(
+      `INSERT INTO core.role_permissions (role_id, permission_id)
+       SELECT r.id, p.id FROM core.roles r JOIN core.permissions p ON p.code = ANY($2::text[])
+        WHERE r.tenant_id = 1 AND r.code = $1
+       ON CONFLICT DO NOTHING`, [r.code, r.permissions]);
+  }
+
+  const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
   for (const p of people) {
     await client.query(
       `INSERT INTO core.persons (tenant_id, public_id, person_type, display_name, full_name)
        VALUES (1, $1, 'employee', $2, $3) ON CONFLICT (public_id) DO NOTHING`,
-      [p.publicId, p.display, p.full]);
+      [id(p.n), p.display, p.full]);
     await client.query(
       `INSERT INTO hrms.employments (tenant_id, public_id, person_id, legal_entity_id, employee_code, employment_type, joined_on, is_primary)
        SELECT 1, $1, p.id, le.id, $2, 'permanent', DATE '2025-04-01', true
          FROM core.persons p JOIN core.legal_entities le ON le.tenant_id = 1 AND le.code = $4
         WHERE p.public_id = $3
        ON CONFLICT (public_id) DO NOTHING`,
-      [p.employmentId, p.code, p.publicId, p.company]);
+      [id(100 + p.n), p.code, id(p.n), p.company]);
+    await client.query(
+      `INSERT INTO core.users (tenant_id, public_id, person_id, login_phone, login_email, password_hash)
+       SELECT 1, $1, id, $2, $3, $4 FROM core.persons WHERE public_id = $5
+       ON CONFLICT (person_id) DO NOTHING`,
+      [id(300 + p.n), p.phone, p.email, passwordHash, id(p.n)]);
   }
+
+  // Team: Demo Technician reports to Demo Supervisor (only filled in when no manager is set yet).
+  for (const p of people.filter((x) => x.manager)) {
+    await client.query(
+      `UPDATE hrms.employments SET manager_person_id = (SELECT id FROM core.persons WHERE public_id = $1)
+        WHERE public_id = $2 AND manager_person_id IS NULL`, [id(p.manager), id(100 + p.n)]);
+  }
+
+  // Roles: granted by Demo Admin, whose own role is granted by Demo HR (nobody grants themselves).
+  for (const p of people) {
+    await client.query(
+      `INSERT INTO core.role_assignments (tenant_id, public_id, person_id, role_id, scope, valid_from, granted_by)
+       SELECT 1, $1, person.id, r.id, $2, DATE '2025-04-01', granter.id
+         FROM core.persons person, core.roles r, core.persons granter
+        WHERE person.public_id = $3 AND r.tenant_id = 1 AND r.code = $4 AND granter.public_id = $5
+       ON CONFLICT (public_id) DO NOTHING`,
+      [id(200 + p.n), p.scope, id(p.n), p.role, id(p.grantedBy ?? 5)]);
+  }
+
   await client.query('COMMIT');
   const { rows } = await client.query(`SELECT
     (SELECT count(*) FROM core.tenants) AS tenants, (SELECT count(*) FROM core.legal_entities) AS legal_entities,
-    (SELECT count(*) FROM core.persons) AS persons, (SELECT count(*) FROM hrms.employments) AS employments`);
+    (SELECT count(*) FROM core.persons) AS persons, (SELECT count(*) FROM hrms.employments) AS employments,
+    (SELECT count(*) FROM core.users) AS logins, (SELECT count(*) FROM core.role_assignments) AS role_assignments,
+    (SELECT count(*) FROM hrms.expense_categories) AS expense_categories`);
   console.log(`Seeded "${dbName}":`, rows[0]);
 } catch (err) {
   await client.query('ROLLBACK');

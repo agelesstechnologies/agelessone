@@ -1,14 +1,10 @@
 import { INestApplication, Module } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER } from '@nestjs/core';
 import { ErrorFilter } from './error.filter';
-import { RequestContextGuard } from './request-context';
 
-/** Applies to every route: one error format, and a caller on every non-public request. */
+/** Applies to every route: one error format. Sign-in and permissions are checked by core's AuthGuard. */
 @Module({
-  providers: [
-    { provide: APP_FILTER, useClass: ErrorFilter },
-    { provide: APP_GUARD, useClass: RequestContextGuard }, // TEMP: replace with login
-  ],
+  providers: [{ provide: APP_FILTER, useClass: ErrorFilter }],
 })
 export class HttpModule {}
 

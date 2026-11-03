@@ -32,6 +32,7 @@ coverage/
 *.backup
 *.sql.gz
 data/
+uploads/
 
 # Editors and OS
 .vscode/*
