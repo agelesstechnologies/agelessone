@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgSchema, bigint, text, uuid, timestamp, boolean, varchar, check, unique } from 'drizzle-orm/pg-core';
+import { pgSchema, bigint, text, uuid, timestamp, boolean, varchar, check, unique, index, uniqueIndex } from 'drizzle-orm/pg-core';
 export const core = pgSchema('core');
 
 /** One row per company group using the platform. Full Core tables: see docs/reference/ageless_core_tickets_hrms.sql */
@@ -37,3 +37,21 @@ export const persons = core.table('persons', {
   status: text('status').notNull().default('active'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Phone numbers and emails of a person. Old ones are ended, not deleted. The same number may belong to several people. */
+export const personContacts = core.table('person_contacts', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  publicId: uuid('public_id').notNull().defaultRandom().unique(),
+  personId: bigint('person_id', { mode: 'number' }).notNull().references(() => persons.id),
+  kind: text('kind').notNull(),
+  value: text('value').notNull(),
+  label: text('label'),
+  isPrimary: boolean('is_primary').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  endedAt: timestamp('ended_at', { withTimezone: true }),
+}, (t) => [
+  index('idx_person_contacts_person').on(t.personId),
+  uniqueIndex('uq_one_primary_contact').on(t.personId, t.kind).where(sql`is_primary AND ended_at IS NULL`),
+  check('person_contacts_kind_check', sql`kind IN ('phone','email','other')`),
+]);

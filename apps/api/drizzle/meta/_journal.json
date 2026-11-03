@@ -15,6 +15,20 @@
       "when": 1793644964519,
       "tag": "0001_core_tenants_legal_entities",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793645641830,
+      "tag": "0002_people_manager_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793645675994,
+      "tag": "0003_people_company_and_contacts",
+      "breakpoints": true
     }
   ]
 }

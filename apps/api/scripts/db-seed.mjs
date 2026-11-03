@@ -12,9 +12,9 @@ if (!dbName || /prod|staging/i.test(dbName) || !/^(dev_|ageless_dev|ageless_test
 
 // Fixed public ids, so the same people exist on every PC (handy for x-person-id while login is TEMP).
 const people = [
-  { publicId: '00000000-0000-4000-8000-000000000001', employmentId: '00000000-0000-4000-8000-000000000101', display: 'Demo Supervisor', full: 'Demo Supervisor One', code: 'AE-D001' },
-  { publicId: '00000000-0000-4000-8000-000000000002', employmentId: '00000000-0000-4000-8000-000000000102', display: 'Demo Technician', full: 'Demo Technician Two', code: 'AE-D002' },
-  { publicId: '00000000-0000-4000-8000-000000000003', employmentId: '00000000-0000-4000-8000-000000000103', display: 'Demo Engineer', full: 'Demo Engineer Three', code: 'ATPL-D001' },
+  { publicId: '00000000-0000-4000-8000-000000000001', employmentId: '00000000-0000-4000-8000-000000000101', display: 'Demo Supervisor', full: 'Demo Supervisor One', company: 'AE', code: 'AE-D001' },
+  { publicId: '00000000-0000-4000-8000-000000000002', employmentId: '00000000-0000-4000-8000-000000000102', display: 'Demo Technician', full: 'Demo Technician Two', company: 'AE', code: 'AE-D002' },
+  { publicId: '00000000-0000-4000-8000-000000000003', employmentId: '00000000-0000-4000-8000-000000000103', display: 'Demo Engineer', full: 'Demo Engineer Three', company: 'ATPL', code: 'ATPL-D001' },
 ];
 
 const client = new pg.Client({ connectionString: url.toString() });
@@ -34,10 +34,12 @@ try {
        VALUES (1, $1, 'employee', $2, $3) ON CONFLICT (public_id) DO NOTHING`,
       [p.publicId, p.display, p.full]);
     await client.query(
-      `INSERT INTO hrms.employments (tenant_id, public_id, person_id, employee_code, employment_type, joined_on)
-       SELECT 1, $1, id, $2, 'permanent', DATE '2025-04-01' FROM core.persons WHERE public_id = $3
+      `INSERT INTO hrms.employments (tenant_id, public_id, person_id, legal_entity_id, employee_code, employment_type, joined_on, is_primary)
+       SELECT 1, $1, p.id, le.id, $2, 'permanent', DATE '2025-04-01', true
+         FROM core.persons p JOIN core.legal_entities le ON le.tenant_id = 1 AND le.code = $4
+        WHERE p.public_id = $3
        ON CONFLICT (public_id) DO NOTHING`,
-      [p.employmentId, p.code, p.publicId]);
+      [p.employmentId, p.code, p.publicId, p.company]);
   }
   await client.query('COMMIT');
   const { rows } = await client.query(`SELECT

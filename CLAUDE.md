@@ -22,6 +22,7 @@ It replaces the **Froid** app, so screens and flows must stay familiar to staff
 - `pnpm typecheck`, `pnpm test`, `pnpm build`
 - `pnpm boundaries` — check module boundary rules
 - `pnpm db:generate -- --name <what_changed>` — create a migration from schema changes
+  (in PowerShell quote the separator: `npm run db:generate '--' --name <what_changed>`)
 - `pnpm db:migrate` — apply pending migrations to the database in `apps/api/.env`
 - `pnpm db:reset` — empty a development database and rebuild it (refuses non-dev databases)
 - `pnpm db:seed` — add fictional starter data (tenant 1, AE and ATPL, three demo people); safe to run again
@@ -71,6 +72,9 @@ Each sub-module: `api/` (controllers) · `application/` (services, use cases) ·
 - Controllers: validate with `new ZodValidationPipe(Schema)` on `@Body`/`@Query`, check permission, call one service
   method. No business logic. Get the caller with `@Ctx() ctx: RequestContext`; health routes are `@Public()`.
 - Services: transactions, repositories, other modules' facades, outbox events. Throw `AppError(code, status, message, details?)`.
+- Writing another module's tables: call its facade and pass your `tx` (e.g. `CoreFacade.createPerson(tx, ...)`), so one
+  use case stays one transaction. Reading them (joins for search and detail views) may use their `schema.ts` directly.
+- Turn database rule violations into clear codes with `violatedConstraint(err)` (e.g. 409 `HRMS_DUPLICATE_EMPLOYEE_CODE`).
 - Errors always leave the API as `{ code, message, details? }` (bad input: 400 `VALIDATION`; no caller: 401 `AUTH_MISSING`).
 - Constructor injection always uses explicit `@Inject(Class)`: Vitest does not emit decorator metadata.
 - The caller comes from `x-tenant-id` / `x-person-id` headers until login exists; those places are marked `// TEMP: replace with login`.
