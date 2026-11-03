@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { callerHeaders } from './create-app';
+import { DEMO } from './create-app';
 
 // Fictional data only. Unique suffixes keep tests independent of each other.
-export const SUPERVISOR = '00000000-0000-4000-8000-000000000001'; // seeded 'Demo Supervisor'
+export const SUPERVISOR = DEMO.supervisor.publicId; // seeded 'Demo Supervisor'
 export const tag = () => randomUUID().slice(0, 8).toUpperCase();
 /** A made-up number in the 00000 range, unique per call. */
 export const fakePhone = () => `+91 00000 ${String(Math.floor(Math.random() * 100000)).padStart(5, '0')}`;
@@ -17,14 +17,15 @@ export interface PeopleApi {
   employmentIn(personId: string, company: string): Promise<string>;
 }
 
-export function peopleApi(app: INestApplication): PeopleApi {
+/** People calls made as the signed-in caller whose Authorization header is given. */
+export function peopleApi(app: INestApplication, auth: Record<string, string>): PeopleApi {
   const http = () => request(app.getHttpServer());
   return {
     http,
     /** Creates a person with one phone and one employment; returns the person's public id. */
     async createPerson(over: { phone?: string; company?: string; joinedOn?: string } = {}): Promise<string> {
       const t = tag();
-      const res = await http().post('/api/hrms/people').set(callerHeaders).send({
+      const res = await http().post('/api/hrms/people').set(auth).send({
         displayName: `Test Person ${t}`,
         contacts: [{ kind: 'phone', value: over.phone ?? fakePhone() }],
         employment: { legalEntityCode: over.company ?? 'AE', employeeCode: `T-${t}`, engagementType: 'permanent', joinedOn: over.joinedOn ?? '2026-01-05' },
@@ -33,11 +34,11 @@ export function peopleApi(app: INestApplication): PeopleApi {
       return res.body.publicId;
     },
     async addEmployment(personId: string, company: string, joinedOn = '2026-02-01') {
-      return http().post(`/api/hrms/people/${personId}/employments`).set(callerHeaders)
+      return http().post(`/api/hrms/people/${personId}/employments`).set(auth)
         .send({ legalEntityCode: company, employeeCode: `T-${tag()}`, engagementType: 'contract', joinedOn });
     },
     async get(personId: string) {
-      const res = await http().get(`/api/hrms/people/${personId}`).set(callerHeaders);
+      const res = await http().get(`/api/hrms/people/${personId}`).set(auth);
       return res.body;
     },
     /** The public id of the person's employment in a company. */

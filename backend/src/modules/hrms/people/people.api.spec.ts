@@ -3,10 +3,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../../../app.module';
-import { callerHeaders, createTestApp } from '../../../test/create-app';
+import { createTestApp, DEMO, signIn } from '../../../test/create-app';
 
 // Fictional data only. Names and codes get a unique suffix so tests never collide.
-const SUPERVISOR = '00000000-0000-4000-8000-000000000001'; // seeded 'Demo Supervisor'
+const SUPERVISOR = DEMO.supervisor.publicId; // seeded 'Demo Supervisor'
 const tag = () => randomUUID().slice(0, 8).toUpperCase();
 const newPerson = (t: string, over: { phone?: string; company?: string; code?: string } = {}) => ({
   displayName: `Test Person ${t}`,
@@ -16,10 +16,11 @@ const newPerson = (t: string, over: { phone?: string; company?: string; code?: s
 
 describe('HRMS people API', () => {
   let app: INestApplication;
+  let callerHeaders: Record<string, string>; // signed in as Demo HR
   const api = () => request(app.getHttpServer());
   const create = (body: object) => api().post('/api/hrms/people').set(callerHeaders).send(body);
 
-  beforeAll(async () => { app = await createTestApp(AppModule); });
+  beforeAll(async () => { app = await createTestApp(AppModule); callerHeaders = await signIn(app, DEMO.hr.login); });
   afterAll(async () => { await app?.close(); });
 
   it('creates a person with contacts and a first employment', async () => {

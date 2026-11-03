@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../../../app.module';
-import { callerHeaders, createTestApp } from '../../../test/create-app';
+import { createTestApp, DEMO, signIn } from '../../../test/create-app';
 import { fakePhone, peopleApi } from '../../../test/people';
 
 interface Contact { publicId: string; kind: string; value: string; isPrimary: boolean; endedAt: string | null }
@@ -10,10 +10,15 @@ const stored = (phone: string) => phone.replace(/[\s-]/g, '');
 describe('HRMS contacts and person changes API', () => {
   let app: INestApplication;
   let api: ReturnType<typeof peopleApi>;
+  let callerHeaders: Record<string, string>; // signed in as Demo HR
   const phones = async (personId: string): Promise<Contact[]> =>
     (await api.get(personId)).contacts.filter((c: Contact) => c.kind === 'phone');
 
-  beforeAll(async () => { app = await createTestApp(AppModule); api = peopleApi(app); });
+  beforeAll(async () => {
+    app = await createTestApp(AppModule);
+    callerHeaders = await signIn(app, DEMO.hr.login);
+    api = peopleApi(app, callerHeaders);
+  });
   afterAll(async () => { await app?.close(); });
 
   it('adds a contact another person already uses, and the shared list shows both people', async () => {

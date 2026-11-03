@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, count, desc, eq, exists, ilike, inArray, isNull, ne, or, sql, SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { ListPeopleQuery, PersonDetail, PersonList, SharedContacts } from '@ageless/shared';
-import { DB, Db, Tx, violatedConstraint } from '../../../../platform/db/db.module';
+import { Conn, DB, Db, Tx, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
 import { legalEntities, personContacts, persons } from '../../../core/schema';
 import { employments } from '../schema';
@@ -27,10 +27,23 @@ export class PeopleRepository {
     return row?.id;
   }
 
-  async findPersonId(tx: Tx, tenantId: number, publicId: string): Promise<number | undefined> {
-    const [row] = await tx.select({ id: persons.id }).from(persons)
+  async findPersonId(conn: Conn, tenantId: number, publicId: string): Promise<number | undefined> {
+    const [row] = await conn.select({ id: persons.id }).from(persons)
       .where(and(eq(persons.tenantId, tenantId), eq(persons.publicId, publicId)));
     return row?.id;
+  }
+
+  /** True when the person has an active job whose manager is managerId (they are in that manager's team). */
+  async managesPerson(conn: Conn, managerId: number, personId: number): Promise<boolean> {
+    const [row] = await conn.select({ id: employments.id }).from(employments)
+      .where(and(eq(employments.personId, personId), eq(employments.managerPersonId, managerId), eq(employments.status, 'active'))).limit(1);
+    return row !== undefined;
+  }
+
+  async findContactPersonId(conn: Conn, tenantId: number, contactPublicId: string): Promise<number | undefined> {
+    const [row] = await conn.select({ personId: personContacts.personId }).from(personContacts)
+      .where(and(eq(personContacts.tenantId, tenantId), eq(personContacts.publicId, contactPublicId)));
+    return row?.personId;
   }
 
   async clearPrimaryEmployment(tx: Tx, personId: number): Promise<void> {
@@ -95,7 +108,8 @@ export class PeopleRepository {
     }
   }
 
-  async list(tenantId: number, q: ListPeopleQuery): Promise<PersonList> {
+  /** visibleTo limits the list for callers without scope all: just themselves (own), or themselves and their team (team). */
+  async list(tenantId: number, q: ListPeopleQuery, visibleTo?: { scope: 'own' | 'team'; personId: number }): Promise<PersonList> {
     const employmentFilter: SQL[] = [eq(employments.personId, persons.id)];
     if (q.company) employmentFilter.push(eq(legalEntities.code, q.company));
     if (q.status) employmentFilter.push(eq(employments.status, q.status));
@@ -104,6 +118,11 @@ export class PeopleRepository {
       exists(this.db.select({ one: sql`1` }).from(employments)
         .innerJoin(legalEntities, eq(legalEntities.id, employments.legalEntityId)).where(and(...employmentFilter))),
     ];
+    if (visibleTo?.scope === 'own') where.push(eq(persons.id, visibleTo.personId));
+    if (visibleTo?.scope === 'team') {
+      where.push(or(eq(persons.id, visibleTo.personId), exists(this.db.select({ one: sql`1` }).from(employments)
+        .where(and(eq(employments.personId, persons.id), eq(employments.managerPersonId, visibleTo.personId), eq(employments.status, 'active'))))));
+    }
     if (q.search) {
       const like = `%${escapeLike(q.search)}%`;
       const phone = phoneSearchTerm(q.search);

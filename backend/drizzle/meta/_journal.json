@@ -36,6 +36,27 @@
       "when": 1793646562232,
       "tag": "0004_people_employment_exit",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793697104545,
+      "tag": "0005_core_logins_and_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793699373583,
+      "tag": "0006_hrms_expenses",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793700798660,
+      "tag": "0007_hrms_attendance",
+      "breakpoints": true
     }
   ]
 }

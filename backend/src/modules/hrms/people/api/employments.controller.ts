@@ -1,7 +1,8 @@
 import { Body, Controller, HttpCode, Inject, Param, Patch, Post } from '@nestjs/common';
 import { ExitEmploymentRequest, UpdateEmploymentRequest } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
-import { Ctx, RequestContext } from '../../../../platform/http/request-context';
+import { Ctx, Permission, RequestContext } from '../../../../platform/http/request-context';
+import { PEOPLE } from '../domain/permissions';
 import { PeopleService } from '../application/people.service';
 import { PublicIdParam } from './people.controller';
 
@@ -10,13 +11,13 @@ import { PublicIdParam } from './people.controller';
 export class EmploymentsController {
   constructor(@Inject(PeopleService) private readonly service: PeopleService) {}
 
-  @Patch(':publicId')
+  @Permission(PEOPLE.updateEmployments) @Patch(':publicId')
   update(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string,
     @Body(new ZodValidationPipe(UpdateEmploymentRequest)) body: UpdateEmploymentRequest) {
     return this.service.updateEmployment(ctx, publicId, body);
   }
 
-  @Post(':publicId/exit') @HttpCode(200)
+  @Permission(PEOPLE.manageEmployments) @Post(':publicId/exit') @HttpCode(200)
   exit(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string,
     @Body(new ZodValidationPipe(ExitEmploymentRequest)) body: ExitEmploymentRequest) {
     return this.service.exitEmployment(ctx, publicId, body);
