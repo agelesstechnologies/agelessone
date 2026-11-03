@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Availability, HrmsFacadeContract } from '@ageless/core-contracts';
+import { Availability, HrmsFacadeContract } from '@ageless/shared';
 
 /** The only HRMS entry point other modules may use. */
 @Injectable()

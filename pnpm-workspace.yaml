@@ -1,3 +1,5 @@
 packages:
-  - "apps/*"
-  - "packages/*"
+  - "backend"
+  - "shared"
+  - "web"
+  # - "mobile"   (added when the field app is built)

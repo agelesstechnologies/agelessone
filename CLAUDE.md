@@ -1,6 +1,7 @@
-# CLAUDE.md — Ageless platform
+# CLAUDE.md — Ageless
 
-Guidance for Claude Code in this repository. Read before making changes.
+Guidance for Claude Code in this repository. Read this first; `backend/CLAUDE.md` and `web/CLAUDE.md` add the details
+for each app.
 
 ## What this project is
 One platform for the Ageless group (attractions business, parks, technologies), built module by module.
@@ -9,81 +10,47 @@ Inventory, Workshop, Site Installation, Service and AMC, Accounts, Parks, Hub an
 It replaces the **Froid** app, so screens and flows must stay familiar to staff
 (daily punch in/out, Work Hours History, leave requests, expense tracking).
 
+## What's where
+```
+ageless/
+  CLAUDE.md        this file: layout, commands, rules for every app
+  README.md        setup for a new PC
+  package.json     pnpm workspaces + Turborepo: backend, shared, web (mobile added later)
+  backend/         NestJS API and the PostgreSQL database (migrations, seed, docs)   → backend/CLAUDE.md
+  shared/          Zod request shapes and response types used by backend and web (@ageless/shared)
+  web/             admin panel, React + Vite (not created yet)                     → web/CLAUDE.md
+  mobile/          placeholder for the field app, built later
+  .github/         CI workflow and CODEOWNERS
+```
+
 ## Stack
-- pnpm workspaces + Turborepo; Node.js 22; TypeScript (strict)
-- Backend: NestJS 10 in `apps/api`; PostgreSQL 16; Drizzle ORM + drizzle-kit migrations
-- Shared types and Zod shapes: `packages/core-contracts` (used by api and web)
-- Web app: `apps/web` (React, not created yet). Web only for now: no mobile app.
-- Tests: Vitest. No Docker: each developer has their own PostgreSQL database (own PC, or `dev_<name>` on the office server).
+- pnpm workspaces + Turborepo; Node.js 22; TypeScript (strict); Vitest.
+- backend: NestJS 10, PostgreSQL 16, Drizzle ORM + drizzle-kit migrations.
+- web: React + Vite (planned). Web only for now; the mobile field app comes later.
+- No Docker: each developer has their own PostgreSQL database (own PC, or `dev_<name>` on the office server).
 
 ## Commands (run from the repository root)
 - `pnpm install` — install everything
-- `pnpm --filter @ageless/api dev` — start the API on http://localhost:3000/api
-- `pnpm typecheck`, `pnpm test`, `pnpm build`
-- `pnpm boundaries` — check module boundary rules
-- `pnpm db:generate -- --name <what_changed>` — create a migration from schema changes
+- `pnpm --filter @ageless/backend dev` — start the API on http://localhost:3000/api
+- `pnpm typecheck`, `pnpm test`, `pnpm build` — every app
+- `pnpm boundaries` — check the backend's module boundary rules
+- `pnpm db:generate -- --name <what_changed>`, `pnpm db:migrate`, `pnpm db:reset`, `pnpm db:seed` — see `backend/CLAUDE.md`
   (in PowerShell quote the separator: `npm run db:generate '--' --name <what_changed>`)
-- `pnpm db:migrate` — apply pending migrations to the database in `apps/api/.env`
-- `pnpm db:reset` — empty a development database and rebuild it (refuses non-dev databases)
-- `pnpm db:seed` — add fictional starter data (tenant 1, AE and ATPL, three demo people); safe to run again
-- Tests use their own database `TEST_DATABASE_URL` (`ageless_test`), reset and migrated before every `pnpm test`.
 
-## Structure
-```
-apps/api/src/
-  platform/db/                 one shared database pool (inject DB)
-  platform/http/               AppError + error filter, ZodValidationPipe, RequestContext (caller), configureApp
-  modules/
-    core/                      shared foundation: persons, organisation, approvals, files, policies (core.facade.ts)
-    tickets/                   ticket engine and service tickets
-    hrms/
-      schema.ts                the 'hrms' PostgreSQL schema
-      hrms.module.ts           registers the sub-modules
-      hrms.facade.ts           the ONLY entry point for other modules
-      people/ skills/ attendance/ leave/ expenses/ reports/
-    sales/ operations/ ...     later modules (README only)
-apps/api/drizzle/              migrations for the whole database, committed, applied in order
-packages/core-contracts/       events, facade interfaces, Zod request shapes
-docs/reference/                full reference SQL (all planned tables and rules)
-docs/setup/                    database setup SQL (local PC, office server)
-```
-Each sub-module: `api/` (controllers) · `application/` (services, use cases) · `domain/` (pure rules + `.spec.ts` tests)
-· `infrastructure/` (Drizzle repositories) · `schema.ts` (its tables) · `<name>.module.ts`.
-
-## Rules (always follow)
-1. **Database changes only through migrations**: edit a `schema.ts`, run `pnpm db:generate`, then `pnpm db:migrate`;
-   commit the schema and the new `drizzle/` files together. Never change a database by hand.
-2. **Never edit or delete a merged migration.** Add a new one to fix it.
-3. **Module boundaries** (checked by `pnpm boundaries`):
-   - another module is used only through its `*.facade.ts` (calls) or `schema.ts` (foreign keys);
-   - inside HRMS, a sub-module uses another only through its `application/*.service.ts` or `schema.ts`;
-   - `domain/` never imports NestJS, Drizzle, `pg`, controllers or repositories.
-4. A module writes only its own PostgreSQL schema (`hrms` → `hrms.*`).
-5. Every table has `tenant_id`; records in APIs use `public_id` (uuid), never internal `id`.
-6. Money is integer **paise** (`bigint`). Times are `timestamptz` in UTC; work dates in IST (`Asia/Kolkata`).
-7. **Punches (`attendance_events`) are append-only.** Corrections add rows; the work day is recalculated.
-8. A request sent twice (double click, retry on a bad connection; same `public_id`) is stored once; return the existing record.
-9. Nobody approves their own request (leave, expense, correction, reassignment).
-10. Company policies (shifts, grace, leave entitlement, overtime, expense limits) are **not final**: read them through
-    `CoreFacade.getPolicy(...)` with a default; never hard-code them.
-11. Keep it simple: no new frameworks, packages or layers without asking.
-
-## Coding style
-- Controllers: validate with `new ZodValidationPipe(Schema)` on `@Body`/`@Query`, check permission, call one service
-  method. No business logic. Get the caller with `@Ctx() ctx: RequestContext`; health routes are `@Public()`.
-- Services: transactions, repositories, other modules' facades, outbox events. Throw `AppError(code, status, message, details?)`.
-- Writing another module's tables: call its facade and pass your `tx` (e.g. `CoreFacade.createPerson(tx, ...)`), so one
-  use case stays one transaction. Reading them (joins for search and detail views) may use their `schema.ts` directly.
-- Turn database rule violations into clear codes with `violatedConstraint(err)` (e.g. 409 `HRMS_DUPLICATE_EMPLOYEE_CODE`).
-- Errors always leave the API as `{ code, message, details? }` (bad input: 400 `VALIDATION`; no caller: 401 `AUTH_MISSING`).
-- Constructor injection always uses explicit `@Inject(Class)`: Vitest does not emit decorator metadata.
-- The caller comes from `x-tenant-id` / `x-person-id` headers until login exists; those places are marked `// TEMP: replace with login`.
-- Names: tables plural snake_case; TypeScript camelCase; routes `/api/<module>/<sub-module>/...`.
-- Never log phone numbers, bank or ID numbers, or exact locations. Never put real staff data in seeds or tests.
+## Rules for every app
+1. Records are identified by `public_id` (uuid) in APIs, URLs and the web app, never by the internal `id`.
+2. Request shapes are defined once in `shared/` (Zod) and used by both backend and web: change them there.
+3. Money is integer **paise**. Times are UTC (`timestamptz`); work dates are in IST (`Asia/Kolkata`).
+4. A request sent twice (double click, retry on a bad connection; same `public_id`) is stored once; return the existing record.
+5. Nobody approves their own request (leave, expense, correction, reassignment).
+6. Company policies (shifts, grace, leave entitlement, overtime, expense limits) are **not final**: the backend reads them
+   through `CoreFacade.getPolicy(...)` with a default; nothing hard-codes them.
+7. Never log phone numbers, bank or ID numbers, or exact locations. Never put real staff data in seeds or tests.
+8. Keep it simple: no new frameworks, packages or layers without asking.
 
 ## Before finishing a task
 - `pnpm typecheck`, `pnpm test`, `pnpm boundaries` and `pnpm build` pass.
-- If a schema changed: a new migration exists and `pnpm db:migrate` applies cleanly to a fresh database.
+- If a database schema changed: a new migration exists and `pnpm db:migrate` applies cleanly to a fresh database.
 
 ## Domain words
 - **Daily punch**: punch in/out for the day. **Ticket punch**: time logged on a service ticket.

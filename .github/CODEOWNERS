@@ -1,15 +1,15 @@
 # Who must review changes in each area. Replace the placeholders with GitHub usernames.
 *                                         @lead-dev
-/apps/api/drizzle/                        @lead-dev
-/apps/api/src/platform/                   @lead-dev
-/apps/api/src/modules/core/               @lead-dev
-/apps/api/src/modules/tickets/            @backend-2
-/apps/api/src/modules/hrms/               @backend-3
-/apps/api/src/modules/hrms/people/        @backend-3 @hr-colleague-a
-/apps/api/src/modules/hrms/skills/        @hr-colleague-a
-/apps/api/src/modules/hrms/attendance/    @backend-3
-/apps/api/src/modules/hrms/leave/         @hr-colleague-b
-/apps/api/src/modules/hrms/expenses/      @hr-colleague-b
-/apps/api/src/modules/hrms/reports/       @hr-colleague-a
-/packages/core-contracts/                 @lead-dev @backend-2 @backend-3
-/apps/web/                                @web-dev
+/backend/drizzle/                         @lead-dev
+/backend/src/platform/                    @lead-dev
+/backend/src/modules/core/                @lead-dev
+/backend/src/modules/tickets/             @backend-2
+/backend/src/modules/hrms/                @backend-3
+/backend/src/modules/hrms/people/         @backend-3 @hr-colleague-a
+/backend/src/modules/hrms/skills/         @hr-colleague-a
+/backend/src/modules/hrms/attendance/     @backend-3
+/backend/src/modules/hrms/leave/          @hr-colleague-b
+/backend/src/modules/hrms/expenses/       @hr-colleague-b
+/backend/src/modules/hrms/reports/        @hr-colleague-a
+/shared/                                  @lead-dev @backend-2 @backend-3
+/web/                                     @web-dev

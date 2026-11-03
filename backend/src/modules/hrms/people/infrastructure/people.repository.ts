@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, count, desc, eq, exists, ilike, inArray, isNull, ne, or, sql, SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { ListPeopleQuery, PersonDetail, PersonList, SharedContacts } from '@ageless/core-contracts';
+import { ListPeopleQuery, PersonDetail, PersonList, SharedContacts } from '@ageless/shared';
 import { DB, Db, Tx, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
 import { legalEntities, personContacts, persons } from '../../../core/schema';

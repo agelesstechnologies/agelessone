@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   AddContactRequest, AddEmploymentRequest, CreatePersonRequest, EmploymentInput, ExitEmploymentRequest, ListPeopleQuery,
   PersonDetail, PersonList, SharedContacts, UpdateEmploymentRequest, UpdatePersonRequest,
-} from '@ageless/core-contracts';
+} from '@ageless/shared';
 import { DB, Db, Tx } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
 import { RequestContext } from '../../../../platform/http/request-context';

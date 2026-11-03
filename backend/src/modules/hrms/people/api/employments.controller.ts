@@ -1,5 +1,5 @@
 import { Body, Controller, HttpCode, Inject, Param, Patch, Post } from '@nestjs/common';
-import { ExitEmploymentRequest, UpdateEmploymentRequest } from '@ageless/core-contracts';
+import { ExitEmploymentRequest, UpdateEmploymentRequest } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
 import { Ctx, RequestContext } from '../../../../platform/http/request-context';
 import { PeopleService } from '../application/people.service';

@@ -1,5 +1,5 @@
 import { Controller, Get, HttpCode, Inject, Param, Post, Query } from '@nestjs/common';
-import { SharedContactsQuery } from '@ageless/core-contracts';
+import { SharedContactsQuery } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
 import { Ctx, RequestContext } from '../../../../platform/http/request-context';
 import { PeopleService } from '../application/people.service';

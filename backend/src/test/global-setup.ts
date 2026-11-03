@@ -7,7 +7,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 /** Runs once before the tests: empties the test database, applies every migration, adds the seed data. */
 export default async function setup() {
   const url = process.env.TEST_DATABASE_URL;
-  if (!url) throw new Error('TEST_DATABASE_URL is not set. Copy it from apps/api/.env.example into apps/api/.env.');
+  if (!url) throw new Error('TEST_DATABASE_URL is not set. Copy it from backend/.env.example into backend/.env.');
   if (!new URL(url).pathname.endsWith('_test')) throw new Error('TEST_DATABASE_URL must point to a database whose name ends in _test.');
 
   const apiRoot = resolve(__dirname, '../..');

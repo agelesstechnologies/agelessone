@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Inject, Param, Patch, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
-import { AddContactRequest, AddEmploymentRequest, CreatePersonRequest, ListPeopleQuery, UpdatePersonRequest } from '@ageless/core-contracts';
+import { AddContactRequest, AddEmploymentRequest, CreatePersonRequest, ListPeopleQuery, UpdatePersonRequest } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
 import { Ctx, Public, RequestContext } from '../../../../platform/http/request-context';
 import { PeopleService } from '../application/people.service';
