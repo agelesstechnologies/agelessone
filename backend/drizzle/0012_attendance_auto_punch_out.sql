@@ -1,0 +1,2 @@
+ALTER TABLE "hrms"."attendance_events" DROP CONSTRAINT "attendance_events_source_check";--> statement-breakpoint
+ALTER TABLE "hrms"."attendance_events" ADD CONSTRAINT "attendance_events_source_check" CHECK (source IN ('app','web','supervisor','park_counter','gate','correction','auto'));

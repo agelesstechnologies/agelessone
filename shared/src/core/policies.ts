@@ -1,0 +1,52 @@
+import { z } from 'zod';
+/** Company policies: the settings that are not final yet. Shared by the API and the web app. */
+
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'Not a real date');
+const emptyToUndefined = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((v) => (v === '' ? undefined : v), schema.optional());
+const company = z.string().trim().min(1).max(12);
+
+/**
+ * Every policy the platform reads: the shape of its value and the built-in default (used when no version is stored).
+ * POLICY: the defaults are placeholders until HR confirms them.
+ */
+export const POLICIES = {
+  'core.auth.session_hours': { value: z.number().int().min(1).max(720), default: 12, description: 'Hours a sign-in lasts' },
+  'hrms.attendance.full_day_minutes': { value: z.number().int().min(1).max(1440), default: 480, description: 'Minutes worked for a full day (overtime after this)' },
+  'hrms.attendance.half_day_minutes': { value: z.number().int().min(1).max(1440), default: 240, description: 'Minutes worked for a half day' },
+  'hrms.attendance.max_open_punch_hours': { value: z.number().int().min(1).max(48), default: 16, description: 'After this long an open punch-in stops counting as working' },
+  'hrms.attendance.auto_punch_out_hours': { value: z.number().int().min(1).max(24), default: 8, description: 'A forgotten punch-out is closed this many hours after the punch-in (when the next punch-in arrives)' },
+  'hrms.leave.balance_check': { value: z.boolean(), default: false, description: 'Refuse leave that would take the balance below zero' },
+  'hrms.overtime.payable': { value: z.boolean(), default: false, description: 'Overtime is paid' },
+} as const;
+export type PolicyKey = keyof typeof POLICIES;
+export type PolicyValue<K extends PolicyKey> = (typeof POLICIES)[K]['default'] extends number ? number : boolean;
+const keys = Object.keys(POLICIES) as [PolicyKey, ...PolicyKey[]];
+export const PolicyKeySchema = z.enum(keys);
+
+/** POST /api/core/policies — a new version (company: one company; left out: the group default). */
+export const CreatePolicyRequest = z.object({
+  publicId: z.string().uuid().optional(),
+  key: PolicyKeySchema,
+  company: company.optional(),
+  value: z.unknown(),
+  effectiveFrom: isoDate,
+}).superRefine((r, ctx) => {
+  const parsed = POLICIES[r.key]?.value.safeParse(r.value);
+  if (parsed && !parsed.success) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['value'], message: parsed.error.issues[0]?.message ?? 'Invalid value' });
+});
+export type CreatePolicyRequest = z.infer<typeof CreatePolicyRequest>;
+
+/** GET /api/core/policies?key=&company= — every stored version, newest first. */
+export const PoliciesQuery = z.object({ key: emptyToUndefined(PolicyKeySchema), company: emptyToUndefined(company) });
+export type PoliciesQuery = z.infer<typeof PoliciesQuery>;
+
+/** GET /api/core/policies/in-force?key=&company=&date= — the value used on that date. */
+export const PolicyInForceQuery = z.object({ key: PolicyKeySchema, company: emptyToUndefined(company), date: isoDate });
+export type PolicyInForceQuery = z.infer<typeof PolicyInForceQuery>;
+
+export interface Policy {
+  publicId: string; key: string; company: string | null; value: unknown; version: number; effectiveFrom: string;
+  approvedBy: { publicId: string; displayName: string }; createdAt: string;
+}
+/** source null: no stored version is in force, the built-in default applies. */
+export interface PolicyInForce { key: string; company: string | null; date: string; value: unknown; source: Policy | null }

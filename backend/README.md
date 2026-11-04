@@ -29,7 +29,10 @@ roles, and the HRMS **People** area), how to run it, and how to call every endpo
 | People | Create a person with contacts and a first job; search and list; view; rename or change status |
 | Contacts | Add phone/email (a number may be shared by several people); end a contact (kept as history); list everyone sharing a number |
 | Employments | Add a job in another company; change manager, department, designation; make a job primary; exit a job |
-| Attendance | Punch in / out per job (resend-safe, order enforced across companies), today, my history, daily register, work hours, rebuild work days |
+| Attendance | Punch in / out per job (resend-safe, order enforced across companies), today, my history, daily register, work hours, rebuild work days; corrections (missed or wrong punches) approved by the manager, punches never edited |
+| Leave | Apply on your own job (days counted from the calendar, half days), approve / reject by the manager (else HR, else the CEO), cancel (approved leave gives the days back), balances from a ledger, HR opening balances and adjustments, report; approved leave shows on work days |
+| Calendar | Holidays per company and year; weekly offs per company or per person; each job's calendar (working / weekly off / holiday), used by attendance and the leave-day count |
+| Policies | Company settings (day rules, leave balance check, overtime paid, sign-in hours) stored as versions: the newest version in force on a date wins, a company's own before the group default |
 | Expenses | Submit a claim on your own job with a receipt file; your claims; the manager approves (or a lower amount) or rejects; HR marks paid; report by company and dates |
 
 Tech: NestJS 10 · PostgreSQL 16+ · Drizzle ORM · Zod · JWT (`@nestjs/jwt`) · bcrypt · Vitest + Supertest · pnpm workspaces + Turborepo.
@@ -163,8 +166,15 @@ One PostgreSQL database, one schema per module: `core`, `hrms`, `tickets`. Chang
 | `0003_people_company_and_contacts` | employments: company link, `is_primary`, employee code unique per company, one active job per company, one primary; `core.person_contacts` |
 | `0004_people_employment_exit` | employments: `exit_reason`; exit date not before joining; an exited job must have date and reason |
 | `0005_core_logins_and_roles` | `core.users`, `roles`, `permissions` (with the permission list), `role_permissions`, `role_assignments` |
-| `0007_hrms_attendance` | punches and work days get the job link; work day first in / last out; one work day per job and date; triggers: punches append-only, punch order per person, locked days frozen; 3 attendance permissions |
 | `0006_hrms_expenses` | claims: job link, receipt path, approval / rejection / payment columns, rules below, paid claims frozen (trigger); category code unique; 4 expense permissions |
+| `0007_hrms_attendance` | punches and work days get the job link; work day first in / last out; one work day per job and date; triggers: punches append-only, punch order per person, locked days frozen; 3 attendance permissions |
+| `0008_hrms_calendar` | `hrms.holiday_calendars`, `hrms.holidays`, `hrms.weekly_off_rules` (company default or person override; no overlaps, using the `btree_gist` extension); 1 calendar permission |
+| `0009_hrms_leave_requests` | leave types `is_paid`; leave requests get job, company, halves, reason, approver, decision and cancel columns (no overlap of submitted/approved leave on one job; nobody decides their own); `hrms.leave_ledger` (append-only trigger); 4 leave permissions |
+| `0010_policies_and_day_split` | `core.policies` (versions, append-only trigger); work days get `leave_days`, `absent_days` (0 / 0.5 / 1) and `worked_on_leave` (existing rows filled from their status); 1 policy permission |
+| `0011_hrms_attendance_corrections` | `hrms.attendance_corrections` (one open per job and date; nobody decides their own), `hrms.attendance_exclusions` (append-only), punches get `correction_id`; punch order check ignores left-out punches; 1 permission |
+| `0012_attendance_auto_punch_out` | punch source `auto` (a forgotten punch-out closed by the system) |
+| `0013_overtime_requests` | `hrms.overtime_requests`; work days get `extra_minutes` (copied from the old `overtime_minutes`) and `approved_overtime_minutes` |
+| `0014_drop_work_day_overtime_minutes` | removes `work_days.overtime_minutes` (extra time is no longer overtime by itself) |
 
 **Tables used so far**
 
@@ -178,9 +188,18 @@ One PostgreSQL database, one schema per module: `core`, `hrms`, `tickets`. Chang
 | `core.users` | a login for a person (not everyone has one) | one per person; login phone and login email each unique across all logins; at least one of them; password stored only as a bcrypt hash |
 | `core.permissions` | what can be done, e.g. `hrms.people.view` | code unique; the list comes from migrations |
 | `core.roles`, `core.role_permissions` | roles per tenant and their permissions | role code unique per tenant |
+| `core.policies` | a policy value (JSON) for the group (no company) or one company, with version, effective-from date and who approved it | **never updated or deleted**; version unique per tenant, company and key |
 | `core.role_assignments` | a person holds a role with a scope, from / to dates | scope own/team/all; nobody grants a role to themselves; ended with `ended_at`, never deleted |
 | `hrms.attendance_events` | punches: job, in/out, device time, received time, position | **never updated or deleted**; `public_id` unique (resend stored once); in/out alternate per person across jobs, out closes the same job's in (`HRMS_PUNCH_ORDER`) |
-| `hrms.work_days` | one row per job per IST date, calculated from punches | one per job and date; status list; minutes 0–1440, overtime ≤ worked; **a locked day can't change** |
+| `hrms.attendance_corrections` | a request to fix one job's day: kind, requested in / out, punches to leave out, reason, status, who asked, approver, decision | one **submitted** per job and date; reason ≥ 10 characters; in < out; decided_by and approver ≠ the person and ≠ who asked; rejected ⇒ reason |
+| `hrms.attendance_exclusions` | punches an approved correction left out of the day | **never updated or deleted**; a punch is left out at most once |
+| `hrms.overtime_requests` | a request to pay extra time on one job's day: minutes, reason, optional ticket, status, who asked, approver, decision | minutes 1–1440; decided_by and approver ≠ the person and ≠ who asked; rejected ⇒ reason |
+| `hrms.work_days` | one row per job per IST date, calculated from punches | one per job and date; status list; minutes 0–1440, extra ≤ worked, approved overtime ≤ extra; **a locked day can't change** |
+| `hrms.holiday_calendars`, `hrms.holidays` | one holiday list per company per year; a holiday's date, name, optional (restricted) or not | one list per company and year; one holiday per list and date |
+| `hrms.weekly_off_rules` | weekly off for a company (default) or one job (override), valid from / to, rule as JSON | exactly one of company / job; to ≥ from; **no two rules of the same company, or the same job, overlap** |
+| `hrms.leave_types` | GL General leave (seed) | code unique per tenant |
+| `hrms.leave_requests` | leave on one job: dates, halves, days counted at apply time, status, approver, decision | **no two submitted/approved requests of one job overlap**; status list; to ≥ from; days > 0; `decided_by` and `approver_person_id` ≠ the person; rejected ⇒ reason |
+| `hrms.leave_ledger` | every balance change: opening, grant, taken, taken_reversal, adjustment (per job, type, year) | **never updated or deleted**; taken < 0, reversal > 0, both linked to a request; opening / adjustment / grant need a reason; one opening per job, type and year |
 | `hrms.expense_categories` | fuel, travel, food, materials, other | code unique per tenant; `receipt_required` |
 | `hrms.expense_claims` | a claim on one job: amount in paise, receipt path, status | amount > 0; status submitted / approved / rejected / paid; `approved_by` and `rejected_by` ≠ the claimant; approved amount ≤ claimed; paid ⇒ `paid_at` + `payment_ref`; rejected ⇒ reason; **a paid claim can't be updated or deleted** |
 
@@ -193,10 +212,15 @@ One PostgreSQL database, one schema per module: `core`, `hrms`, `tickets`. Chang
 | Demo Engineer (`…0003`) | ATPL-D001 | `demo.engineer@example.com` | Employee (own) |
 | Demo HR (`…0004`) | AE-D003 | `demo.hr@example.com` | HR (all) |
 | Demo Admin (`…0005`) | ATPL-D002 | `demo.admin@example.com` | System admin (all) |
+| Demo CEO (`…0006`) | AE-D004 | `demo.ceo@example.com` | CEO (team): last leave approver |
 
 `…0001` means `00000000-0000-4000-8000-000000000001`. Tenant `1`, companies `AE` (Ageless Entertainments) and
 `ATPL` (Ageless Technologies). Expense categories: `fuel`, `travel`, `materials`, `other` need a receipt; `food` does not.
-Demo jobs: `…0101` Supervisor, `…0102` Technician, `…0103` Engineer, `…0104` HR, `…0105` Admin.
+Weekly off for both companies: every Sunday and the 2nd and 4th Saturday, from 2025-04-01 (until HR confirms). No holidays are seeded. Leave type: `GL` General leave, paid (until HR confirms the types).
+Policies (group defaults, version 1 from 2025-04-01, until HR confirms): `core.auth.session_hours` 12,
+`hrms.attendance.full_day_minutes` 480, `hrms.attendance.half_day_minutes` 240, `hrms.attendance.max_open_punch_hours` 16,
+`hrms.leave.balance_check` false, `hrms.overtime.payable` false, `hrms.attendance.auto_punch_out_hours` 8.
+Demo jobs: `…0101` Supervisor, `…0102` Technician, `…0103` Engineer, `…0104` HR, `…0105` Admin, `…0106` CEO.
 
 **Roles and permissions** (seeded for tenant 1)
 
@@ -327,7 +351,7 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:3000/api/hrms/people?se
 
 | # | Method and path | Purpose | Who (permission) | Success |
 | --- | --- | --- | --- | --- |
-| 0 | `GET /api/hrms/{people,attendance,leave,expenses,skills,reports}/health` | Is the API up? | anyone, no token | 200 |
+| 0 | `GET /api/hrms/{people,attendance,calendar,leave,expenses,skills,reports}/health` | Is the API up? | anyone, no token | 200 |
 | A1 | `POST /api/auth/login` | Sign in | anyone, no token | 200 `{ token, expiresAt }` |
 | A2 | `GET /api/auth/me` | Who am I, my roles and permissions | anyone signed in | 200 |
 | A3 | `POST /api/auth/password` | Change my password | anyone signed in | 200 `{ token, expiresAt }` |
@@ -335,6 +359,9 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:3000/api/hrms/people?se
 | U2 | `POST /api/core/users/:publicId/reset-password` | Set a new password | `core.users.manage` (all) | 204 |
 | U3 | `POST /api/core/role-assignments` | Give a person a role | `core.users.manage` (all) | 201 `{ publicId }` |
 | U4 | `POST /api/core/role-assignments/:publicId/end` | End a role | `core.users.manage` (all) | 204 |
+| P1 | `GET /api/core/policies` | Stored policy versions | `core.policies.manage` (all) | 200 list |
+| P2 | `GET /api/core/policies/in-force` | The value used on a date | `core.policies.manage` (all) | 200 |
+| P3 | `POST /api/core/policies` | Add a new version | `core.policies.manage` (all) | 201 policy (200 if resent) |
 | 1 | `POST /api/hrms/people` | Create person + contacts + first job | `hrms.people.create` (all) | 201 `{ publicId }` |
 | 2 | `GET /api/hrms/people` | Search / list people | `hrms.people.view` — list limited to your scope | 200 list |
 | 3 | `GET /api/hrms/people/:publicId` | View one person | `hrms.people.view` | 200 person |
@@ -351,6 +378,34 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:3000/api/hrms/people?se
 | T4 | `GET /api/hrms/attendance/register` | Everyone's day on a date | `hrms.attendance.view` | 200 |
 | T5 | `GET /api/hrms/attendance/work-hours` | Totals per person over dates | `hrms.attendance.view` | 200 |
 | T6 | `POST /api/hrms/attendance/rebuild` | Recalculate work days | `hrms.attendance.rebuild` (all) | 200 |
+| K1 | `POST /api/hrms/attendance/corrections` | Ask to fix a day (own, or a team member's) | `hrms.attendance.punch` | 201 correction (200 if resent) |
+| K2 | `GET /api/hrms/attendance/corrections/mine` | Corrections about me or filed by me | `hrms.attendance.punch` | 200 |
+| K3 | `GET /api/hrms/attendance/corrections/to-approve` | Waiting for my decision | `hrms.attendance.approve` | 200 |
+| K4 | `POST /api/hrms/attendance/corrections/:publicId/approve` | Approve: adds punches, leaves out wrong ones, rebuilds the day | `hrms.attendance.approve` | 200 |
+| K5 | `POST /api/hrms/attendance/corrections/:publicId/reject` | Reject with a reason | `hrms.attendance.approve` | 200 |
+| K6 | `POST /api/hrms/attendance/corrections/:publicId/cancel` | Cancel (the person or who filed it) | `hrms.attendance.punch` | 200 |
+| O1 | `POST /api/hrms/attendance/overtime` | Ask for overtime (own, or a team member's; future dates allowed) | `hrms.attendance.punch` | 201 request (200 if resent) |
+| O2 | `GET /api/hrms/attendance/overtime/mine` | Requests about me or filed by me | `hrms.attendance.punch` | 200 |
+| O3 | `GET /api/hrms/attendance/overtime/to-approve` | Waiting for my decision | `hrms.attendance.approve` | 200 |
+| O4 | `POST /api/hrms/attendance/overtime/:publicId/approve` | Approve and rebuild the day | `hrms.attendance.approve` | 200 |
+| O5 | `POST /api/hrms/attendance/overtime/:publicId/reject` | Reject with a reason | `hrms.attendance.approve` | 200 |
+| O6 | `POST /api/hrms/attendance/overtime/:publicId/cancel` | Cancel (the person or who filed it) | `hrms.attendance.punch` | 200 |
+| C1 | `GET /api/hrms/calendar` | One job's days: working, weekly off, holiday | `hrms.people.view` (own job, team, all) | 200 |
+| C2 | `GET /api/hrms/holidays` | Holidays of a year | anyone signed in | 200 list |
+| C3 | `POST /api/hrms/holidays` | Add a holiday | `hrms.calendar.manage` (all) | 201 holiday (200 if resent) |
+| C4 | `DELETE /api/hrms/holidays/:publicId` | Remove a future holiday | `hrms.calendar.manage` (all) | 204 |
+| C5 | `GET /api/hrms/weekly-offs` | Weekly-off rules | `hrms.calendar.manage` (all) | 200 list |
+| C6 | `POST /api/hrms/weekly-offs` | Set a company's or a person's weekly off | `hrms.calendar.manage` (all) | 201 rule (200 if resent) |
+| L1 | `GET /api/hrms/leave/types` | Leave types | anyone signed in | 200 |
+| L2 | `GET /api/hrms/leave/balances/mine` | My balance per company and type | `hrms.leave.apply` | 200 |
+| L3 | `POST /api/hrms/leave/requests` | Apply for leave | `hrms.leave.apply` | 201 request (200 if resent) |
+| L4 | `GET /api/hrms/leave/requests/mine` | My requests | `hrms.leave.apply` | 200 |
+| L5 | `GET /api/hrms/leave/requests/to-approve` | Requests waiting for my decision | `hrms.leave.approve` | 200 |
+| L6 | `POST /api/hrms/leave/requests/:publicId/approve` | Approve | `hrms.leave.approve` | 200 request |
+| L7 | `POST /api/hrms/leave/requests/:publicId/reject` | Reject with a reason | `hrms.leave.approve` | 200 request |
+| L8 | `POST /api/hrms/leave/requests/:publicId/cancel` | Cancel (the person or HR) | `hrms.leave.apply` | 200 request |
+| L9 | `POST /api/hrms/leave/ledger/adjustments` | Opening balance or adjustment | `hrms.leave.manage` (all) | 201 entry (200 if resent) |
+| L10 | `GET /api/hrms/leave/report` | Submitted and approved leave over dates | `hrms.leave.report` (team / all) | 200 |
 | E1 | `GET /api/hrms/expenses/categories` | Expense categories | anyone signed in | 200 |
 | E2 | `POST /api/hrms/expenses` | Submit a claim (multipart, optional receipt file) | `hrms.expenses.submit` | 201 claim (200 if resent) |
 | E3 | `GET /api/hrms/expenses/mine` | My claims | `hrms.expenses.submit` | 200 list |
@@ -362,7 +417,7 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:3000/api/hrms/people?se
 
 "person" means the full person view from #3. "(all)" means the permission must have scope all; elsewhere the scope is
 checked against the person (a Supervisor may do #9 for their team, but not for themselves). Shapes live in
-`shared/src/core/auth.ts`, `shared/src/hrms/people.ts` and `shared/src/hrms/expenses.ts`.
+`shared/src/core/auth.ts`, `shared/src/hrms/people.ts`, `shared/src/hrms/attendance.ts`, `shared/src/hrms/calendar.ts`, `shared/src/hrms/leave.ts` and `shared/src/hrms/expenses.ts`.
 
 ### A1. Sign in — `POST /api/auth/login`
 Body: `{ "login": "+91 00000 00001", "password": "demo-pass-1" }` — `login` is the login phone (any format) or email.
@@ -405,6 +460,18 @@ Errors: `CORE_SELF_GRANT` (yourself), `CORE_UNKNOWN_ROLE`, `CORE_PERSON_NOT_FOUN
 ### U4. End a role — `POST /api/core/role-assignments/:publicId/end`
 No body. Answer `204`; takes effect on the person's next request; the record stays as history.
 Errors: `CORE_ROLE_ASSIGNMENT_NOT_FOUND`, `CORE_ROLE_ALREADY_ENDED`.
+
+### P1–P3. Policies — `/api/core/policies`
+Settings that are not final are stored as versions and never changed. HR and System admin only. The keys, their value
+shapes and built-in defaults are listed in `shared/src/core/policies.ts` (`POLICIES`); any other key is refused.
+- `GET /api/core/policies?key=&company=` — stored versions, newest first.
+- `GET /api/core/policies/in-force?key=hrms.attendance.full_day_minutes&company=AE&date=2026-11-04` →
+  `{ key, company, date, value, source }`. Rule: among versions already effective on the date, the company's own newest
+  version wins; else the group's newest; else the built-in default (`source: null`).
+- `POST /api/core/policies` `{ "key": "hrms.attendance.full_day_minutes", "company": "AE", "value": 450, "effectiveFrom": "2026-12-01" }`
+  adds the next version (leave out `company` for the group default). The caller is recorded as approver.
+
+The backend reads them with `CoreFacade.getPolicy(tenantId, key, companyId, date)` (attendance per job's company and date).
 
 ### 1. Create a person — `POST /api/hrms/people`
 Creates the person, their contacts and their first job **in one transaction**: all saved or none.
@@ -551,38 +618,158 @@ the **same `publicId` again** answers `200` with the stored punch (nothing new i
 work day for that IST date is recalculated in the same transaction.
 Rules (checked by the database for every punch): `in` and `out` alternate **per person across all their jobs**; an
 `out` must close the `in` of the same job; a late (offline) punch must also fit the punch after it.
+**Automatic punch-out** (policy `hrms.attendance.auto_punch_out_hours`, 8): a punch-in that arrives while an earlier
+punch-in is still open and at least 8 hours old first adds a punch-out (`source: "auto"`) at that punch-in + 8 hours, so a
+forgotten punch-out never blocks the next morning. That day keeps its minutes but stays `missed_punch` until a correction
+is approved (the correction replaces the automatic punch-out). Within the 8 hours a second punch-in is still refused, and
+a real punch-out after more than 8 hours (overtime) is kept as it is.
 Errors: `HRMS_PUNCH_ORDER` (409), `HRMS_NOT_YOUR_EMPLOYMENT`, `HRMS_EMPLOYMENT_NOT_ACTIVE`, `HRMS_PUNCH_IN_FUTURE`
 (more than 5 minutes ahead), `HRMS_DUPLICATE_ID`, `VALIDATION`.
 
 ### T2. Today — `GET /api/hrms/attendance/today`
 `{ "date": "2026-11-03", "punchedIn": true, "since": "2026-11-03T03:32:00.000Z", "employment": { "publicId": "…", "company": "AE" }, "workedMinutes": 95 }`
-— `workedMinutes` counts today on all jobs, with the open punch-in counted up to now.
+— `workedMinutes` counts today on all jobs, with the open punch-in counted up to now. `lastMissedPunchDate`: the latest
+earlier day still a missed punch with no open correction (null when none), so the app can ask for a correction.
 
 ### T3. My history — `GET /api/hrms/attendance/history?from=2026-11-01&to=2026-11-30`
 One row per day and company, newest first (at most 93 days). Today is calculated live: while punched in it shows
-`"status": "working", "running": true` with the minutes so far.
+`"status": "working", "running": true` with the minutes so far. Each row has `punches`: every stored punch of that job
+that day `{ publicId, kind, occurredAt, source, corrected }` — `corrected: true` means an approved correction left it out
+(it is still stored); `source: "correction"` marks a punch a correction added.
 ```json
 [ { "date": "2026-10-07", "employment": { "publicId": "…", "company": "AE", "employeeCode": "AE-0101" },
     "firstIn": "2026-10-07T03:30:00.000Z", "lastOut": "2026-10-07T13:00:00.000Z",
-    "workedMinutes": 510, "overtimeMinutes": 30, "status": "present", "locked": false, "running": false } ]
+    "workedMinutes": 510, "extraMinutes": 30, "approvedOvertimeMinutes": 0, "status": "present", "locked": false, "running": false } ]
 ```
 Statuses: `present` (≥ 8 h), `half_day` (≥ 4 h), `absent` (less), `missed_punch` (an `in` without `out` that day),
-`working` (today, still in). Full / half day and overtime thresholds are policy `hrms.attendance.day_rules`
-(defaults 480 / 240 / 480 minutes).
+`working` (today, still in). Full and half day are policies `hrms.attendance.full_day_minutes` / `half_day_minutes`
+(480 / 240). `extraMinutes` is time worked beyond the full day — **not overtime by itself**; `approvedOvertimeMinutes` is
+what approved overtime requests allow, never more than `extraMinutes`.
 
 ### T4. Daily register — `GET /api/hrms/attendance/register?date=2026-11-03&company=AE`
-Everyone with an active job (in that company, or all) and their day; no work day means `absent`; today is live.
-Supervisors see themselves and the people they manage; HR sees everyone. Answer `{ date, company, rows, summary }`
-where each row is a history row plus `person` and `summary` counts rows per status.
+Everyone with an active job (in that company, or all) and their day. No work day means `absent` on a working day,
+`weekly_off` or `holiday` otherwise; today is live. A short stint on a weekly off or holiday also shows as that day, not `absent`.
+Supervisors see themselves and the people they manage; HR sees everyone. Answer `{ date, company, rows, summary, totals }`
+where each row is a history row plus `person`, `summary` counts rows per status and `totals` adds up `leaveDays` and
+`absentDays`. Each row has `leaveDays` and `absentDays` (0, 0.5 or 1) and `workedOnLeave`:
+
+| Leave that day | Worked a full day | Worked a half day | Worked less / nothing |
+| --- | --- | --- | --- |
+| none | present (0 / 0) | half_day (0 / 0.5) | absent (0 / 1) |
+| half | present (0.5 / 0), worked on leave | present (0.5 / 0) | half_day (0.5 / 0.5) |
+| full | present (1 / 0), worked on leave | leave (1 / 0), worked on leave | leave (1 / 0) |
+
+(leave days / absent days). Weekly offs and holidays are neither; a missed punch-out is not counted as absent.
 
 ### T5. Work hours — `GET /api/hrms/attendance/work-hours?company=AE&from=2026-11-01&to=2026-11-30`
-Per person and job over the range: `days: { present, halfDay, missedPunch, absent }`, `workedMinutes`, `overtimeMinutes`
-(from stored work days). Same visibility as the register.
+Per job held during the range: `days: { present, halfDay, missedPunch, absent, leave }`, `leaveDays`, `absentDays`,
+`workedMinutes`, `extraMinutes`, `approvedOvertimeMinutes` and `overtimePayable` (the company's `hrms.overtime.payable` policy, false by default). A past working day (before today, while
+the job was held) with nothing recorded counts as one absent day. Same visibility as the register.
 
 ### T6. Rebuild work days — `POST /api/hrms/attendance/rebuild`
 Body: `{ "personPublicId": "…", "from": "2026-11-01", "to": "2026-11-30" }` (or `employmentPublicId` for one job).
 Recalculates every stored day in the range from its punches; locked days are skipped. HR and System admin (scope all).
 Answer `{ "rebuilt": 12, "skippedLocked": 0 }`.
+
+### K1. Ask for a correction — `POST /api/hrms/attendance/corrections`
+```json
+{ "employmentPublicId": "…", "workDate": "2026-11-03", "kind": "wrong_time", "punchIdsToExclude": ["…"],
+  "requestedOut": "2026-11-03T18:00:00+05:30", "reason": "The gate reader stamped the wrong time" }
+```
+`kind`: `missed_out` (needs `requestedOut`), `missed_in` (needs `requestedIn`), `wrong_time` (needs the wrong punch ids and
+the right time), `other`. Times must be on the work date (IST); `reason` at least 10 characters. For your own job, or as the
+job's manager for a team member. The approver is the job's manager, then HR, then the CEO — never the person or whoever
+filed it. Errors: `HRMS_DAY_LOCKED` (409), `HRMS_CORRECTION_OPEN` (409, the day already has one waiting),
+`HRMS_CORRECTION_FUTURE`, `HRMS_CORRECTION_OUTSIDE_DAY`, `HRMS_CORRECTION_UNKNOWN_PUNCH` (400), `FORBIDDEN` (403).
+
+### K4–K6. Approve, reject, cancel
+- **Approve** (no body): in one transaction the wrong punches get an exclusion, the requested times are added as punches
+  (`source: "correction"`, allowed by the order rule even in the past), and the day is rebuilt. Nobody approves a
+  correction about themselves or filed by them (`HRMS_SELF_APPROVAL`, 403); a Supervisor only when named as approver.
+  `HRMS_DAY_LOCKED` if the day was locked meanwhile.
+- **Reject**: `{ "reason": "Gate log shows 15:00" }`. **Cancel**: no body; the person or whoever filed it.
+- Only a submitted correction can be decided or cancelled (`HRMS_CORRECTION_NOT_PENDING`, 409).
+
+### O1–O6. Overtime — `/api/hrms/attendance/overtime`
+Extra time is paid as overtime only when approved.
+- **Ask**: `{ "employmentPublicId": "…", "workDate": "2026-11-03", "minutes": 90, "reason": "Site handover ran late", "ticketPublicId": "…" }`
+  (ticket optional). For your own job, or as the job's manager for a team member. A future date is planned overtime.
+  The approver is the job's manager, then HR, then the CEO — never the person or whoever filed it. `HRMS_DAY_LOCKED` (409)
+  for a locked day, `HRMS_UNKNOWN_TICKET` (400).
+- **Approve** (no body): the day's `approvedOvertimeMinutes` = the approved minutes of that day, at most its
+  `extraMinutes`; the day is rebuilt. A day not built yet (a future date) gets it when its punches come in.
+  `HRMS_SELF_APPROVAL` (403), `HRMS_DAY_LOCKED` (409).
+- **Reject**: `{ "reason": "…" }`. **Cancel**: no body; the person or whoever filed it, also after approval (the day is
+  rebuilt) unless the day is locked.
+### C1. A job's calendar — `GET /api/hrms/calendar?employment=…&from=2026-11-01&to=2026-11-30`
+Each date: `{ date, kind: "working" | "weekly_off" | "holiday", holiday, optionalHoliday }` (at most 366 days). The
+person's own weekly-off rule wins over the company's; a holiday wins over a weekly off; an optional (restricted) holiday
+stays a working day and is named in `optionalHoliday`. You see your own jobs; a Supervisor their team's; HR everyone's.
+Attendance work days and the leave-day count both take holidays and weekly offs from here.
+
+### C2. Holidays — `GET /api/hrms/holidays?company=AE&year=2026`
+`[{ publicId, company, date, name, isOptional }]`, by date. `company` is optional (all companies).
+
+### C3. Add a holiday — `POST /api/hrms/holidays`
+`{ "publicId": "…", "company": "AE", "date": "2026-11-08", "name": "Diwali", "isOptional": false }` (`publicId` optional;
+the same one again answers 200 with the stored holiday). The year's list is created on first use. Work days already stored
+for that company and date are rebuilt (locked days are not). Errors: `HRMS_HOLIDAY_EXISTS` (409, that date already has
+one), `HRMS_UNKNOWN_COMPANY` (400).
+
+### C4. Remove a holiday — `DELETE /api/hrms/holidays/:publicId`
+Only a holiday still to come: `HRMS_HOLIDAY_PAST` (409) otherwise, and `HRMS_HOLIDAY_IN_USE` (409) when an approved leave of
+someone in that company covers it.
+
+### C5. Weekly-off rules — `GET /api/hrms/weekly-offs?company=AE&employment=…`
+Company defaults (`employment: null`) and person overrides, each `{ publicId, company, employment, validFrom, validTo, rule }`.
+
+### C6. Set a weekly off — `POST /api/hrms/weekly-offs`
+```json
+{ "company": "AE", "validFrom": "2026-12-01", "rule": { "weekdays": [0], "nthWeekdays": [{ "weekday": 6, "nth": [2, 4] }] } }
+```
+Weekdays are 0 = Sunday … 6 = Saturday; this rule is every Sunday plus the 2nd and 4th Saturday. Send
+`employmentPublicId` instead of `company` for one person's override. `validTo` is optional. The same company's (or job's)
+rule that is still open and started earlier is ended the day before `validFrom`; any other overlap is refused with
+`HRMS_WEEKLY_OFF_OVERLAP` (409). Stored work days from `validFrom` on are rebuilt (not locked ones).
+
+### L1–L2. Leave types and my balances
+`GET /api/hrms/leave/types` → `[{ code, name, isPaid }]`. `GET /api/hrms/leave/balances/mine` → one row per active job and
+leave type: `{ employment: { publicId, company }, leaveType: { code, name }, balance }`. The balance is the sum of every
+ledger row of that job and type (all years; there is no yearly lapse or carry-forward rule yet).
+
+### L3. Apply — `POST /api/hrms/leave/requests`
+```json
+{ "publicId": "…", "employmentPublicId": "…", "leaveTypeCode": "GL", "fromDate": "2026-12-07", "toDate": "2026-12-09",
+  "fromHalf": "second_half", "toHalf": "full", "reason": "Family function" }
+```
+On one of your own active jobs. `fromHalf` / `toHalf` default to `full`. Days are counted now from the job's calendar
+(holidays and weekly offs skipped, half days count 0.5) and saved on the request. The approver is the job's manager; with
+no manager the request has no approver and HR decides. Errors: `HRMS_LEAVE_OVERLAP` (409, submitted or approved leave on
+this job already covers a date — another company's job may), `HRMS_LEAVE_NO_WORKING_DAYS` (400), `HRMS_NOT_YOUR_EMPLOYMENT`
+(403), `HRMS_UNKNOWN_LEAVE_TYPE` (400), `HRMS_LEAVE_BALANCE` (409, only when the balance check is on — it is off by default).
+
+### L4–L5. My requests, requests to approve
+`GET /api/hrms/leave/requests/mine?status=` (newest first). `GET /api/hrms/leave/requests/to-approve`: submitted requests
+naming you as approver (Supervisor), or everyone else's (HR).
+
+### L6–L8. Approve, reject, cancel
+- **Approve** (no body): never your own (`HRMS_SELF_APPROVAL`, 403); a Supervisor only when named as approver. In one
+  transaction: `taken` ledger rows (negative, one per year the leave touches), status `approved`, and the work days rebuilt —
+  a working day on leave shows `leave` (a day worked in full, or half worked beside half a day of leave, shows `present`).
+- **Reject**: `{ "reason": "Busy week" }` (required).
+- **Cancel**: `{ "reason": "…" }` (optional), by the person or HR. A submitted request is just cancelled. An approved one
+  only if it starts today or later (`HRMS_LEAVE_STARTED`, 409 otherwise): `taken_reversal` rows give the days back and the
+  work days are rebuilt. `HRMS_LEAVE_NOT_PENDING` / `HRMS_LEAVE_CLOSED` (409) when the status does not allow the step.
+
+### L9. Opening balance or adjustment — `POST /api/hrms/leave/ledger/adjustments`
+`{ "employmentPublicId": "…", "leaveTypeCode": "GL", "year": 2026, "entry": "opening", "days": 12, "reason": "Opening balance" }`.
+`entry` is `opening` (one per job, type and year: `HRMS_OPENING_EXISTS`, 409) or `adjustment` (+ or −). Days in steps of 0.5;
+a reason is required. HR only, and never on their own balance.
+
+### L10. Report — `GET /api/hrms/leave/report?company=AE&from=2026-12-01&to=2026-12-31`
+Submitted and approved requests that touch the dates, plus `approvedDaysByType`. HR sees everyone; a Supervisor
+themselves and the people they manage.
+
 ### E1. Expense categories — `GET /api/hrms/expenses/categories`
 `[ { "code": "food", "name": "Food", "receiptRequired": false }, { "code": "fuel", "name": "Fuel", "receiptRequired": true }, … ]`
 
@@ -705,7 +892,7 @@ To start again from a clean database: `pnpm db:reset` then `pnpm db:seed`.
 
 ## 9. Tests
 
-`pnpm test` runs 115 tests in 14 files. Before they run, `src/test/global-setup.ts` empties `TEST_DATABASE_URL`
+`pnpm test` runs 187 tests in 24 files. Before they run, `src/test/global-setup.ts` empties `TEST_DATABASE_URL`
 (name must end in `_test`), applies every migration and runs the seed; the app under test only ever uses that database.
 API tests sign in as the seeded demo people with `signIn(app, DEMO.hr.login)` from `src/test/create-app.ts`.
 
@@ -714,12 +901,22 @@ API tests sign in as the seeded demo people with `signIn(app, DEMO.hr.login)` fr
 | `src/app.api.spec.ts` | health without a token; 400 `VALIDATION` format; 401 `AUTH_MISSING` |
 | `core/auth/auth.api.spec.ts` | sign-in by phone (any format) and email; same answer for wrong password and unknown login; `me`; missing / broken / expired token; routes without an access rule are closed; password change and reset end older tokens; a person with no active job loses access; employee, supervisor, HR and admin limits; new login + role, ending a role; login phone/email taken; no self-grant |
 | `core/auth/domain/login.spec.ts` | login parsing, widest scope, token vs password change |
+| `core/policies/policies.api.spec.ts` | seeded default in force; built-in default before any version; new version from its date; company before group; newest version wins; resend; wrong value / unknown key / no permission refused; versions can't be changed |
+| `core/policies/domain/in-force.spec.ts` | which version is in force on a date |
 | `hrms/people/people.api.spec.ts` | create; shared phone allowed; duplicate active job and duplicate employee code refused (nothing saved); search by name and phone; view has contacts and jobs, no internal ids |
 | `hrms/people/contacts.api.spec.ts` | shared number lists both people; new primary replaces old; ended contact stays in history, no primary until another is set; rename and status change |
 | `hrms/people/employments.api.spec.ts` | job in another company; exiting one company keeps the other active and moves primary; last exit makes person inactive; make primary; manager/department/designation; exit date and state checks |
 | `hrms/expenses/expenses.api.spec.ts` | categories; submit with receipt file saved under uploads; someone else's job refused; amount must be whole paise > 0; receipt required by category; only JPEG/PNG/PDF by content; resend stored once; approval list for managers; approve claimed or lower amount, never higher; nobody decides their own claim; supervisor only for their team, HR for anyone; rejection needs a reason and is final; pay only approved, only with pay permission; paid claim can't change; database rules checked directly with SQL; report totals by company and dates, HR only |
-| `hrms/attendance/attendance.api.spec.ts` | resend stored once (and someone else's id refused); order enforced across two companies, including a late punch; someone else's job and future time refused; minutes with a lunch break; missed punch-out; today running time; punches can't be updated or deleted; locked day frozen and skipped by rebuild; rebuild repairs a day; register (present / absent); work hours over a range |
-| `hrms/attendance/domain/day-summary.spec.ts` | minutes, first in / last out, missed punch, running today, overtime |
+| `hrms/attendance/overtime.api.spec.ts` | extra time without approval is not overtime; approved overtime capped at the extra time, cancel takes it back; planned overtime (future date allowed, applied when the day is built); nobody decides their own or one they filed; locked day refused when asking and approving; work hours show worked, extra and approved separately |
+| `hrms/attendance/corrections.api.spec.ts` | missed punch-out fixed, day recalculated, punch-in unblocked, `lastMissedPunchDate`; wrong time left out and replaced, originals still stored and marked corrected, exclusions append-only; locked day refused (asking and approving); nobody decides their own or one they filed; one open correction per date, cancel and reject; validation |
+| `hrms/attendance/domain/corrections.spec.ts` | times on the IST date, punches to add, allowed steps |
+| `core/approvals/domain/approver.spec.ts` | approver chain: manager, department head, HR, CEO; never the person or who filed it |
+| `hrms/attendance/attendance.api.spec.ts` | automatic punch-out after 8 hours unblocks the next punch-in (second punch-in within 8 hours still refused, overtime punch-out kept); resend stored once (and someone else's id refused); order enforced across two companies, including a late punch; someone else's job and future time refused; minutes with a lunch break; missed punch-out; today running time; punches can't be updated or deleted; locked day frozen and skipped by rebuild; rebuild repairs a day; register (present / absent); work hours over a range |
+| `hrms/attendance/domain/day-summary.spec.ts` | minutes, first in / last out, missed punch, running today, extra time, approved overtime capped, weekly off / holiday not absent, open punch past the max hours, leave and absent days for every leave / work combination |
+| `hrms/calendar/calendar.api.spec.ts` | Sundays and 2nd / 4th Saturdays off (register shows `weekly_off`); person override wins and rebuilds a worked day; resend; overlap refused; a later rule ends the open one; holiday shows as `holiday` (register, history after rebuild, calendar); duplicate date; only HR changes; past holiday and holiday in an approved leave can't be removed; leave days skip weekly offs and holidays |
+| `hrms/calendar/domain/work-calendar.spec.ts` | nth Saturday, 5th weekday, person rule in force, no rule, holiday over weekly off, optional holiday |
+| `hrms/leave/leave.api.spec.ts` | types; overlap refused on one job, allowed in the other company; resend; own approval refused, supervisor only for their team; approve takes days and work days show `leave`, cancel gives them back and clears the days; started leave can't be cancelled; weekend and half days; dates with no working day refused; rejection needs a reason; cancel before approval; opening / adjustment rules; report for HR and supervisor; approver fallback (manager, HR, CEO; never yourself); balance-check policy per company and date; full day worked on full leave |
+| `hrms/leave/domain/requests.spec.ts` | days per year across the year end, fitting the parts to the saved days, which half of a date, balance check, allowed steps |
 | `hrms/leave/leave-days.spec.ts` | leave day count: single day, half days, holidays, weekends, year end, bad input |
 | `hrms/expenses/domain/claims.spec.ts` | receipt type from bytes, next allowed step, approved amount |
 | `hrms/people/domain/*.spec.ts` | pure rules: phone/email clean-up, first-of-kind primary, exit date, next primary job |
@@ -755,13 +952,15 @@ in `backend/.env`.
 - **Resent requests** — creating a person has no client-made `publicId`, so sending it twice creates two people.
 - **Account lockout** after wrong passwords — not wanted for now. Deactivating a login (`is_active`) has no endpoint yet.
 - **Branch and department scopes** for roles — only own / team / all until branches and departments exist.
-- **Attendance: corrections** — a forgotten punch-out blocks the next punch-in (order rule) until corrections exist (`source = 'correction'` is already let through by the trigger).
+- **Attendance: corrections** — the automatic punch-out is added only when the next punch-in arrives (no background job yet), so until then the day shows a missed punch with 0 minutes; HR cannot file a correction for someone outside their team (only the person or their manager can).
 - **Attendance: night shifts** — work days follow the IST calendar date; a shift past midnight splits into two days.
-- **Attendance: geofencing, shifts, holidays, leave** — punches record `not_taken` / `not_configured`; the register shows `absent` for holidays, weekly offs and leave until those exist.
-- **Leave, skills, reports** — tables exist (from `0000_initial`), only health endpoints so far.
+- **Attendance: geofencing, shifts** — punches record `not_taken` / `not_configured`. Work on a weekly off or holiday counts like any day (its extra time needs an overtime request like any other).
+- **Calendar** — no edit or end endpoint for a weekly-off rule (a new rule ends the open one); no holiday is seeded.
+- **Leave** — departments have no head yet (the approver goes from manager straight to HR, then the CEO); no drafts (apply submits); no partial cancel of a leave already running; no yearly grant, lapse or carry-forward.
+- **Skills, reports** — tables exist (from `0000_initial`), only health endpoints so far.
 - **Expenses: receipt download** — receipts are saved and the path stored, but there is no endpoint yet to fetch the file.
 - **Expenses: limits per category or grade** — not checked yet (would come from `CoreFacade.getPolicy`); no link to service tickets yet.
-- **Policies** — `CoreFacade.getPolicy` returns the default value (e.g. 12-hour sign-in); no `core.policies` table yet.
+- **Policies** — values are checked one key at a time (nothing stops a half day longer than a full day); a new version does not rebuild work days already stored (use rebuild); `max_open_punch_hours` (16) only limits the running time shown today; with the automatic punch-out at 8 hours it has little effect.
 - **Tenant isolation in the database** (row-level security) and audit log — in the reference SQL, not built.
 - **First admin on a real server** — the seed is development-only; a real server needs a one-off way to create the
   first System admin.

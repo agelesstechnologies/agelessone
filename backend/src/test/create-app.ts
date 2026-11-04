@@ -19,6 +19,7 @@ export const DEMO = {
   engineer: { login: 'demo.engineer@example.com', publicId: '00000000-0000-4000-8000-000000000003' }, // Employee, own
   hr: { login: 'demo.hr@example.com', publicId: '00000000-0000-4000-8000-000000000004' },       // HR, all
   admin: { login: 'demo.admin@example.com', publicId: '00000000-0000-4000-8000-000000000005' }, // System admin, all
+  ceo: { login: 'demo.ceo@example.com', publicId: '00000000-0000-4000-8000-000000000006' },     // CEO, team (last leave approver)
 };
 
 /** Signs in and returns the Authorization header to .set() on requests. */
