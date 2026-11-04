@@ -1,3 +1,6 @@
+/** The zod instance these schemas are built with (tools that extend zod, like the OpenAPI builder, must use this one). */
+export { z } from 'zod';
+export * from './common';
 export * from './core/auth';
 export * from './core/policies';
 export * from './events/envelope';
@@ -8,6 +11,9 @@ export * from './hrms/events';
 export * from './hrms/expenses';
 export * from './hrms/facade';
 export * from './hrms/leave';
+export * from './hrms/month-locks';
+export * from './hrms/organisation';
 export * from './hrms/overtime';
 export * from './hrms/people';
 export * from './hrms/punch';
+export * from './hrms/skills';

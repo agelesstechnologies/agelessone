@@ -39,7 +39,7 @@ export class OvertimeRepository {
 
   async lock(tx: Tx, tenantId: number, publicId: string) {
     const [row] = await tx.select({
-      id: overtimeRequests.id, personId: overtimeRequests.personId, employmentId: overtimeRequests.employmentId,
+      id: overtimeRequests.id, personId: overtimeRequests.personId, employmentId: overtimeRequests.employmentId, legalEntityId: overtimeRequests.legalEntityId,
       workDate: overtimeRequests.workDate, status: overtimeRequests.status, requestedBy: overtimeRequests.requestedBy,
       approverPersonId: overtimeRequests.approverPersonId,
     }).from(overtimeRequests).where(and(eq(overtimeRequests.tenantId, tenantId), eq(overtimeRequests.publicId, publicId))).for('update');

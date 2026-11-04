@@ -10,11 +10,13 @@ import { RequestContext, requireAll } from '../../../../platform/http/request-co
 import { todayIst } from '../../../../platform/time';
 import { CoreFacade } from '../../../core/core.facade';
 import { AttendanceService } from '../../attendance/application/attendance.service';
+import { MonthLocksService } from '../../attendance/application/month-locks.service';
 import { CalendarService } from '../../calendar/application/calendar.service';
 import { LeaveRepository, Visibility } from '../infrastructure/leave.repository';
 import { calculateLeaveDays, FromHalf, ToHalf } from '../leave-days';
 import { balanceAllows, daysPerYear, fitToTotal, LeaveAction, LeaveStatus, stepNotAllowed } from '../domain/requests';
 import { LEAVE } from '../domain/permissions';
+import { toCsv } from '../../../../platform/csv';
 
 /**
  * Use cases live here: open the transaction, call repositories and other facades, write the outbox event.
@@ -29,6 +31,7 @@ export class LeaveService {
     @Inject(CalendarService) private readonly calendar: CalendarService,
     @Inject(AttendanceService) private readonly attendance: AttendanceService,
     @Inject(CoreFacade) private readonly core: CoreFacade,
+    @Inject(MonthLocksService) private readonly months: MonthLocksService,
   ) {}
 
   health() { return { module: 'hrms', sub: 'leave', ok: true }; }
@@ -47,7 +50,7 @@ export class LeaveService {
 
   /**
    * Leave on one of the caller's own active jobs. Days are counted now (holidays and weekly offs skipped) and saved.
-   * The approver: the job's manager, else HR, else the CEO (never the applicant). The same publicId again returns the stored request.
+   * The approver: the job's manager, else its department head, else HR, else the CEO (never the applicant). The same publicId again returns the stored request.
    */
   async apply(ctx: RequestContext, req: ApplyLeaveRequest): Promise<{ request: LeaveRequestView; created: boolean }> {
     if (req.publicId) {
@@ -64,10 +67,11 @@ export class LeaveService {
     const type = await this.repo.findType(ctx.tenantId, req.leaveTypeCode);
     if (!type) throw new AppError('HRMS_UNKNOWN_LEAVE_TYPE', 400, `Unknown leave type ${req.leaveTypeCode}`);
 
+    await this.months.assertOpen(this.db, job.legalEntityId, req.fromDate, req.toDate);
     const days = (await this.parts(this.db, job.id, req)).reduce((sum, p) => sum + p.days, 0);
     if (days <= 0) throw new AppError('HRMS_LEAVE_NO_WORKING_DAYS', 400, 'These dates are all holidays or weekly offs');
     await this.checkBalance(this.db, ctx.tenantId, job.legalEntityId, job.id, type.id, days, req.fromDate);
-    const approverPersonId = await this.core.approverFor(ctx.tenantId, [ctx.personId], job.managerPersonId);
+    const approverPersonId = await this.core.approverFor(ctx.tenantId, [ctx.personId], { managerId: job.managerPersonId, departmentHeadId: job.departmentHeadId });
 
     const publicId = req.publicId ?? randomUUID();
     try {
@@ -98,10 +102,11 @@ export class LeaveService {
   async approve(ctx: RequestContext, publicId: string): Promise<LeaveRequestView> {
     await this.db.transaction(async (tx) => {
       const r = await this.decidable(tx, ctx, publicId, 'approve');
+      await this.months.assertOpen(tx, r.legalEntityId, r.fromDate, r.toDate);
       await this.checkBalance(tx, ctx.tenantId, r.legalEntityId, r.employmentId, r.leaveTypeId, r.days, r.fromDate);
       const parts = fitToTotal(await this.parts(tx, r.employmentId, r), r.days);
       await this.repo.insertLedger(tx, parts.map((p) => ({
-        tenantId: ctx.tenantId, employmentId: r.employmentId, leaveTypeId: r.leaveTypeId, year: p.year, entry: 'taken', days: -p.days,
+        tenantId: ctx.tenantId, employmentId: r.employmentId, legalEntityId: r.legalEntityId, leaveTypeId: r.leaveTypeId, year: p.year, entry: 'taken', days: -p.days,
         leaveRequestId: r.id, postedBy: ctx.personId,
       })));
       await this.repo.decide(tx, r.id, 'approved', ctx.personId);
@@ -130,10 +135,11 @@ export class LeaveService {
       }
       this.checkStep(r.status, 'cancel');
       if (r.status === 'approved') {
+        await this.months.assertOpen(tx, r.legalEntityId, r.fromDate, r.toDate);
         if (r.fromDate < todayIst()) throw new AppError('HRMS_LEAVE_STARTED', 409, 'This leave has already started and cannot be cancelled');
         const taken = await this.repo.takenRows(tx, r.id);
         await this.repo.insertLedger(tx, taken.map((t) => ({
-          tenantId: ctx.tenantId, employmentId: r.employmentId, leaveTypeId: r.leaveTypeId, year: t.year, entry: 'taken_reversal', days: -t.days,
+          tenantId: ctx.tenantId, employmentId: r.employmentId, legalEntityId: r.legalEntityId, leaveTypeId: r.leaveTypeId, year: t.year, entry: 'taken_reversal', days: -t.days,
           leaveRequestId: r.id, reason: req.reason ?? 'Approved leave cancelled', postedBy: ctx.personId,
         })));
       }
@@ -166,7 +172,7 @@ export class LeaveService {
     const publicId = req.publicId ?? randomUUID();
     try {
       await this.db.transaction((tx) => this.repo.insertLedger(tx, [{
-        tenantId: ctx.tenantId, publicId, employmentId: job.id, leaveTypeId: type.id, year: req.year, entry: req.entry, days: req.days,
+        tenantId: ctx.tenantId, publicId, employmentId: job.id, legalEntityId: job.legalEntityId, leaveTypeId: type.id, year: req.year, entry: req.entry, days: req.days,
         reason: req.reason, postedBy: ctx.personId,
       }]));
     } catch (err) {
@@ -178,17 +184,54 @@ export class LeaveService {
     return { entry: (await this.repo.ledgerEntry(publicId))!, created: true };
   }
 
-  /** Submitted and approved leave touching the dates: HR sees everyone, a Supervisor themselves and their team. */
+  /**
+   * For a period: submitted and approved requests touching it, and per person and job the approved days inside the
+   * period by leave type (a request crossing the period counts only its days inside) and the current balance by type.
+   * HR sees everyone, a Supervisor themselves and their team.
+   */
   async report(ctx: RequestContext, q: LeaveReportQuery): Promise<LeaveReport> {
     const scope = ctx.permissions[LEAVE.report];
     const visibility: Visibility = scope === 'all' ? { scope: 'all' } : { scope: scope === 'team' ? 'team' : 'own', personId: ctx.personId };
     const rows = await this.repo.report(ctx.tenantId, q.from, q.to, q.company, visibility);
     const byType = new Map<string, number>();
     for (const r of rows.filter((x) => x.status === 'approved')) byType.set(r.leaveType.code, (byType.get(r.leaveType.code) ?? 0) + r.days);
+
+    const jobs = await this.repo.jobsInRange(ctx.tenantId, q.from, q.to, q.company, visibility);
+    const approved = await this.repo.approvedInRange(jobs.map((j) => j.id), q.from, q.to);
+    const balances = await this.repo.balancesOf(jobs.map((j) => j.id));
+    const people: LeaveReport['people'] = [];
+    for (const j of jobs) {
+      const takenByType: Record<string, number> = {};
+      for (const r of approved.filter((a) => a.employmentId === j.id)) {
+        const from = r.fromDate < q.from ? q.from : r.fromDate;
+        const to = r.toDate > q.to ? q.to : r.toDate;
+        const inside = await this.parts(this.db, j.id, {
+          fromDate: from, toDate: to, fromHalf: from === r.fromDate ? r.fromHalf : 'full', toHalf: to === r.toDate ? r.toHalf : 'full',
+        });
+        takenByType[r.typeCode] = (takenByType[r.typeCode] ?? 0) + inside.reduce((s, p) => s + p.days, 0);
+      }
+      const balanceByType = Object.fromEntries(balances.filter((b) => b.employmentId === j.id).map((b) => [b.typeCode, b.balance]));
+      people.push({
+        person: { publicId: j.personPublicId, displayName: j.personName },
+        employment: { publicId: j.employmentPublicId, company: j.company, employeeCode: j.employeeCode },
+        takenByType, balanceByType, totalTaken: Object.values(takenByType).reduce((s, d) => s + d, 0),
+      });
+    }
     return {
-      company: q.company ?? null, from: q.from, to: q.to, rows,
-      approvedDaysByType: [...byType].map(([code, days]) => ({ code, days })),
+      company: q.company ?? null, from: q.from, to: q.to, producedAt: new Date().toISOString(), rows,
+      approvedDaysByType: [...byType].map(([code, days]) => ({ code, days })), people,
     };
+  }
+
+  /** The leave report as CSV: one line per person, job and leave type (days taken in the period and current balance). */
+  async reportCsv(ctx: RequestContext, r: LeaveReport): Promise<{ name: string; body: string }> {
+    const types = (await this.repo.types(ctx.tenantId)).map((t) => t.code);
+    const body = toCsv(
+      [['Report', 'Leave'], ['Company', r.company ?? 'All companies'], ['Period', `${r.from} to ${r.to}`], ['Produced at', r.producedAt]],
+      ['Company', 'Employee code', 'Name', 'Leave type', 'Days taken in period', 'Current balance'],
+      r.people.flatMap((p) => types.map((t) => [p.employment.company, p.employment.employeeCode, p.person.displayName, t,
+        p.takenByType[t] ?? 0, p.balanceByType[t] ?? 0])));
+    return { name: `leave-${r.company ?? 'all'}-${r.from}-${r.to}.csv`, body };
   }
 
   /** The leave's working days per year, from the job's calendar (holidays and weekly offs skipped). */

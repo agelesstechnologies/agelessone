@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DateOnly, Instant, PersonRef, PublicId } from '../common';
 /** Attendance corrections: requests and answers shared by the API and the web app. Times are ISO with offset; dates IST. */
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'Not a real date');
@@ -43,19 +44,20 @@ export type MyCorrectionsQuery = z.infer<typeof MyCorrectionsQuery>;
 export const RejectCorrectionRequest = z.object({ reason: z.string().trim().min(3).max(500) });
 export type RejectCorrectionRequest = z.infer<typeof RejectCorrectionRequest>;
 
-export interface Correction {
-  publicId: string;
-  person: { publicId: string; displayName: string };
-  employment: { publicId: string; company: string };
-  workDate: string;
-  kind: CorrectionKind;
-  requestedIn: string | null; requestedOut: string | null;
-  punchIdsToExclude: string[];
-  reason: string;
-  status: CorrectionStatus;
-  requestedBy: { publicId: string; displayName: string };
-  approver: { publicId: string; displayName: string } | null;
-  decidedBy: { publicId: string; displayName: string } | null;
-  decidedAt: string | null; decisionReason: string | null;
-  cancelledAt: string | null; createdAt: string;
-}
+export const Correction = z.object({
+  publicId: PublicId,
+  person: PersonRef,
+  employment: z.object({ publicId: PublicId, company: z.string() }),
+  workDate: DateOnly,
+  kind: CorrectionKind,
+  requestedIn: Instant.nullable(), requestedOut: Instant.nullable(),
+  punchIdsToExclude: z.array(PublicId),
+  reason: z.string(),
+  status: CorrectionStatus,
+  requestedBy: PersonRef,
+  approver: PersonRef.nullable(),
+  decidedBy: PersonRef.nullable(),
+  decidedAt: Instant.nullable(), decisionReason: z.string().nullable(),
+  cancelledAt: Instant.nullable(), createdAt: Instant,
+});
+export type Correction = z.infer<typeof Correction>;

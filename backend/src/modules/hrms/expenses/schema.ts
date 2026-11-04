@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
-import { bigint, text, date, uuid, boolean, timestamp, check, unique, index } from 'drizzle-orm/pg-core';
+import { bigint, text, date, uuid, boolean, timestamp, check, unique, index, char, foreignKey } from 'drizzle-orm/pg-core';
 import { hrms } from '../schema';
-import { persons } from '../../core/schema';
+import { legalEntities, persons } from '../../core/schema';
 import { tickets } from '../../tickets/schema';
 import { employments } from '../people/schema';
 
@@ -20,10 +20,12 @@ export const expenseClaims = hrms.table('expense_claims', {
   tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
   publicId: uuid('public_id').notNull().defaultRandom().unique(),
   personId: bigint('person_id', { mode: 'number' }).notNull().references(() => persons.id),
-  employmentId: bigint('employment_id', { mode: 'number' }).notNull().references(() => employments.id),
+  employmentId: bigint('employment_id', { mode: 'number' }).notNull(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
   categoryId: bigint('category_id', { mode: 'number' }).notNull().references(() => expenseCategories.id),
   spentOn: date('spent_on').notNull(),
   amountPaise: bigint('amount_paise', { mode: 'number' }).notNull(),
+  currency: char('currency', { length: 3 }).notNull().default('INR'), // of amount_paise / approved_amount_paise
   description: text('description'),
   receiptPath: text('receipt_path'),                       // relative to the uploads folder
   ticketId: bigint('ticket_id', { mode: 'number' }).references(() => tickets.id), // link to a service ticket
@@ -37,7 +39,8 @@ export const expenseClaims = hrms.table('expense_claims', {
   paidAt: timestamp('paid_at', { withTimezone: true }),
   paymentRef: text('payment_ref'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, () => [
+}, (t) => [
+  foreignKey({ name: 'expense_claims_employment_company_fk', columns: [t.employmentId, t.legalEntityId], foreignColumns: [employments.id, employments.legalEntityId] }),
   index('idx_expense_claims_person').on(sql`person_id`),
   index('idx_expense_claims_employment').on(sql`employment_id`),
   check('expense_claims_status_check', sql`status IN ('submitted','approved','rejected','paid')`),

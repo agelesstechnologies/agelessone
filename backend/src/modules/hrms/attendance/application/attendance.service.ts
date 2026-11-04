@@ -10,9 +10,11 @@ import { RequestContext, requireAll } from '../../../../platform/http/request-co
 import { addDays, datesBetween, istDayStart, todayIst } from '../../../../platform/time';
 import { CoreFacade } from '../../../core/core.facade';
 import { CalendarChange, CalendarService } from '../../calendar/application/calendar.service';
+import { MonthLocksService } from './month-locks.service';
 import { AttendanceRepository, Visibility } from '../infrastructure/attendance.repository';
 import { approvedOvertime, DayPolicy, DaySummary, LeavePart, leavePartOn, summarizeDay } from '../domain/day-summary';
 import { ATTENDANCE } from '../domain/permissions';
+import { toCsv } from '../../../../platform/csv';
 
 /** A device clock may run a little fast; anything later than this is refused. */
 const FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
@@ -31,6 +33,7 @@ export class AttendanceService {
     @Inject(AttendanceRepository) private readonly repo: AttendanceRepository,
     @Inject(CoreFacade) private readonly core: CoreFacade,
     @Inject(CalendarService) private readonly calendar: CalendarService,
+    @Inject(MonthLocksService) private readonly months: MonthLocksService,
   ) {
     calendar.onChange((tx, change) => this.calendarChanged(tx, change));
   }
@@ -52,12 +55,13 @@ export class AttendanceService {
     if (job.status !== 'active') throw new AppError('HRMS_EMPLOYMENT_NOT_ACTIVE', 409, 'This job is not active');
     const occurredAt = new Date(req.occurredAt);
     if (occurredAt.getTime() > Date.now() + FUTURE_TOLERANCE_MS) throw new AppError('HRMS_PUNCH_IN_FUTURE', 400, 'The punch time is in the future');
+    await this.months.assertOpen(this.db, job.legalEntityId, todayIst(occurredAt));
 
     try {
       await this.db.transaction(async (tx) => {
         if (req.kind === 'in') await this.autoPunchOut(tx, ctx.tenantId, ctx.personId, occurredAt);
         await this.repo.insertPunch(tx, {
-          tenantId: ctx.tenantId, publicId: req.publicId, personId: ctx.personId, employmentId: job.id, kind: req.kind, source: 'web',
+          tenantId: ctx.tenantId, publicId: req.publicId, personId: ctx.personId, employmentId: job.id, legalEntityId: job.legalEntityId, kind: req.kind, source: 'web',
           occurredAt, latitude: req.latitude?.toString(), longitude: req.longitude?.toString(), accuracyM: req.accuracyM,
           // geofencing needs work locations (not built yet): record whether a position was sent
           locationStatus: req.latitude === undefined ? 'not_taken' : 'not_configured',
@@ -67,6 +71,7 @@ export class AttendanceService {
     } catch (err) {
       const message = databaseMessage(err) ?? '';
       if (message.startsWith('HRMS_PUNCH_ORDER')) throw new AppError('HRMS_PUNCH_ORDER', 409, message.replace(/^HRMS_PUNCH_ORDER:\s*/, ''));
+      if (message.startsWith('HRMS_MONTH_LOCKED')) throw new AppError('HRMS_MONTH_LOCKED', 409, message.replace(/^HRMS_MONTH_LOCKED:\s*/, ''));
       if (violatedConstraint(err) === 'attendance_events_public_id_unique') {
         const again = await this.resent(ctx, req.publicId); // the same punch arrived twice at the same moment
         if (again) return { punch: again, created: false };
@@ -208,7 +213,18 @@ export class AttendanceService {
         overtimePayable: await this.core.getPolicy(ctx.tenantId, 'hrms.overtime.payable', j.legalEntityId, q.to),
       });
     }
-    return { company: q.company ?? null, from: q.from, to: q.to, rows };
+    return { company: q.company ?? null, from: q.from, to: q.to, producedAt: new Date().toISOString(), rows };
+  }
+
+  /** Work hours as CSV: one line per job, the same numbers as the screen. */
+  workHoursCsv(r: WorkHours): { name: string; body: string } {
+    const body = toCsv(
+      [['Report', 'Work hours'], ['Company', r.company ?? 'All companies'], ['Period', `${r.from} to ${r.to}`], ['Produced at', r.producedAt]],
+      ['Company', 'Employee code', 'Name', 'Present', 'Half day', 'Missed punch', 'Absent', 'Leave', 'Leave days', 'Absent days',
+        'Worked minutes', 'Extra minutes', 'Approved overtime minutes', 'Overtime payable'],
+      r.rows.map((x) => [x.employment.company, x.employment.employeeCode, x.person.displayName, x.days.present, x.days.halfDay, x.days.missedPunch,
+        x.days.absent, x.days.leave, x.leaveDays, x.absentDays, x.workedMinutes, x.extraMinutes, x.approvedOvertimeMinutes, x.overtimePayable ? 'yes' : 'no']));
+    return { name: `work-hours-${r.company ?? 'all'}-${r.from}-${r.to}.csv`, body };
   }
 
   /** Admin: recalculate stored work days for one job (or all of a person's jobs) over a date range. Locked days are skipped. */
@@ -240,7 +256,7 @@ export class AttendanceService {
     const at = new Date(open.at.getTime() + hours * 3_600_000);
     if (at > before) return; // still inside the hours: the order rule refuses the punch-in
     await this.repo.insertPunch(tx, {
-      tenantId, publicId: randomUUID(), personId, employmentId: open.employmentId, kind: 'out', source: 'auto', occurredAt: at, locationStatus: null,
+      tenantId, publicId: randomUUID(), personId, employmentId: open.employmentId, legalEntityId: open.legalEntityId, kind: 'out', source: 'auto', occurredAt: at, locationStatus: null,
     });
     for (const date of new Set([todayIst(open.at), todayIst(at)])) await this.rebuildDay(tx, tenantId, personId, open.employmentId, date);
   }
@@ -265,10 +281,11 @@ export class AttendanceService {
       await this.repo.deleteWorkDay(tx, existing.id);
       return 'rebuilt';
     }
-    const policy = await this.policy(tenantId, await this.repo.companyOf(tx, employmentId), date);
+    const legalEntityId = await this.repo.companyOf(tx, employmentId);
+    const policy = await this.policy(tenantId, legalEntityId, date);
     const s = summarizeDay(punches, policy, undefined, await this.calendar.dayKind(tx, employmentId, date), leave);
     await this.repo.upsertWorkDay(tx, {
-      tenantId, personId, employmentId, workDate: date, firstIn: s.firstIn, lastOut: s.lastOut,
+      tenantId, personId, employmentId, legalEntityId, workDate: date, firstIn: s.firstIn, lastOut: s.lastOut,
       workedMinutes: s.workedMinutes, extraMinutes: s.extraMinutes, dayStatus: s.status,
       approvedOvertimeMinutes: approvedOvertime(s.extraMinutes, (await this.repo.approvedOvertimeOn(tx, [employmentId], date)).map((o) => o.minutes)),
       leaveDays: s.leaveDays, absentDays: s.absentDays, workedOnLeave: s.workedOnLeave,

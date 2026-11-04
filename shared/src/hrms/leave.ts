@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DateOnly, Instant, PersonRef, PublicId } from '../common';
 /** Leave: requests and answers shared by the API and the web app. Dates are IST; days come in steps of 0.5. */
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'Not a real date');
@@ -8,7 +9,10 @@ const reason = z.string().trim().min(3).max(500);
 export const LeaveStatus = z.enum(['draft', 'submitted', 'approved', 'rejected', 'cancelled']);
 export type LeaveStatus = z.infer<typeof LeaveStatus>;
 
-export interface LeaveType { code: string; name: string; isPaid: boolean }
+export const LeaveType = z.object({ code: z.string(), name: z.string(), isPaid: z.boolean() });
+export type LeaveType = z.infer<typeof LeaveType>;
+const CodeName = z.object({ code: z.string(), name: z.string() });
+const Job = z.object({ publicId: PublicId, company: z.string() });
 
 /**
  * POST /api/hrms/leave/requests — leave on one of your own jobs. fromHalf 'second_half' starts at midday on the first day;
@@ -41,30 +45,28 @@ export type RejectLeaveRequest = z.infer<typeof RejectLeaveRequest>;
 export const CancelLeaveRequest = z.object({ reason: reason.optional() });
 export type CancelLeaveRequest = z.infer<typeof CancelLeaveRequest>;
 
-export interface LeaveRequestView {
-  publicId: string;
-  person: { publicId: string; displayName: string };
-  employment: { publicId: string; company: string; employeeCode: string };
-  leaveType: { code: string; name: string };
-  fromDate: string; toDate: string;
-  fromHalf: 'full' | 'second_half'; toHalf: 'full' | 'first_half';
-  days: number;
-  reason: string | null;
-  status: LeaveStatus;
-  approver: { publicId: string; displayName: string } | null;  // null: HR decides (no manager on the job)
-  decidedBy: { publicId: string; displayName: string } | null;
-  decidedAt: string | null;
-  decisionReason: string | null;
-  cancelledAt: string | null;
-  createdAt: string;
-}
+export const LeaveRequestView = z.object({
+  publicId: PublicId,
+  person: PersonRef,
+  employment: Job.extend({ employeeCode: z.string() }),
+  leaveType: CodeName,
+  fromDate: DateOnly, toDate: DateOnly,
+  fromHalf: z.enum(['full', 'second_half']), toHalf: z.enum(['full', 'first_half']),
+  days: z.number(),
+  reason: z.string().nullable(),
+  status: LeaveStatus,
+  approver: PersonRef.nullable(),  // manager, department head, HR, then CEO; null only when nobody is left
+  decidedBy: PersonRef.nullable(),
+  decidedAt: Instant.nullable(),
+  decisionReason: z.string().nullable(),
+  cancelledAt: Instant.nullable(),
+  createdAt: Instant,
+});
+export type LeaveRequestView = z.infer<typeof LeaveRequestView>;
 
 /** GET /api/hrms/leave/balances/mine — one row per job and leave type; balance = sum of the ledger. */
-export interface LeaveBalance {
-  employment: { publicId: string; company: string };
-  leaveType: { code: string; name: string };
-  balance: number;
-}
+export const LeaveBalance = z.object({ employment: Job, leaveType: CodeName, balance: z.number() });
+export type LeaveBalance = z.infer<typeof LeaveBalance>;
 
 /** POST /api/hrms/leave/ledger/adjustments — HR: an opening balance (one per job, type and year) or an adjustment (+/-). */
 export const LeaveAdjustmentRequest = z.object({
@@ -78,19 +80,31 @@ export const LeaveAdjustmentRequest = z.object({
 }).refine((r) => r.entry !== 'opening' || r.days > 0, { message: 'An opening balance is more than zero', path: ['days'] });
 export type LeaveAdjustmentRequest = z.infer<typeof LeaveAdjustmentRequest>;
 
-export interface LeaveLedgerEntry {
-  publicId: string; employment: { publicId: string; company: string }; leaveType: { code: string; name: string };
-  year: number; entry: 'opening' | 'grant' | 'taken' | 'taken_reversal' | 'adjustment'; days: number; reason: string | null; postedAt: string;
-}
+export const LeaveLedgerEntry = z.object({
+  publicId: PublicId, employment: Job, leaveType: CodeName,
+  year: z.number().int(), entry: z.enum(['opening', 'grant', 'taken', 'taken_reversal', 'adjustment']), days: z.number(),
+  reason: z.string().nullable(), postedAt: Instant,
+});
+export type LeaveLedgerEntry = z.infer<typeof LeaveLedgerEntry>;
 
 /** GET /api/hrms/leave/report?company=&from=&to= — submitted and approved leave that touches the dates. */
-export const LeaveReportQuery = z.object({ company: emptyToUndefined(z.string().trim().max(12)), from: isoDate, to: isoDate })
+export const LeaveReportQuery = z.object({
+  company: emptyToUndefined(z.string().trim().max(12)), from: isoDate, to: isoDate,
+  format: z.enum(['json', 'csv']).default('json'), // csv: one line per person, job and leave type
+})
   .refine((q) => q.to >= q.from, { message: '`to` is before `from`', path: ['to'] })
   .refine((q) => (Date.parse(q.to) - Date.parse(q.from)) / 86_400_000 <= 365, { message: 'At most 366 days at a time', path: ['to'] });
 export type LeaveReportQuery = z.infer<typeof LeaveReportQuery>;
-export interface LeaveReport {
-  company: string | null; from: string; to: string;
-  rows: LeaveRequestView[];
+export const LeaveReport = z.object({
+  company: z.string().nullable(), from: DateOnly, to: DateOnly, producedAt: Instant,
+  rows: z.array(LeaveRequestView),
+  /** per person and company: approved leave days inside the period by type, and the current balance by type */
+  people: z.array(z.object({
+    person: PersonRef,
+    employment: Job.extend({ employeeCode: z.string() }),
+    takenByType: z.record(z.string(), z.number()), balanceByType: z.record(z.string(), z.number()), totalTaken: z.number(),
+  })),
   /** approved days per leave type, whole requests (a request crossing the range counts in full) */
-  approvedDaysByType: { code: string; days: number }[];
-}
+  approvedDaysByType: z.array(z.object({ code: z.string(), days: z.number() })),
+});
+export type LeaveReport = z.infer<typeof LeaveReport>;

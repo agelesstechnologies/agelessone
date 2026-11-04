@@ -29,14 +29,17 @@ const people = [
 const HR = ['hrms.people.view', 'hrms.people.create', 'hrms.people.update', 'hrms.contacts.manage', 'hrms.contacts.review', 'hrms.employments.manage', 'hrms.employments.update',
   'hrms.expenses.submit', 'hrms.expenses.approve', 'hrms.expenses.pay', 'hrms.expenses.report',
   'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.rebuild', 'hrms.attendance.approve', 'hrms.calendar.manage',
-  'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.manage', 'hrms.leave.report', 'core.policies.manage'];
+  'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.manage', 'hrms.leave.report', 'core.policies.manage', 'hrms.positions.manage',
+  'hrms.skills.manage', 'hrms.skills.add', 'hrms.skills.verify', 'hrms.skills.view', 'hrms.month.lock'];
 const roles = [
-  { code: 'employee', name: 'Employee', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.leave.apply'] },
+  { code: 'employee', name: 'Employee', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.leave.apply',
+    'hrms.skills.add', 'hrms.skills.view'] },
   { code: 'supervisor', name: 'Supervisor', permissions: ['hrms.people.view', 'hrms.employments.update', 'hrms.expenses.submit', 'hrms.expenses.approve',
-    'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report'] },
+    'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report',
+    'hrms.skills.add', 'hrms.skills.verify', 'hrms.skills.view'] },
   { code: 'hr', name: 'HR', permissions: HR },
   { code: 'admin_user', name: 'Admin user', permissions: [] },
-  { code: 'system_admin', name: 'System admin', permissions: ['core.users.manage', 'core.policies.manage', 'hrms.people.view', 'hrms.attendance.rebuild'] },
+  { code: 'system_admin', name: 'System admin', permissions: ['core.users.manage', 'core.policies.manage', 'hrms.people.view', 'hrms.attendance.rebuild', 'hrms.month.unlock'] },
   // Last approver for leave (after the manager and HR); scope team: decides requests that name them.
   { code: 'ceo', name: 'CEO', permissions: ['hrms.people.view', 'hrms.attendance.punch', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report'] },
 ];
@@ -56,6 +59,22 @@ try {
   // POLICY: until HR confirms the leave types — one paid type for now.
   await client.query(`INSERT INTO hrms.leave_types (tenant_id, code, name, policy_key, is_paid)
     VALUES (1, 'GL', 'General leave', 'hrms.leave.gl', true) ON CONFLICT (tenant_id, code) DO NOTHING`);
+
+  // Ageless Technologies: departments (code prefix starts the employee codes: ATS001 ...; heads are set later by HR)
+  // and the designations its positions use.
+  for (const [name, prefix] of [
+    ['Designing', 'ATD'], ['Software Development', 'ATS'], ['Hardware & IoT', 'ATH'], ['CGI Content Development', 'ATC'], ['HR & Accounts', 'ATHR'],
+  ]) {
+    await client.query(`INSERT INTO hrms.departments (tenant_id, legal_entity_id, name, code_prefix)
+      SELECT 1, id, $1, $2 FROM core.legal_entities WHERE tenant_id = 1 AND code = 'ATPL'
+      ON CONFLICT (legal_entity_id, code_prefix) DO NOTHING`, [name, prefix]);
+  }
+  for (const name of ['Designer', 'Senior Designer', '3D Designer', 'Senior Software Engineer', 'Developer', 'Intern', 'Engineer',
+    'Senior IoT Design Engineer', 'Senior CG Content Developer', 'CG Artist', '3D/VFX Artist', 'HR Executive', 'Accounts Executive']) {
+    await client.query(`INSERT INTO hrms.designations (tenant_id, legal_entity_id, name)
+      SELECT 1, id, $1 FROM core.legal_entities WHERE tenant_id = 1 AND code = 'ATPL'
+      ON CONFLICT (legal_entity_id, name) DO NOTHING`, [name]);
+  }
 
   // Expense categories for tenant 1 (receipt_required: whether a receipt file must be attached).
   for (const [code, name, receiptRequired] of [

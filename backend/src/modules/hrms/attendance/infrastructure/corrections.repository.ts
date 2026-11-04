@@ -43,7 +43,7 @@ export class CorrectionsRepository {
 
   async lock(tx: Tx, tenantId: number, publicId: string) {
     const [row] = await tx.select({
-      id: attendanceCorrections.id, personId: attendanceCorrections.personId, employmentId: attendanceCorrections.employmentId,
+      id: attendanceCorrections.id, personId: attendanceCorrections.personId, employmentId: attendanceCorrections.employmentId, legalEntityId: attendanceCorrections.legalEntityId,
       workDate: attendanceCorrections.workDate, requestedIn: attendanceCorrections.requestedIn, requestedOut: attendanceCorrections.requestedOut,
       punchIdsToExclude: attendanceCorrections.punchIdsToExclude, reason: attendanceCorrections.reason,
       status: attendanceCorrections.status, requestedBy: attendanceCorrections.requestedBy, approverPersonId: attendanceCorrections.approverPersonId,

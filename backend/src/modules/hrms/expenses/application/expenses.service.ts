@@ -7,6 +7,7 @@ import { DB, Db, Tx } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
 import { RequestContext, requireAll } from '../../../../platform/http/request-context';
 import { discardUpload, saveUpload } from '../../../../platform/storage';
+import { rupees, toCsv } from '../../../../platform/csv';
 import { ExpensesRepository } from '../infrastructure/expenses.repository';
 import { amountToApprove, ClaimAction, detectReceiptType, stepNotAllowed } from '../domain/claims';
 import { EXPENSES } from '../domain/permissions';
@@ -46,6 +47,7 @@ export class ExpensesService {
     const job = await this.repo.findEmployment(ctx.tenantId, req.employmentPublicId);
     if (!job) throw new AppError('HRMS_EMPLOYMENT_NOT_FOUND', 404, 'Employment not found');
     if (job.personId !== ctx.personId) throw new AppError('HRMS_NOT_YOUR_EMPLOYMENT', 403, 'You can only claim expenses on your own job');
+    if (job.status !== 'active') throw new AppError('HRMS_EMPLOYMENT_NOT_ACTIVE', 409, 'This job is not active');
     const category = await this.repo.findCategory(ctx.tenantId, req.categoryCode);
     if (!category) throw new AppError('HRMS_UNKNOWN_CATEGORY', 400, `Unknown expense category ${req.categoryCode}`);
 
@@ -60,7 +62,7 @@ export class ExpensesService {
     const receiptPath = receipt && ext ? await saveUpload('receipts', ext, receipt.buffer) : null;
     try {
       const publicId = await this.repo.insertClaim({
-        tenantId: ctx.tenantId, publicId: req.publicId, personId: ctx.personId, employmentId: job.id, categoryId: category.id,
+        tenantId: ctx.tenantId, publicId: req.publicId, personId: ctx.personId, employmentId: job.id, legalEntityId: job.legalEntityId, categoryId: category.id,
         spentOn: req.spentOn, amountPaise: req.amountPaise, description: req.description, receiptPath,
       });
       return { claim: (await this.repo.claim(ctx.tenantId, publicId))!, created: true };
@@ -108,12 +110,25 @@ export class ExpensesService {
 
   async report(ctx: RequestContext, q: ExpenseReportQuery): Promise<ExpenseReport> {
     requireAll(ctx, EXPENSES.report);
-    const { byStatus, byCategory } = await this.repo.report(ctx.tenantId, q.from, q.to, q.company);
+    const { byStatus, byCategory, rows } = await this.repo.report(ctx.tenantId, q.from, q.to, q.company);
     const total = byCategory.reduce((t, c) => ({
       count: t.count + c.count, amountPaise: t.amountPaise + c.amountPaise,
       approvedPaise: t.approvedPaise + c.approvedPaise, paidPaise: t.paidPaise + c.paidPaise,
     }), { count: 0, amountPaise: 0, approvedPaise: 0, paidPaise: 0 });
-    return { company: q.company ?? null, from: q.from, to: q.to, byStatus, byCategory, total };
+    return { company: q.company ?? null, from: q.from, to: q.to, producedAt: new Date().toISOString(), rows, byStatus, byCategory, total };
+  }
+
+  /** The report as CSV: one line per person, category and status, amounts in rupees, and a TOTAL line. */
+  reportCsv(r: ExpenseReport): { name: string; body: string } {
+    const body = toCsv(
+      [['Report', 'Expenses'], ['Company', r.company ?? 'All companies'], ['Period', `${r.from} to ${r.to}`], ['Produced at', r.producedAt]],
+      ['Company', 'Employee code', 'Name', 'Category', 'Status', 'Claims', 'Currency', 'Claimed', 'Approved', 'Paid'],
+      [
+        ...r.rows.map((x) => [x.employment.company, x.employment.employeeCode, x.person.displayName, x.category.name, x.status, x.count, x.currency,
+          rupees(x.amountPaise), rupees(x.approvedPaise), rupees(x.paidPaise)]),
+        ['TOTAL', '', '', '', '', r.total.count, 'INR', rupees(r.total.amountPaise), rupees(r.total.approvedPaise), rupees(r.total.paidPaise)],
+      ]);
+    return { name: `expenses-${r.company ?? 'all'}-${r.from}-${r.to}.csv`, body };
   }
 
   /**

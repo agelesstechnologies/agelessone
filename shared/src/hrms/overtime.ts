@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DateOnly, Instant, PersonRef, PublicId } from '../common';
 /** Overtime requests: extra time is paid as overtime only when approved. Shared by the API and the web app. */
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'Not a real date');
@@ -29,18 +30,19 @@ export type MyOvertimeQuery = z.infer<typeof MyOvertimeQuery>;
 export const RejectOvertimeRequest = z.object({ reason: z.string().trim().min(3).max(500) });
 export type RejectOvertimeRequest = z.infer<typeof RejectOvertimeRequest>;
 
-export interface OvertimeRequestView {
-  publicId: string;
-  person: { publicId: string; displayName: string };
-  employment: { publicId: string; company: string };
-  workDate: string;
-  minutes: number;
-  reason: string;
-  ticket: { publicId: string; number: string } | null;
-  status: OvertimeStatus;
-  requestedBy: { publicId: string; displayName: string };
-  approver: { publicId: string; displayName: string } | null;
-  decidedBy: { publicId: string; displayName: string } | null;
-  decidedAt: string | null; decisionReason: string | null;
-  cancelledAt: string | null; createdAt: string;
-}
+export const OvertimeRequestView = z.object({
+  publicId: PublicId,
+  person: PersonRef,
+  employment: z.object({ publicId: PublicId, company: z.string() }),
+  workDate: DateOnly,
+  minutes: z.number().int(),
+  reason: z.string(),
+  ticket: z.object({ publicId: PublicId, number: z.string() }).nullable(),
+  status: OvertimeStatus,
+  requestedBy: PersonRef,
+  approver: PersonRef.nullable(),
+  decidedBy: PersonRef.nullable(),
+  decidedAt: Instant.nullable(), decisionReason: z.string().nullable(),
+  cancelledAt: Instant.nullable(), createdAt: Instant,
+});
+export type OvertimeRequestView = z.infer<typeof OvertimeRequestView>;

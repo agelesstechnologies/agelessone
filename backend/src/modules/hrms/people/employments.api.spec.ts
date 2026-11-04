@@ -58,18 +58,20 @@ describe('HRMS employments API', () => {
   });
 
   it('changes manager, department and designation; a person cannot manage themselves', async () => {
-    const p = await api.createPerson({ company: 'AE' });
-    const ae = await api.employmentIn(p, 'AE');
-    const res = await patch(ae, { managerPublicId: SUPERVISOR, department: 'Service', designation: 'Senior Technician' });
+    const p = await api.createPerson({ company: 'ATPL' });
+    const atpl = await api.employmentIn(p, 'ATPL');
+    const res = await patch(atpl, { managerPublicId: SUPERVISOR, departmentCode: 'ATS', designation: 'Developer' });
     expect(res.status).toBe(200);
-    expect(job(res.body, 'AE')).toMatchObject({ department: 'Service', designation: 'Senior Technician', manager: { publicId: SUPERVISOR, displayName: 'Demo Supervisor' } });
+    expect(job(res.body, 'ATPL')).toMatchObject({ department: { code: 'ATS', name: 'Software Development' }, designation: 'Developer',
+      manager: { publicId: SUPERVISOR, displayName: 'Demo Supervisor' } });
 
-    const self = await patch(ae, { managerPublicId: p });
+    const self = await patch(atpl, { managerPublicId: p });
     expect(self.status).toBe(400);
     expect(self.body.code).toBe('HRMS_SELF_MANAGER');
+    expect((await patch(atpl, { departmentCode: 'XYZ' })).body.code).toBe('HRMS_UNKNOWN_DEPARTMENT'); // not an ATPL department
 
-    const cleared = await patch(ae, { managerPublicId: null });
-    expect(job(cleared.body, 'AE')).toMatchObject({ manager: null, department: 'Service' });
+    const cleared = await patch(atpl, { managerPublicId: null });
+    expect(job(cleared.body, 'ATPL')).toMatchObject({ manager: null, department: { code: 'ATS' } });
   });
 
   it('refuses an exit before joining, a second exit, and making an exited employment primary', async () => {

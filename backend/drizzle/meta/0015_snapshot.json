@@ -1,0 +1,4314 @@
+{
+  "id": "9a19352c-a3d8-4028-9d12-f4e0d1e85e90",
+  "prevId": "2f8a5865-e85a-467b-8ba7-1e4510fbf2e1",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "core.legal_entities": {
+      "name": "legal_entities",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "legal_entities_id_seq",
+            "schema": "core",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "code": {
+          "name": "code",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_form": {
+          "name": "legal_form",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pan": {
+          "name": "pan",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "legal_entities_tenant_id_tenants_id_fk": {
+          "name": "legal_entities_tenant_id_tenants_id_fk",
+          "tableFrom": "legal_entities",
+          "tableTo": "tenants",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "legal_entities_public_id_unique": {
+          "name": "legal_entities_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        },
+        "legal_entities_tenant_id_code_unique": {
+          "name": "legal_entities_tenant_id_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "legal_entities_legal_form_check": {
+          "name": "legal_entities_legal_form_check",
+          "value": "\"core\".\"legal_entities\".\"legal_form\" IN ('partnership','private_limited','llp','proprietorship','other')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.permissions": {
+      "name": "permissions",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "permissions_id_seq",
+            "schema": "core",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "code": {
+          "name": "code",
+          "type": "varchar(80)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "module": {
+          "name": "module",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "permissions_code_unique": {
+          "name": "permissions_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core.person_contacts": {
+      "name": "person_contacts",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "person_contacts_id_seq",
+            "schema": "core",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_primary": {
+          "name": "is_primary",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_person_contacts_person": {
+          "name": "idx_person_contacts_person",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_one_primary_contact": {
+          "name": "uq_one_primary_contact",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "is_primary AND ended_at IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "person_contacts_person_id_persons_id_fk": {
+          "name": "person_contacts_person_id_persons_id_fk",
+          "tableFrom": "person_contacts",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "person_contacts_public_id_unique": {
+          "name": "person_contacts_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "person_contacts_kind_check": {
+          "name": "person_contacts_kind_check",
+          "value": "kind IN ('phone','email','other')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.persons": {
+      "name": "persons",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "persons_id_seq",
+            "schema": "core",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "person_type": {
+          "name": "person_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "full_name": {
+          "name": "full_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mobile": {
+          "name": "mobile",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "persons_public_id_unique": {
+          "name": "persons_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core.policies": {
+      "name": "policies",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "policies_id_seq",
+            "schema": "core",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_entity_id": {
+          "name": "legal_entity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "policy_key": {
+          "name": "policy_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "effective_from": {
+          "name": "effective_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approved_by": {
+          "name": "approved_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_policies_key": {
+          "name": "idx_policies_key",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "policy_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "effective_from",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "policies_tenant_id_tenants_id_fk": {
+          "name": "policies_tenant_id_tenants_id_fk",
+          "tableFrom": "policies",
+          "tableTo": "tenants",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "policies_legal_entity_id_legal_entities_id_fk": {
+          "name": "policies_legal_entity_id_legal_entities_id_fk",
+          "tableFrom": "policies",
+          "tableTo": "legal_entities",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "policies_approved_by_persons_id_fk": {
+          "name": "policies_approved_by_persons_id_fk",
+          "tableFrom": "policies",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "approved_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "policies_public_id_unique": {
+          "name": "policies_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        },
+        "policies_version_unique": {
+          "name": "policies_version_unique",
+          "nullsNotDistinct": true,
+          "columns": [
+            "tenant_id",
+            "legal_entity_id",
+            "policy_key",
+            "version"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "policies_version_positive": {
+          "name": "policies_version_positive",
+          "value": "version >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.role_assignments": {
+      "name": "role_assignments",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "role_assignments_id_seq",
+            "schema": "core",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role_id": {
+          "name": "role_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valid_to": {
+          "name": "valid_to",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_role_assignments_person": {
+          "name": "idx_role_assignments_person",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "role_assignments_tenant_id_tenants_id_fk": {
+          "name": "role_assignments_tenant_id_tenants_id_fk",
+          "tableFrom": "role_assignments",
+          "tableTo": "tenants",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "role_assignments_person_id_persons_id_fk": {
+          "name": "role_assignments_person_id_persons_id_fk",
+          "tableFrom": "role_assignments",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "role_assignments_role_id_roles_id_fk": {
+          "name": "role_assignments_role_id_roles_id_fk",
+          "tableFrom": "role_assignments",
+          "tableTo": "roles",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "role_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "role_assignments_granted_by_persons_id_fk": {
+          "name": "role_assignments_granted_by_persons_id_fk",
+          "tableFrom": "role_assignments",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "granted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "role_assignments_public_id_unique": {
+          "name": "role_assignments_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "role_assignments_scope_check": {
+          "name": "role_assignments_scope_check",
+          "value": "scope IN ('own','team','all')"
+        },
+        "role_assignments_not_self": {
+          "name": "role_assignments_not_self",
+          "value": "granted_by <> person_id"
+        },
+        "role_assignments_dates": {
+          "name": "role_assignments_dates",
+          "value": "valid_to IS NULL OR valid_to >= valid_from"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core.role_permissions": {
+      "name": "role_permissions",
+      "schema": "core",
+      "columns": {
+        "role_id": {
+          "name": "role_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "permission_id": {
+          "name": "permission_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "role_permissions_role_id_roles_id_fk": {
+          "name": "role_permissions_role_id_roles_id_fk",
+          "tableFrom": "role_permissions",
+          "tableTo": "roles",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "role_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "role_permissions_permission_id_permissions_id_fk": {
+          "name": "role_permissions_permission_id_permissions_id_fk",
+          "tableFrom": "role_permissions",
+          "tableTo": "permissions",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "permission_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "role_permissions_role_id_permission_id_pk": {
+          "name": "role_permissions_role_id_permission_id_pk",
+          "columns": [
+            "role_id",
+            "permission_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core.roles": {
+      "name": "roles",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "roles_id_seq",
+            "schema": "core",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "roles_tenant_id_tenants_id_fk": {
+          "name": "roles_tenant_id_tenants_id_fk",
+          "tableFrom": "roles",
+          "tableTo": "tenants",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "roles_tenant_code_unique": {
+          "name": "roles_tenant_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core.tenants": {
+      "name": "tenants",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "tenants_id_seq",
+            "schema": "core",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "tenants_public_id_unique": {
+          "name": "tenants_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core.users": {
+      "name": "users",
+      "schema": "core",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "users_id_seq",
+            "schema": "core",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "login_phone": {
+          "name": "login_phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "login_email": {
+          "name": "login_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "password_changed_at": {
+          "name": "password_changed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_login_at": {
+          "name": "last_login_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "users_tenant_id_tenants_id_fk": {
+          "name": "users_tenant_id_tenants_id_fk",
+          "tableFrom": "users",
+          "tableTo": "tenants",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "users_person_id_persons_id_fk": {
+          "name": "users_person_id_persons_id_fk",
+          "tableFrom": "users",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "users_public_id_unique": {
+          "name": "users_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        },
+        "users_person_id_unique": {
+          "name": "users_person_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "person_id"
+          ]
+        },
+        "users_login_phone_unique": {
+          "name": "users_login_phone_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "login_phone"
+          ]
+        },
+        "users_login_email_unique": {
+          "name": "users_login_email_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "login_email"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "users_has_login": {
+          "name": "users_has_login",
+          "value": "login_phone IS NOT NULL OR login_email IS NOT NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "hrms.attendance_corrections": {
+      "name": "attendance_corrections",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "attendance_corrections_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employment_id": {
+          "name": "employment_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_entity_id": {
+          "name": "legal_entity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "work_date": {
+          "name": "work_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requested_in": {
+          "name": "requested_in",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "requested_out": {
+          "name": "requested_out",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "punch_ids_to_exclude": {
+          "name": "punch_ids_to_exclude",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'submitted'"
+        },
+        "requested_by": {
+          "name": "requested_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approver_person_id": {
+          "name": "approver_person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decision_reason": {
+          "name": "decision_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_by": {
+          "name": "cancelled_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "uq_correction_open_per_day": {
+          "name": "uq_correction_open_per_day",
+          "columns": [
+            {
+              "expression": "employment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "work_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "status = 'submitted'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_corrections_approver": {
+          "name": "idx_corrections_approver",
+          "columns": [
+            {
+              "expression": "approver_person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "attendance_corrections_person_id_persons_id_fk": {
+          "name": "attendance_corrections_person_id_persons_id_fk",
+          "tableFrom": "attendance_corrections",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_corrections_legal_entity_id_legal_entities_id_fk": {
+          "name": "attendance_corrections_legal_entity_id_legal_entities_id_fk",
+          "tableFrom": "attendance_corrections",
+          "tableTo": "legal_entities",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_corrections_requested_by_persons_id_fk": {
+          "name": "attendance_corrections_requested_by_persons_id_fk",
+          "tableFrom": "attendance_corrections",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "requested_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_corrections_approver_person_id_persons_id_fk": {
+          "name": "attendance_corrections_approver_person_id_persons_id_fk",
+          "tableFrom": "attendance_corrections",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "approver_person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_corrections_decided_by_persons_id_fk": {
+          "name": "attendance_corrections_decided_by_persons_id_fk",
+          "tableFrom": "attendance_corrections",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "decided_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_corrections_cancelled_by_persons_id_fk": {
+          "name": "attendance_corrections_cancelled_by_persons_id_fk",
+          "tableFrom": "attendance_corrections",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "cancelled_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_corrections_employment_company_fk": {
+          "name": "attendance_corrections_employment_company_fk",
+          "tableFrom": "attendance_corrections",
+          "tableTo": "employments",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "employment_id",
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id",
+            "legal_entity_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "attendance_corrections_public_id_unique": {
+          "name": "attendance_corrections_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "attendance_corrections_kind_check": {
+          "name": "attendance_corrections_kind_check",
+          "value": "kind IN ('missed_out','missed_in','wrong_time','other')"
+        },
+        "attendance_corrections_status_check": {
+          "name": "attendance_corrections_status_check",
+          "value": "status IN ('submitted','approved','rejected','cancelled')"
+        },
+        "attendance_corrections_reason_length": {
+          "name": "attendance_corrections_reason_length",
+          "value": "char_length(reason) >= 10"
+        },
+        "attendance_corrections_times_order": {
+          "name": "attendance_corrections_times_order",
+          "value": "requested_in IS NULL OR requested_out IS NULL OR requested_in < requested_out"
+        },
+        "attendance_corrections_not_own_decision": {
+          "name": "attendance_corrections_not_own_decision",
+          "value": "decided_by IS NULL OR (decided_by <> person_id AND decided_by <> requested_by)"
+        },
+        "attendance_corrections_not_own_approver": {
+          "name": "attendance_corrections_not_own_approver",
+          "value": "approver_person_id IS NULL OR (approver_person_id <> person_id AND approver_person_id <> requested_by)"
+        },
+        "attendance_corrections_rejected_has_reason": {
+          "name": "attendance_corrections_rejected_has_reason",
+          "value": "status <> 'rejected' OR decision_reason IS NOT NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "hrms.attendance_events": {
+      "name": "attendance_events",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "attendance_events_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employment_id": {
+          "name": "employment_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_entity_id": {
+          "name": "legal_entity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "received_at": {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "latitude": {
+          "name": "latitude",
+          "type": "numeric(9, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "longitude": {
+          "name": "longitude",
+          "type": "numeric(9, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accuracy_m": {
+          "name": "accuracy_m",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "location_status": {
+          "name": "location_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "correction_id": {
+          "name": "correction_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_att_person_time": {
+          "name": "idx_att_person_time",
+          "columns": [
+            {
+              "expression": "person_id",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_att_employment_time": {
+          "name": "idx_att_employment_time",
+          "columns": [
+            {
+              "expression": "employment_id",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "attendance_events_person_id_persons_id_fk": {
+          "name": "attendance_events_person_id_persons_id_fk",
+          "tableFrom": "attendance_events",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_events_legal_entity_id_legal_entities_id_fk": {
+          "name": "attendance_events_legal_entity_id_legal_entities_id_fk",
+          "tableFrom": "attendance_events",
+          "tableTo": "legal_entities",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_events_correction_id_attendance_corrections_id_fk": {
+          "name": "attendance_events_correction_id_attendance_corrections_id_fk",
+          "tableFrom": "attendance_events",
+          "tableTo": "attendance_corrections",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "correction_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_events_employment_company_fk": {
+          "name": "attendance_events_employment_company_fk",
+          "tableFrom": "attendance_events",
+          "tableTo": "employments",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "employment_id",
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id",
+            "legal_entity_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "attendance_events_public_id_unique": {
+          "name": "attendance_events_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "attendance_events_kind_check": {
+          "name": "attendance_events_kind_check",
+          "value": "kind IN ('in','out')"
+        },
+        "attendance_events_source_check": {
+          "name": "attendance_events_source_check",
+          "value": "source IN ('app','web','supervisor','park_counter','gate','correction','auto')"
+        },
+        "attendance_events_location_status_check": {
+          "name": "attendance_events_location_status_check",
+          "value": "location_status IS NULL OR location_status IN ('inside','outside','poor_accuracy','not_configured','not_taken')"
+        },
+        "attendance_events_lat_lng_together": {
+          "name": "attendance_events_lat_lng_together",
+          "value": "(latitude IS NULL) = (longitude IS NULL)"
+        },
+        "attendance_events_accuracy_check": {
+          "name": "attendance_events_accuracy_check",
+          "value": "accuracy_m IS NULL OR accuracy_m >= 0"
+        },
+        "attendance_events_correction_link": {
+          "name": "attendance_events_correction_link",
+          "value": "(source = 'correction') = (correction_id IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "hrms.attendance_exclusions": {
+      "name": "attendance_exclusions",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "attendance_exclusions_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "punch_id": {
+          "name": "punch_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "correction_id": {
+          "name": "correction_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "attendance_exclusions_punch_id_attendance_events_id_fk": {
+          "name": "attendance_exclusions_punch_id_attendance_events_id_fk",
+          "tableFrom": "attendance_exclusions",
+          "tableTo": "attendance_events",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "punch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_exclusions_correction_id_attendance_corrections_id_fk": {
+          "name": "attendance_exclusions_correction_id_attendance_corrections_id_fk",
+          "tableFrom": "attendance_exclusions",
+          "tableTo": "attendance_corrections",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "correction_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "attendance_exclusions_punch_id_unique": {
+          "name": "attendance_exclusions_punch_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "punch_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "hrms.overtime_requests": {
+      "name": "overtime_requests",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "overtime_requests_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employment_id": {
+          "name": "employment_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_entity_id": {
+          "name": "legal_entity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "work_date": {
+          "name": "work_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "minutes": {
+          "name": "minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ticket_id": {
+          "name": "ticket_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'submitted'"
+        },
+        "requested_by": {
+          "name": "requested_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "approver_person_id": {
+          "name": "approver_person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decision_reason": {
+          "name": "decision_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_by": {
+          "name": "cancelled_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_overtime_employment_date": {
+          "name": "idx_overtime_employment_date",
+          "columns": [
+            {
+              "expression": "employment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "work_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_overtime_approver": {
+          "name": "idx_overtime_approver",
+          "columns": [
+            {
+              "expression": "approver_person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "overtime_requests_person_id_persons_id_fk": {
+          "name": "overtime_requests_person_id_persons_id_fk",
+          "tableFrom": "overtime_requests",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "overtime_requests_legal_entity_id_legal_entities_id_fk": {
+          "name": "overtime_requests_legal_entity_id_legal_entities_id_fk",
+          "tableFrom": "overtime_requests",
+          "tableTo": "legal_entities",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "overtime_requests_ticket_id_tickets_id_fk": {
+          "name": "overtime_requests_ticket_id_tickets_id_fk",
+          "tableFrom": "overtime_requests",
+          "tableTo": "tickets",
+          "schemaTo": "tickets",
+          "columnsFrom": [
+            "ticket_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "overtime_requests_requested_by_persons_id_fk": {
+          "name": "overtime_requests_requested_by_persons_id_fk",
+          "tableFrom": "overtime_requests",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "requested_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "overtime_requests_approver_person_id_persons_id_fk": {
+          "name": "overtime_requests_approver_person_id_persons_id_fk",
+          "tableFrom": "overtime_requests",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "approver_person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "overtime_requests_decided_by_persons_id_fk": {
+          "name": "overtime_requests_decided_by_persons_id_fk",
+          "tableFrom": "overtime_requests",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "decided_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "overtime_requests_cancelled_by_persons_id_fk": {
+          "name": "overtime_requests_cancelled_by_persons_id_fk",
+          "tableFrom": "overtime_requests",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "cancelled_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "overtime_requests_employment_company_fk": {
+          "name": "overtime_requests_employment_company_fk",
+          "tableFrom": "overtime_requests",
+          "tableTo": "employments",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "employment_id",
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id",
+            "legal_entity_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "overtime_requests_public_id_unique": {
+          "name": "overtime_requests_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "overtime_requests_status_check": {
+          "name": "overtime_requests_status_check",
+          "value": "status IN ('submitted','approved','rejected','cancelled')"
+        },
+        "overtime_requests_minutes_check": {
+          "name": "overtime_requests_minutes_check",
+          "value": "minutes BETWEEN 1 AND 1440"
+        },
+        "overtime_requests_reason_length": {
+          "name": "overtime_requests_reason_length",
+          "value": "char_length(reason) >= 3"
+        },
+        "overtime_requests_not_own_decision": {
+          "name": "overtime_requests_not_own_decision",
+          "value": "decided_by IS NULL OR (decided_by <> person_id AND decided_by <> requested_by)"
+        },
+        "overtime_requests_not_own_approver": {
+          "name": "overtime_requests_not_own_approver",
+          "value": "approver_person_id IS NULL OR (approver_person_id <> person_id AND approver_person_id <> requested_by)"
+        },
+        "overtime_requests_rejected_has_reason": {
+          "name": "overtime_requests_rejected_has_reason",
+          "value": "status <> 'rejected' OR decision_reason IS NOT NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "hrms.work_days": {
+      "name": "work_days",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "work_days_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employment_id": {
+          "name": "employment_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_entity_id": {
+          "name": "legal_entity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "work_date": {
+          "name": "work_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_in": {
+          "name": "first_in",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_out": {
+          "name": "last_out",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "worked_minutes": {
+          "name": "worked_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "extra_minutes": {
+          "name": "extra_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "approved_overtime_minutes": {
+          "name": "approved_overtime_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "day_status": {
+          "name": "day_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "leave_days": {
+          "name": "leave_days",
+          "type": "numeric(2, 1)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "absent_days": {
+          "name": "absent_days",
+          "type": "numeric(2, 1)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "worked_on_leave": {
+          "name": "worked_on_leave",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "locked_for_payroll": {
+          "name": "locked_for_payroll",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_work_days_person_date": {
+          "name": "idx_work_days_person_date",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "work_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "work_days_person_id_persons_id_fk": {
+          "name": "work_days_person_id_persons_id_fk",
+          "tableFrom": "work_days",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "work_days_legal_entity_id_legal_entities_id_fk": {
+          "name": "work_days_legal_entity_id_legal_entities_id_fk",
+          "tableFrom": "work_days",
+          "tableTo": "legal_entities",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "work_days_employment_company_fk": {
+          "name": "work_days_employment_company_fk",
+          "tableFrom": "work_days",
+          "tableTo": "employments",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "employment_id",
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id",
+            "legal_entity_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "work_days_employment_date_unique": {
+          "name": "work_days_employment_date_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "employment_id",
+            "work_date"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "work_days_status_check": {
+          "name": "work_days_status_check",
+          "value": "day_status IN ('present','half_day','absent','leave','holiday','weekly_off','missed_punch')"
+        },
+        "work_days_leave_absent_check": {
+          "name": "work_days_leave_absent_check",
+          "value": "leave_days IN (0, 0.5, 1) AND absent_days IN (0, 0.5, 1) AND leave_days + absent_days <= 1"
+        },
+        "work_days_minutes_check": {
+          "name": "work_days_minutes_check",
+          "value": "worked_minutes BETWEEN 0 AND 1440"
+        },
+        "work_days_extra_check": {
+          "name": "work_days_extra_check",
+          "value": "extra_minutes BETWEEN 0 AND worked_minutes AND approved_overtime_minutes BETWEEN 0 AND extra_minutes"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "hrms.holiday_calendars": {
+      "name": "holiday_calendars",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "holiday_calendars_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_entity_id": {
+          "name": "legal_entity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "year": {
+          "name": "year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "holiday_calendars_legal_entity_id_legal_entities_id_fk": {
+          "name": "holiday_calendars_legal_entity_id_legal_entities_id_fk",
+          "tableFrom": "holiday_calendars",
+          "tableTo": "legal_entities",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "holiday_calendars_company_year_unique": {
+          "name": "holiday_calendars_company_year_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "legal_entity_id",
+            "year"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "hrms.holidays": {
+      "name": "holidays",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "holidays_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "calendar_id": {
+          "name": "calendar_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date": {
+          "name": "date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_optional": {
+          "name": "is_optional",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "holidays_calendar_id_holiday_calendars_id_fk": {
+          "name": "holidays_calendar_id_holiday_calendars_id_fk",
+          "tableFrom": "holidays",
+          "tableTo": "holiday_calendars",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "calendar_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "holidays_created_by_persons_id_fk": {
+          "name": "holidays_created_by_persons_id_fk",
+          "tableFrom": "holidays",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "holidays_public_id_unique": {
+          "name": "holidays_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        },
+        "holidays_calendar_date_unique": {
+          "name": "holidays_calendar_date_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "calendar_id",
+            "date"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "hrms.weekly_off_rules": {
+      "name": "weekly_off_rules",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "weekly_off_rules_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_entity_id": {
+          "name": "legal_entity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employment_id": {
+          "name": "employment_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valid_to": {
+          "name": "valid_to",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rule": {
+          "name": "rule",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_weekly_off_rules_employment": {
+          "name": "idx_weekly_off_rules_employment",
+          "columns": [
+            {
+              "expression": "employment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "weekly_off_rules_legal_entity_id_legal_entities_id_fk": {
+          "name": "weekly_off_rules_legal_entity_id_legal_entities_id_fk",
+          "tableFrom": "weekly_off_rules",
+          "tableTo": "legal_entities",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "weekly_off_rules_created_by_persons_id_fk": {
+          "name": "weekly_off_rules_created_by_persons_id_fk",
+          "tableFrom": "weekly_off_rules",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "weekly_off_rules_employment_company_fk": {
+          "name": "weekly_off_rules_employment_company_fk",
+          "tableFrom": "weekly_off_rules",
+          "tableTo": "employments",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "employment_id",
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id",
+            "legal_entity_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "weekly_off_rules_public_id_unique": {
+          "name": "weekly_off_rules_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "weekly_off_rules_dates": {
+          "name": "weekly_off_rules_dates",
+          "value": "valid_to IS NULL OR valid_to >= valid_from"
+        },
+        "weekly_off_rules_rule_object": {
+          "name": "weekly_off_rules_rule_object",
+          "value": "jsonb_typeof(rule) = 'object'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "hrms.expense_categories": {
+      "name": "expense_categories",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "expense_categories_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "receipt_required": {
+          "name": "receipt_required",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "expense_categories_tenant_code_unique": {
+          "name": "expense_categories_tenant_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "hrms.expense_claims": {
+      "name": "expense_claims",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "expense_claims_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employment_id": {
+          "name": "employment_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_entity_id": {
+          "name": "legal_entity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category_id": {
+          "name": "category_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "spent_on": {
+          "name": "spent_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_paise": {
+          "name": "amount_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "char(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'INR'"
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "receipt_path": {
+          "name": "receipt_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ticket_id": {
+          "name": "ticket_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'submitted'"
+        },
+        "approved_by": {
+          "name": "approved_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_amount_paise": {
+          "name": "approved_amount_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejected_by": {
+          "name": "rejected_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejected_at": {
+          "name": "rejected_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejection_reason": {
+          "name": "rejection_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paid_at": {
+          "name": "paid_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payment_ref": {
+          "name": "payment_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_expense_claims_person": {
+          "name": "idx_expense_claims_person",
+          "columns": [
+            {
+              "expression": "person_id",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_expense_claims_employment": {
+          "name": "idx_expense_claims_employment",
+          "columns": [
+            {
+              "expression": "employment_id",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "expense_claims_person_id_persons_id_fk": {
+          "name": "expense_claims_person_id_persons_id_fk",
+          "tableFrom": "expense_claims",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "expense_claims_legal_entity_id_legal_entities_id_fk": {
+          "name": "expense_claims_legal_entity_id_legal_entities_id_fk",
+          "tableFrom": "expense_claims",
+          "tableTo": "legal_entities",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "expense_claims_category_id_expense_categories_id_fk": {
+          "name": "expense_claims_category_id_expense_categories_id_fk",
+          "tableFrom": "expense_claims",
+          "tableTo": "expense_categories",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "category_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "expense_claims_ticket_id_tickets_id_fk": {
+          "name": "expense_claims_ticket_id_tickets_id_fk",
+          "tableFrom": "expense_claims",
+          "tableTo": "tickets",
+          "schemaTo": "tickets",
+          "columnsFrom": [
+            "ticket_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "expense_claims_approved_by_persons_id_fk": {
+          "name": "expense_claims_approved_by_persons_id_fk",
+          "tableFrom": "expense_claims",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "approved_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "expense_claims_rejected_by_persons_id_fk": {
+          "name": "expense_claims_rejected_by_persons_id_fk",
+          "tableFrom": "expense_claims",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "rejected_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "expense_claims_employment_company_fk": {
+          "name": "expense_claims_employment_company_fk",
+          "tableFrom": "expense_claims",
+          "tableTo": "employments",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "employment_id",
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id",
+            "legal_entity_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "expense_claims_public_id_unique": {
+          "name": "expense_claims_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "expense_claims_status_check": {
+          "name": "expense_claims_status_check",
+          "value": "status IN ('submitted','approved','rejected','paid')"
+        },
+        "expense_claims_amount_positive": {
+          "name": "expense_claims_amount_positive",
+          "value": "amount_paise > 0"
+        },
+        "expense_claims_not_self_approved": {
+          "name": "expense_claims_not_self_approved",
+          "value": "approved_by IS NULL OR approved_by <> person_id"
+        },
+        "expense_claims_not_self_rejected": {
+          "name": "expense_claims_not_self_rejected",
+          "value": "rejected_by IS NULL OR rejected_by <> person_id"
+        },
+        "expense_claims_approved_within_claim": {
+          "name": "expense_claims_approved_within_claim",
+          "value": "approved_amount_paise IS NULL OR (approved_amount_paise > 0 AND approved_amount_paise <= amount_paise)"
+        },
+        "expense_claims_paid_has_details": {
+          "name": "expense_claims_paid_has_details",
+          "value": "status <> 'paid' OR (paid_at IS NOT NULL AND payment_ref IS NOT NULL)"
+        },
+        "expense_claims_rejected_has_reason": {
+          "name": "expense_claims_rejected_has_reason",
+          "value": "status <> 'rejected' OR rejection_reason IS NOT NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "hrms.leave_ledger": {
+      "name": "leave_ledger",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "leave_ledger_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "employment_id": {
+          "name": "employment_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_entity_id": {
+          "name": "legal_entity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "leave_type_id": {
+          "name": "leave_type_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "year": {
+          "name": "year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entry": {
+          "name": "entry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "days": {
+          "name": "days",
+          "type": "numeric(5, 1)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "leave_request_id": {
+          "name": "leave_request_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "posted_by": {
+          "name": "posted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "posted_at": {
+          "name": "posted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_leave_ledger_balance": {
+          "name": "idx_leave_ledger_balance",
+          "columns": [
+            {
+              "expression": "employment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "leave_type_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "year",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_leave_ledger_one_opening": {
+          "name": "uq_leave_ledger_one_opening",
+          "columns": [
+            {
+              "expression": "employment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "leave_type_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "year",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "entry = 'opening'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_leave_ledger_request_entry": {
+          "name": "uq_leave_ledger_request_entry",
+          "columns": [
+            {
+              "expression": "leave_request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entry",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "year",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "leave_request_id IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "leave_ledger_legal_entity_id_legal_entities_id_fk": {
+          "name": "leave_ledger_legal_entity_id_legal_entities_id_fk",
+          "tableFrom": "leave_ledger",
+          "tableTo": "legal_entities",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "leave_ledger_leave_type_id_leave_types_id_fk": {
+          "name": "leave_ledger_leave_type_id_leave_types_id_fk",
+          "tableFrom": "leave_ledger",
+          "tableTo": "leave_types",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "leave_type_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "leave_ledger_leave_request_id_leave_requests_id_fk": {
+          "name": "leave_ledger_leave_request_id_leave_requests_id_fk",
+          "tableFrom": "leave_ledger",
+          "tableTo": "leave_requests",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "leave_request_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "leave_ledger_posted_by_persons_id_fk": {
+          "name": "leave_ledger_posted_by_persons_id_fk",
+          "tableFrom": "leave_ledger",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "posted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "leave_ledger_employment_company_fk": {
+          "name": "leave_ledger_employment_company_fk",
+          "tableFrom": "leave_ledger",
+          "tableTo": "employments",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "employment_id",
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id",
+            "legal_entity_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "leave_ledger_public_id_unique": {
+          "name": "leave_ledger_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "leave_ledger_entry_check": {
+          "name": "leave_ledger_entry_check",
+          "value": "entry IN ('opening','grant','taken','taken_reversal','adjustment')"
+        },
+        "leave_ledger_days_not_zero": {
+          "name": "leave_ledger_days_not_zero",
+          "value": "days <> 0"
+        },
+        "leave_ledger_taken_sign": {
+          "name": "leave_ledger_taken_sign",
+          "value": "(entry <> 'taken' OR days < 0) AND (entry <> 'taken_reversal' OR days > 0)"
+        },
+        "leave_ledger_request_link": {
+          "name": "leave_ledger_request_link",
+          "value": "(entry IN ('taken','taken_reversal')) = (leave_request_id IS NOT NULL)"
+        },
+        "leave_ledger_reason_required": {
+          "name": "leave_ledger_reason_required",
+          "value": "entry NOT IN ('opening','adjustment','grant') OR reason IS NOT NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "hrms.leave_requests": {
+      "name": "leave_requests",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "leave_requests_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employment_id": {
+          "name": "employment_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_entity_id": {
+          "name": "legal_entity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "leave_type_id": {
+          "name": "leave_type_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_date": {
+          "name": "from_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "to_date": {
+          "name": "to_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_half": {
+          "name": "from_half",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'full'"
+        },
+        "to_half": {
+          "name": "to_half",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'full'"
+        },
+        "days": {
+          "name": "days",
+          "type": "numeric(5, 1)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'submitted'"
+        },
+        "approver_person_id": {
+          "name": "approver_person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decision_reason": {
+          "name": "decision_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_by": {
+          "name": "cancelled_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_leave_requests_employment": {
+          "name": "idx_leave_requests_employment",
+          "columns": [
+            {
+              "expression": "employment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "from_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_leave_requests_approver": {
+          "name": "idx_leave_requests_approver",
+          "columns": [
+            {
+              "expression": "approver_person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "leave_requests_person_id_persons_id_fk": {
+          "name": "leave_requests_person_id_persons_id_fk",
+          "tableFrom": "leave_requests",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "leave_requests_legal_entity_id_legal_entities_id_fk": {
+          "name": "leave_requests_legal_entity_id_legal_entities_id_fk",
+          "tableFrom": "leave_requests",
+          "tableTo": "legal_entities",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "leave_requests_leave_type_id_leave_types_id_fk": {
+          "name": "leave_requests_leave_type_id_leave_types_id_fk",
+          "tableFrom": "leave_requests",
+          "tableTo": "leave_types",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "leave_type_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "leave_requests_approver_person_id_persons_id_fk": {
+          "name": "leave_requests_approver_person_id_persons_id_fk",
+          "tableFrom": "leave_requests",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "approver_person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "leave_requests_decided_by_persons_id_fk": {
+          "name": "leave_requests_decided_by_persons_id_fk",
+          "tableFrom": "leave_requests",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "decided_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "leave_requests_cancelled_by_persons_id_fk": {
+          "name": "leave_requests_cancelled_by_persons_id_fk",
+          "tableFrom": "leave_requests",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "cancelled_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "leave_requests_employment_company_fk": {
+          "name": "leave_requests_employment_company_fk",
+          "tableFrom": "leave_requests",
+          "tableTo": "employments",
+          "schemaTo": "hrms",
+          "columnsFrom": [
+            "employment_id",
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id",
+            "legal_entity_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "leave_requests_public_id_unique": {
+          "name": "leave_requests_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "leave_requests_status_check": {
+          "name": "leave_requests_status_check",
+          "value": "status IN ('draft','submitted','approved','rejected','cancelled')"
+        },
+        "leave_requests_halves_check": {
+          "name": "leave_requests_halves_check",
+          "value": "from_half IN ('full','second_half') AND to_half IN ('full','first_half')"
+        },
+        "leave_requests_dates_check": {
+          "name": "leave_requests_dates_check",
+          "value": "to_date >= from_date"
+        },
+        "leave_requests_days_check": {
+          "name": "leave_requests_days_check",
+          "value": "days > 0"
+        },
+        "leave_requests_not_own_decision": {
+          "name": "leave_requests_not_own_decision",
+          "value": "decided_by IS NULL OR decided_by <> person_id"
+        },
+        "leave_requests_not_own_approver": {
+          "name": "leave_requests_not_own_approver",
+          "value": "approver_person_id IS NULL OR approver_person_id <> person_id"
+        },
+        "leave_requests_decided_fields": {
+          "name": "leave_requests_decided_fields",
+          "value": "(status IN ('approved','rejected')) = (decided_by IS NOT NULL AND decided_at IS NOT NULL) OR status = 'cancelled'"
+        },
+        "leave_requests_rejected_has_reason": {
+          "name": "leave_requests_rejected_has_reason",
+          "value": "status <> 'rejected' OR decision_reason IS NOT NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "hrms.leave_types": {
+      "name": "leave_types",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "leave_types_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "policy_key": {
+          "name": "policy_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_paid": {
+          "name": "is_paid",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "leave_types_tenant_code_unique": {
+          "name": "leave_types_tenant_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "hrms.employments": {
+      "name": "employments",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "employments_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_entity_id": {
+          "name": "legal_entity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employee_code": {
+          "name": "employee_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "employment_type": {
+          "name": "employment_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "joined_on": {
+          "name": "joined_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "exit_on": {
+          "name": "exit_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "exit_reason": {
+          "name": "exit_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "is_primary": {
+          "name": "is_primary",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "manager_person_id": {
+          "name": "manager_person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "department": {
+          "name": "department",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "designation": {
+          "name": "designation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "uq_active_employment_per_company": {
+          "name": "uq_active_employment_per_company",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "legal_entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "status = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_one_primary_employment": {
+          "name": "uq_one_primary_employment",
+          "columns": [
+            {
+              "expression": "person_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "is_primary AND status = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "employments_person_id_persons_id_fk": {
+          "name": "employments_person_id_persons_id_fk",
+          "tableFrom": "employments",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "employments_legal_entity_id_legal_entities_id_fk": {
+          "name": "employments_legal_entity_id_legal_entities_id_fk",
+          "tableFrom": "employments",
+          "tableTo": "legal_entities",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "legal_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "employments_manager_person_id_persons_id_fk": {
+          "name": "employments_manager_person_id_persons_id_fk",
+          "tableFrom": "employments",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "manager_person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "employments_public_id_unique": {
+          "name": "employments_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        },
+        "employments_company_code_unique": {
+          "name": "employments_company_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "legal_entity_id",
+            "employee_code"
+          ]
+        },
+        "employments_id_company_unique": {
+          "name": "employments_id_company_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "legal_entity_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "employments_manager_not_self": {
+          "name": "employments_manager_not_self",
+          "value": "manager_person_id <> person_id"
+        },
+        "employments_exit_after_join": {
+          "name": "employments_exit_after_join",
+          "value": "exit_on IS NULL OR exit_on >= joined_on"
+        },
+        "employments_exited_has_date_and_reason": {
+          "name": "employments_exited_has_date_and_reason",
+          "value": "status <> 'exited' OR (exit_on IS NOT NULL AND exit_reason IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "hrms.certificates": {
+      "name": "certificates",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "certificates_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "person_id": {
+          "name": "person_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_on": {
+          "name": "expires_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'review'"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "certificates_person_id_persons_id_fk": {
+          "name": "certificates_person_id_persons_id_fk",
+          "tableFrom": "certificates",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "hrms.skills": {
+      "name": "skills",
+      "schema": "hrms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "skills_id_seq",
+            "schema": "hrms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "tickets.tickets": {
+      "name": "tickets",
+      "schema": "tickets",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "tickets_id_seq",
+            "schema": "tickets",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "number": {
+          "name": "number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "priority": {
+          "name": "priority",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'assigned'"
+        },
+        "scheduled_at": {
+          "name": "scheduled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "tickets_created_by_persons_id_fk": {
+          "name": "tickets_created_by_persons_id_fk",
+          "tableFrom": "tickets",
+          "tableTo": "persons",
+          "schemaTo": "core",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "tickets_public_id_unique": {
+          "name": "tickets_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "core": "core",
+    "hrms": "hrms",
+    "tickets": "tickets"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

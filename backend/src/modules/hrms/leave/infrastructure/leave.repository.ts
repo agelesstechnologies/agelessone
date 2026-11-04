@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { aliasedTable, and, asc, desc, eq, gte, lte, ne, or, sql, SQL } from 'drizzle-orm';
+import { aliasedTable, and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql, SQL } from 'drizzle-orm';
 import { LeaveLedgerEntry, LeaveRequestView, LeaveStatus, LeaveType } from '@ageless/shared';
 import { Conn, DB, Db, Tx } from '../../../../platform/db/db.module';
 import { legalEntities, persons } from '../../../core/schema';
-import { employments } from '../../people/schema';
+import { departments, employments } from '../../people/schema';
 import { leaveLedger, leaveRequests, leaveTypes } from '../schema';
 
 /** Who a caller may see in the report: everyone, their team (and themselves), or only themselves. */
@@ -14,7 +14,7 @@ export interface NewLeaveRequest {
   fromDate: string; toDate: string; fromHalf: string; toHalf: string; days: number; reason?: string; approverPersonId: number | null;
 }
 export interface NewLedgerRow {
-  tenantId: number; publicId?: string; employmentId: number; leaveTypeId: number; year: number; entry: string; days: number;
+  tenantId: number; publicId?: string; employmentId: number; legalEntityId: number; leaveTypeId: number; year: number; entry: string; days: number;
   leaveRequestId?: number; reason?: string; postedBy: number;
 }
 
@@ -39,8 +39,9 @@ export class LeaveRepository {
   async findEmployment(tenantId: number, publicId: string) {
     const [row] = await this.db.select({
       id: employments.id, personId: employments.personId, managerPersonId: employments.managerPersonId,
-      legalEntityId: employments.legalEntityId, status: employments.status,
-    }).from(employments).where(and(eq(employments.tenantId, tenantId), eq(employments.publicId, publicId)));
+      legalEntityId: employments.legalEntityId, status: employments.status, departmentHeadId: departments.headPersonId,
+    }).from(employments).leftJoin(departments, eq(departments.id, employments.departmentId))
+      .where(and(eq(employments.tenantId, tenantId), eq(employments.publicId, publicId)));
     return row;
   }
 
@@ -84,6 +85,42 @@ export class LeaveRepository {
       company ? eq(legalEntities.code, company) : undefined, this.visible(visibleTo)))
       .orderBy(asc(legalEntities.code), asc(leaveRequests.fromDate), asc(persons.displayName));
     return rows.map(toView);
+  }
+
+  /** Jobs held at some point between from and to (optionally one company), visible to the caller. */
+  async jobsInRange(tenantId: number, from: string, to: string, company: string | undefined, visibleTo: Visibility) {
+    return this.db.select({
+      id: employments.id, personPublicId: persons.publicId, personName: persons.displayName,
+      employmentPublicId: employments.publicId, company: legalEntities.code, employeeCode: employments.employeeCode,
+    }).from(employments)
+      .innerJoin(persons, eq(persons.id, employments.personId))
+      .innerJoin(legalEntities, eq(legalEntities.id, employments.legalEntityId))
+      .where(and(eq(employments.tenantId, tenantId), lte(employments.joinedOn, to), or(isNull(employments.exitOn), gte(employments.exitOn, from)),
+        company ? eq(legalEntities.code, company) : undefined,
+        visibleTo.scope === 'all' ? undefined : visibleTo.scope === 'own' ? eq(employments.personId, visibleTo.personId)
+          : or(eq(employments.personId, visibleTo.personId), eq(employments.managerPersonId, visibleTo.personId))))
+      .orderBy(asc(legalEntities.code), asc(persons.displayName));
+  }
+
+  /** Approved leave of these jobs touching from..to. */
+  async approvedInRange(employmentIds: number[], from: string, to: string) {
+    if (employmentIds.length === 0) return [];
+    return this.db.select({
+      employmentId: leaveRequests.employmentId, typeCode: leaveTypes.code, fromDate: leaveRequests.fromDate, toDate: leaveRequests.toDate,
+      fromHalf: leaveRequests.fromHalf, toHalf: leaveRequests.toHalf,
+    }).from(leaveRequests).innerJoin(leaveTypes, eq(leaveTypes.id, leaveRequests.leaveTypeId))
+      .where(and(inArray(leaveRequests.employmentId, employmentIds), eq(leaveRequests.status, 'approved'),
+        lte(leaveRequests.fromDate, to), gte(leaveRequests.toDate, from)));
+  }
+
+  /** Current balance (sum of the ledger) per job and leave type. */
+  async balancesOf(employmentIds: number[]) {
+    if (employmentIds.length === 0) return [];
+    return this.db.select({
+      employmentId: leaveLedger.employmentId, typeCode: leaveTypes.code,
+      balance: sql<number>`coalesce(sum(${leaveLedger.days}), 0)`.mapWith(Number),
+    }).from(leaveLedger).innerJoin(leaveTypes, eq(leaveTypes.id, leaveLedger.leaveTypeId))
+      .where(inArray(leaveLedger.employmentId, employmentIds)).groupBy(leaveLedger.employmentId, leaveTypes.code);
   }
 
   async lockRequest(tx: Tx, tenantId: number, publicId: string) {

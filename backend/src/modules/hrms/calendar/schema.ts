@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { bigint, text, uuid, date, boolean, integer, jsonb, timestamp, unique, check, index } from 'drizzle-orm/pg-core';
+import { bigint, text, uuid, date, boolean, integer, jsonb, timestamp, unique, check, index, foreignKey } from 'drizzle-orm/pg-core';
 import { hrms } from '../schema';
 import { legalEntities, persons } from '../../core/schema';
 import { employments } from '../people/schema';
@@ -31,15 +31,15 @@ export const holidays = hrms.table('holidays', {
 ]);
 
 /**
- * Weekly offs: a company default (legal_entity_id) or one person's override (employment_id), valid over a date range.
+ * Weekly offs of a company: its default (no employment_id) or one person's override (employment_id), valid over a date range.
  * The override wins. Rules of the same company, or of the same job, never overlap (exclusion constraints, migration 0008).
  */
 export const weeklyOffRules = hrms.table('weekly_off_rules', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
   publicId: uuid('public_id').notNull().unique(),
-  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).references(() => legalEntities.id),
-  employmentId: bigint('employment_id', { mode: 'number' }).references(() => employments.id),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
+  employmentId: bigint('employment_id', { mode: 'number' }), // set: one person's override (of a job in that company)
   validFrom: date('valid_from').notNull(),
   validTo: date('valid_to'),
   rule: jsonb('rule').notNull(),
@@ -47,7 +47,7 @@ export const weeklyOffRules = hrms.table('weekly_off_rules', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('idx_weekly_off_rules_employment').on(t.employmentId),
-  check('weekly_off_rules_one_target', sql`(legal_entity_id IS NULL) <> (employment_id IS NULL)`),
+  foreignKey({ name: 'weekly_off_rules_employment_company_fk', columns: [t.employmentId, t.legalEntityId], foreignColumns: [employments.id, employments.legalEntityId] }),
   check('weekly_off_rules_dates', sql`valid_to IS NULL OR valid_to >= valid_from`),
   check('weekly_off_rules_rule_object', sql`jsonb_typeof(rule) = 'object'`),
 ]);

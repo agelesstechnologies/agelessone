@@ -59,6 +59,10 @@ Each sub-module: `api/` (controllers) · `application/` (services, use cases) ·
   checks the scope against the record (`own` = yourself; `team` = yourself to view, plus the people you manage;
   `all` = whole tenant). Tenant-wide actions call `requireAll(ctx, permission)`.
 - New permission codes are added to `core.permissions` by a migration; which role has them is data (seed / admin).
+- **Every route has `@Doc({ summary, response })`** (`platform/http/doc.ts`): the answer is a Zod schema exported from
+  `@ageless/shared` (`export const X = z.object(...); export type X = z.infer<typeof X>`), not a TypeScript interface.
+  Path, method, permission and request schemas are read from the route itself. `/api/docs` shows the result; the test
+  `platform/http/openapi.api.spec.ts` fails when a route has no `@Doc`.
 - Services: transactions, repositories, other modules' facades, outbox events. Throw `AppError(code, status, message, details?)`.
 - Every write that touches more than one table runs in one transaction.
 - Writing another module's tables: call its facade and pass your `tx` (e.g. `CoreFacade.createPerson(tx, ...)`), so one

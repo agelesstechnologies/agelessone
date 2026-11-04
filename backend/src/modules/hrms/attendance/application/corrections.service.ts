@@ -11,6 +11,7 @@ import { CorrectionsRepository } from '../infrastructure/corrections.repository'
 import { CorrectionAction, correctionPunches, CorrectionStatus, stepNotAllowed, timesOnDate } from '../domain/corrections';
 import { ATTENDANCE } from '../domain/permissions';
 import { AttendanceService } from './attendance.service';
+import { MonthLocksService } from './month-locks.service';
 
 /**
  * Use cases live here: open the transaction, call repositories and other facades, write the outbox event.
@@ -25,11 +26,12 @@ export class CorrectionsService {
     @Inject(AttendanceRepository) private readonly punches: AttendanceRepository,
     @Inject(AttendanceService) private readonly attendance: AttendanceService,
     @Inject(CoreFacade) private readonly core: CoreFacade,
+    @Inject(MonthLocksService) private readonly months: MonthLocksService,
   ) {}
 
   /**
    * For your own day, or (as the job's manager) a team member's. Not for a future or locked day. The approver is the
-   * job's manager, then HR, then the CEO — never the person or whoever filed it. The same publicId again: the stored one.
+   * job's manager, then the department head, then HR, then the CEO — never the person or whoever filed it. The same publicId again: the stored one.
    */
   async request(ctx: RequestContext, req: CreateCorrectionRequest): Promise<{ correction: Correction; created: boolean }> {
     if (req.publicId) {
@@ -48,13 +50,14 @@ export class CorrectionsService {
     if (!timesOnDate(req.workDate, [req.requestedIn, req.requestedOut])) {
       throw new AppError('HRMS_CORRECTION_OUTSIDE_DAY', 400, `The times must be on ${req.workDate} (IST)`);
     }
+    await this.months.assertOpen(this.db, job.legalEntityId, req.workDate);
     if (await this.punches.isDayLocked(this.db, job.id, req.workDate)) throw new AppError('HRMS_DAY_LOCKED', 409, 'This day is locked for payroll');
     const found = await this.repo.punchesByPublicId(this.db, job.id, istDayStart(req.workDate), istDayStart(addDays(req.workDate, 1)), req.punchIdsToExclude);
     if (found.length !== new Set(req.punchIdsToExclude).size || found.some((p) => p.excludedBy !== null)) {
       throw new AppError('HRMS_CORRECTION_UNKNOWN_PUNCH', 400, 'Punches to leave out must be this job\'s punches on that day, not already left out');
     }
 
-    const approverPersonId = await this.core.approverFor(ctx.tenantId, [job.personId, ctx.personId], job.managerPersonId);
+    const approverPersonId = await this.core.approverFor(ctx.tenantId, [job.personId, ctx.personId], { managerId: job.managerPersonId, departmentHeadId: job.departmentHeadId });
     const publicId = req.publicId ?? randomUUID();
     try {
       await this.db.transaction((tx) => this.repo.insert(tx, {
@@ -88,6 +91,7 @@ export class CorrectionsService {
     try {
       await this.db.transaction(async (tx) => {
         const c = await this.decidable(tx, ctx, publicId, 'approve');
+        await this.months.assertOpen(tx, c.legalEntityId, c.workDate);
         if (await this.punches.isDayLocked(tx, c.employmentId, c.workDate)) throw new AppError('HRMS_DAY_LOCKED', 409, 'This day is locked for payroll');
         const wrong = await this.repo.punchesByPublicId(tx, c.employmentId, istDayStart(c.workDate), istDayStart(addDays(c.workDate, 1)), c.punchIdsToExclude);
         const auto = await this.punches.autoPunches(tx, c.employmentId, istDayStart(c.workDate), istDayStart(addDays(c.workDate, 1)));
@@ -98,7 +102,7 @@ export class CorrectionsService {
         ]);
         for (const p of correctionPunches(c)) {
           await this.punches.insertPunch(tx, {
-            tenantId: ctx.tenantId, publicId: randomUUID(), personId: c.personId, employmentId: c.employmentId, kind: p.kind,
+            tenantId: ctx.tenantId, publicId: randomUUID(), personId: c.personId, employmentId: c.employmentId, legalEntityId: c.legalEntityId, kind: p.kind,
             source: 'correction', occurredAt: p.at, locationStatus: null, correctionId: c.id,
           });
         }

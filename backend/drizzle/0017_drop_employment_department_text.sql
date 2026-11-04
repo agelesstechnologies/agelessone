@@ -1,0 +1,1 @@
+ALTER TABLE "hrms"."employments" DROP COLUMN "department";

@@ -4,7 +4,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { Tx } from '../../platform/db/db.module';
 import { personContacts, persons } from './schema';
 import { PolicyService } from './policies/application/policy.service';
-import { ApprovalsService } from './approvals/approvals.service';
+import { ApprovalsService, JobApprovers } from './approvals/approvals.service';
 
 export interface NewPerson {
   tenantId: number;
@@ -23,8 +23,8 @@ export class CoreFacade {
   ) {}
 
   /** Who decides a request: manager, then department head, then HR, then CEO — never one of notAllowed (person ids). */
-  approverFor(tenantId: number, notAllowed: number[], managerId: number | null): Promise<number | null> {
-    return this.approvals.approverFor(tenantId, notAllowed, managerId);
+  approverFor(tenantId: number, notAllowed: number[], job: JobApprovers): Promise<number | null> {
+    return this.approvals.approverFor(tenantId, notAllowed, job);
   }
 
   /**

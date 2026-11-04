@@ -13,7 +13,7 @@ const rejecter = alias(persons, 'rejecter');
 const money = (expr: SQL) => sql<number>`coalesce(${expr}, 0)::bigint`.mapWith(Number);
 
 export interface NewClaim {
-  tenantId: number; publicId?: string; personId: number; employmentId: number; categoryId: number;
+  tenantId: number; publicId?: string; personId: number; employmentId: number; legalEntityId: number; categoryId: number;
   spentOn: string; amountPaise: number; description?: string; receiptPath: string | null;
 }
 
@@ -34,7 +34,7 @@ export class ExpensesRepository {
   }
 
   async findEmployment(tenantId: number, publicId: string) {
-    const [row] = await this.db.select({ id: employments.id, personId: employments.personId })
+    const [row] = await this.db.select({ id: employments.id, personId: employments.personId, legalEntityId: employments.legalEntityId, status: employments.status })
       .from(employments).where(and(eq(employments.tenantId, tenantId), eq(employments.publicId, publicId)));
     return row;
   }
@@ -95,7 +95,7 @@ export class ExpensesRepository {
   }
 
   /** Totals by status and by category for claims spent between from and to (inclusive), optionally one company. */
-  async report(tenantId: number, from: string, to: string, company?: string): Promise<Omit<ExpenseReport, 'company' | 'from' | 'to' | 'total'>> {
+  async report(tenantId: number, from: string, to: string, company?: string): Promise<Pick<ExpenseReport, 'byStatus' | 'byCategory' | 'rows'>> {
     const where = and(eq(expenseClaims.tenantId, tenantId), between(expenseClaims.spentOn, from, to), company ? eq(legalEntities.code, company) : undefined);
     const byStatus = await this.db.select({ status: expenseClaims.status, count: count(), amountPaise: money(sql`sum(${expenseClaims.amountPaise})`) })
       .from(expenseClaims).innerJoin(employments, eq(employments.id, expenseClaims.employmentId))
@@ -110,7 +110,28 @@ export class ExpensesRepository {
       .innerJoin(legalEntities, eq(legalEntities.id, employments.legalEntityId))
       .innerJoin(expenseCategories, eq(expenseCategories.id, expenseClaims.categoryId))
       .where(where).groupBy(expenseCategories.code, expenseCategories.name).orderBy(asc(expenseCategories.code));
-    return { byStatus: byStatus as ExpenseReport['byStatus'], byCategory };
+    const rows = await this.db.select({
+      personPublicId: claimant.publicId, personName: claimant.displayName, company: legalEntities.code, employeeCode: employments.employeeCode,
+      categoryCode: expenseCategories.code, categoryName: expenseCategories.name, status: expenseClaims.status, currency: expenseClaims.currency,
+      count: count(), amountPaise: money(sql`sum(${expenseClaims.amountPaise})`),
+      approvedPaise: money(sql`sum(${expenseClaims.approvedAmountPaise}) filter (where ${expenseClaims.status} in ('approved','paid'))`),
+      paidPaise: money(sql`sum(${expenseClaims.approvedAmountPaise}) filter (where ${expenseClaims.status} = 'paid')`),
+    }).from(expenseClaims).innerJoin(claimant, eq(claimant.id, expenseClaims.personId))
+      .innerJoin(employments, eq(employments.id, expenseClaims.employmentId))
+      .innerJoin(legalEntities, eq(legalEntities.id, employments.legalEntityId))
+      .innerJoin(expenseCategories, eq(expenseCategories.id, expenseClaims.categoryId))
+      .where(where)
+      .groupBy(claimant.publicId, claimant.displayName, legalEntities.code, employments.employeeCode, expenseCategories.code, expenseCategories.name,
+        expenseClaims.status, expenseClaims.currency)
+      .orderBy(asc(legalEntities.code), asc(claimant.displayName), asc(expenseCategories.code), asc(expenseClaims.status));
+    return {
+      byStatus: byStatus as ExpenseReport['byStatus'], byCategory,
+      rows: rows.map((r) => ({
+        person: { publicId: r.personPublicId, displayName: r.personName }, employment: { company: r.company, employeeCode: r.employeeCode },
+        category: { code: r.categoryCode, name: r.categoryName }, status: r.status as ExpenseStatus, currency: r.currency,
+        count: r.count, amountPaise: r.amountPaise, approvedPaise: r.approvedPaise, paidPaise: r.paidPaise,
+      })),
+    };
   }
 
   private view() {

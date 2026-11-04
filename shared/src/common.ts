@@ -1,0 +1,20 @@
+import { z } from 'zod';
+/** Pieces the API's answers share. Answers are Zod schemas too, so the OpenAPI spec and typed clients come from them. */
+
+/** A date as the API answers it (YYYY-MM-DD; work dates are IST). */
+export const DateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+/** An instant as the API answers it (UTC ISO, e.g. 2026-11-04T03:30:00.000Z). */
+export const Instant = z.string().datetime();
+export const PublicId = z.string().uuid();
+
+/** A person as other records point at them. */
+export const PersonRef = z.object({ publicId: PublicId, displayName: z.string() });
+export type PersonRef = z.infer<typeof PersonRef>;
+
+/** The answer to a create call that only returns the new record's id. */
+export const CreatedId = z.object({ publicId: PublicId });
+export type CreatedId = z.infer<typeof CreatedId>;
+
+/** Every error: a stable code to act on, a message for people, and details (e.g. which fields failed validation). */
+export const ErrorResponse = z.object({ code: z.string(), message: z.string(), details: z.unknown().optional() });
+export type ErrorResponse = z.infer<typeof ErrorResponse>;

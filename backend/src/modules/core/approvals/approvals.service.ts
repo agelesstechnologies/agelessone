@@ -5,16 +5,19 @@ import { todayIst } from '../../../platform/time';
 import { persons, roleAssignments, roles } from '../schema';
 import { pickApprover } from './domain/approver';
 
+/** The job's own approvers, looked up by the module that owns the job. */
+export interface JobApprovers { managerId: number | null; departmentHeadId: number | null }
+
 /** Who approves a request (leave, correction ...). Other modules ask through CoreFacade.approverFor. */
 @Injectable()
 export class ApprovalsService {
   constructor(@Inject(DB) private readonly db: Db) {}
 
   /**
-   * The job's manager, then the department head (departments have no head yet), then HR, then the CEO — never one of
-   * `notAllowed`. HR and CEO are the active holders of those roles today, oldest assignment first.
+   * The job's manager, then its department's head, then HR, then the CEO — never one of `notAllowed`. HR and CEO are
+   * the active holders of those roles today, oldest assignment first.
    */
-  async approverFor(tenantId: number, notAllowed: number[], managerId: number | null): Promise<number | null> {
+  async approverFor(tenantId: number, notAllowed: number[], job: JobApprovers): Promise<number | null> {
     const today = todayIst();
     const people = await this.db.select({ personId: roleAssignments.personId, role: roles.code }).from(roleAssignments)
       .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
@@ -23,7 +26,7 @@ export class ApprovalsService {
         lte(roleAssignments.validFrom, today), or(isNull(roleAssignments.validTo), gte(roleAssignments.validTo, today)), eq(persons.status, 'active')))
       .orderBy(asc(roleAssignments.id));
     return pickApprover(notAllowed, {
-      managerId, departmentHeadId: null,
+      managerId: job.managerId, departmentHeadId: job.departmentHeadId,
       hrIds: people.filter((p) => p.role === 'hr').map((p) => p.personId),
       ceoIds: people.filter((p) => p.role === 'ceo').map((p) => p.personId),
     });

@@ -28,7 +28,10 @@ roles, and the HRMS **People** area), how to run it, and how to call every endpo
 | Sign-in and roles | Sign in with a phone number or email + password (JWT); roles with permissions and a scope (own / team / all); create logins, reset passwords, give and end roles |
 | People | Create a person with contacts and a first job; search and list; view; rename or change status |
 | Contacts | Add phone/email (a number may be shared by several people); end a contact (kept as history); list everyone sharing a number |
-| Employments | Add a job in another company; change manager, department, designation; make a job primary; exit a job |
+| Employments | Add a job in another company; change manager, department (the code stays), designation; make a job primary; exit a job; `joining` before `active`; offer letter file; employee codes generated per department prefix (ATS001 …) |
+| Organisation | Departments with heads (approver after the manager), designations, positions (planned → open → filled) — ATPL seeded |
+| Skills | Skills list per company and department; person skills and certificates (with files) verified by someone else; skills matrix; expiring certificates; daily job |
+| Reports and month lock | Leave, expense and work-hours reports with CSV; HR locks a company's month (nothing in it can change), System Admin unlocks with a reason |
 | Attendance | Punch in / out per job (resend-safe, order enforced across companies), today, my history, daily register, work hours, rebuild work days; corrections (missed or wrong punches) approved by the manager, punches never edited |
 | Leave | Apply on your own job (days counted from the calendar, half days), approve / reject by the manager (else HR, else the CEO), cancel (approved leave gives the days back), balances from a ledger, HR opening balances and adjustments, report; approved leave shows on work days |
 | Calendar | Holidays per company and year; weekly offs per company or per person; each job's calendar (working / weekly off / holiday), used by attendance and the leave-day count |
@@ -175,6 +178,11 @@ One PostgreSQL database, one schema per module: `core`, `hrms`, `tickets`. Chang
 | `0012_attendance_auto_punch_out` | punch source `auto` (a forgotten punch-out closed by the system) |
 | `0013_overtime_requests` | `hrms.overtime_requests`; work days get `extra_minutes` (copied from the old `overtime_minutes`) and `approved_overtime_minutes` |
 | `0014_drop_work_day_overtime_minutes` | removes `work_days.overtime_minutes` (extra time is no longer overtime by itself) |
+| `0015_company_safe_employment_links` | every table pointing at a job also stores its company, with a composite foreign key to `employments(id, legal_entity_id)` (punches, work days, leave requests and ledger, expense claims, corrections, overtime, weekly-off overrides); `expense_claims.currency` (INR) |
+| `0016_atpl_departments_positions` | `hrms.departments`, `hrms.designations`, `hrms.positions`; employments: `department_id`, `recruited_on`, offer letter, status `joining`; positions permission |
+| `0017_drop_employment_department_text` | removes the old free-text `employments.department` (no data in it) |
+| `0018_skills_and_certificates` | skills per company (and department), `hrms.person_skills`, certificates with issuer, number, dates, file and verification; 4 skills permissions |
+| `0019_month_locks` | `hrms.month_locks`; triggers refuse punches and new work days in a locked month; month lock / unlock permissions |
 
 **Tables used so far**
 
@@ -189,6 +197,10 @@ One PostgreSQL database, one schema per module: `core`, `hrms`, `tickets`. Chang
 | `core.permissions` | what can be done, e.g. `hrms.people.view` | code unique; the list comes from migrations |
 | `core.roles`, `core.role_permissions` | roles per tenant and their permissions | role code unique per tenant |
 | `core.policies` | a policy value (JSON) for the group (no company) or one company, with version, effective-from date and who approved it | **never updated or deleted**; version unique per tenant, company and key |
+| `hrms.departments`, `hrms.designations` | a company's departments (name, code prefix, head) and job titles | prefix 2–6 capitals, unique per company |
+| `hrms.positions` | a planned / open / filled job in a department | filled ⇔ the hiring employment is set (same company) |
+| `hrms.skills`, `hrms.person_skills`, `hrms.certificates` | skills list; a person's skill and level; a person's certificate | **nobody verifies their own**; one row per person and skill; certificate status review / verified / expired |
+| `hrms.month_locks` | a company's month closed for payroll: who locked, who unlocked and why | one open lock per company and month; **no punch or new work day in a locked month** |
 | `core.role_assignments` | a person holds a role with a scope, from / to dates | scope own/team/all; nobody grants a role to themselves; ended with `ended_at`, never deleted |
 | `hrms.attendance_events` | punches: job, in/out, device time, received time, position | **never updated or deleted**; `public_id` unique (resend stored once); in/out alternate per person across jobs, out closes the same job's in (`HRMS_PUNCH_ORDER`) |
 | `hrms.attendance_corrections` | a request to fix one job's day: kind, requested in / out, punches to leave out, reason, status, who asked, approver, decision | one **submitted** per job and date; reason ≥ 10 characters; in < out; decided_by and approver ≠ the person and ≠ who asked; rejected ⇒ reason |
@@ -213,6 +225,9 @@ One PostgreSQL database, one schema per module: `core`, `hrms`, `tickets`. Chang
 | Demo HR (`…0004`) | AE-D003 | `demo.hr@example.com` | HR (all) |
 | Demo Admin (`…0005`) | ATPL-D002 | `demo.admin@example.com` | System admin (all) |
 | Demo CEO (`…0006`) | AE-D004 | `demo.ceo@example.com` | CEO (team): last leave approver |
+
+ATPL departments: Designing `ATD`, Software Development `ATS`, Hardware & IoT `ATH`, CGI Content Development `ATC`,
+HR & Accounts `ATHR` (no heads yet); 13 ATPL designations (Designer … Accounts Executive). No skills are seeded.
 
 `…0001` means `00000000-0000-4000-8000-000000000001`. Tenant `1`, companies `AE` (Ageless Entertainments) and
 `ATPL` (Ageless Technologies). Expense categories: `fuel`, `travel`, `materials`, `other` need a receipt; `food` does not.
@@ -251,6 +266,12 @@ permissions yet (it arrives with service tickets).
 ## 6. Connecting to the API
 
 **Base URL:** `http://localhost:3000/api` (port from `PORT`).
+
+**Live API docs:** `http://localhost:3000/api/docs` (Swagger page: every endpoint with its permission, request and
+answer shapes and errors; press **Authorize**, paste the token from sign-in, then **Try it out**). The raw OpenAPI 3
+spec is at `http://localhost:3000/api/docs.json` — import it into Postman, or generate a typed client from it.
+Both are built from the code (the Zod shapes in `shared/` and the routes), so they are always current.
+`API_DOCS=off` in `backend/.env` hides them (e.g. on a public server). The tables below are a short overview.
 
 **1. Sign in** — `POST /api/auth/login` with the person's login phone or email (any phone format) and password:
 ```json
@@ -390,6 +411,17 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:3000/api/hrms/people?se
 | O4 | `POST /api/hrms/attendance/overtime/:publicId/approve` | Approve and rebuild the day | `hrms.attendance.approve` | 200 |
 | O5 | `POST /api/hrms/attendance/overtime/:publicId/reject` | Reject with a reason | `hrms.attendance.approve` | 200 |
 | O6 | `POST /api/hrms/attendance/overtime/:publicId/cancel` | Cancel (the person or who filed it) | `hrms.attendance.punch` | 200 |
+| M1 | `GET /api/hrms/month-locks?company=&year=` | Month locks, unlocked ones too | HR or System admin | 200 |
+| M2 | `POST /api/hrms/month-locks` | Lock a company's ended month | `hrms.month.lock` (all) | 201 |
+| M3 | `POST /api/hrms/month-locks/:publicId/unlock` | Unlock with a reason | `hrms.month.unlock` (all) | 200 |
+| D1 | departments, designations, positions, activate, offer letter | see `backend/docs/api/people.md` | | |
+| S1 | `GET /api/hrms/skills`, `POST /api/hrms/skills` | Skills list / add one | anyone signed in / `hrms.skills.manage` (all) | 200 / 201 |
+| S2 | `POST /api/hrms/people/:publicId/skills` | Add a skill or change its level | `hrms.skills.add` (own / team / all) | 201 |
+| S3 | `POST /api/hrms/person-skills/:publicId/verify` | Verify (never your own) | `hrms.skills.verify` (team / all) | 200 |
+| S4 | `POST /api/hrms/people/:publicId/certificates` | Add a certificate (multipart, optional `file`) | `hrms.skills.add` | 201 |
+| S5 | `POST /api/hrms/certificates/:publicId/verify`, `GET …/file` | Verify (never your own); the file | `hrms.skills.verify`; person, manager, HR | 200 |
+| S6 | `GET /api/hrms/skills/matrix?company=&department=&skill=` | People with skills and certificates | `hrms.skills.view` (own / team / all) | 200 |
+| S7 | `GET /api/hrms/certificates/expiring?days=30` | Certificates expiring soon | `hrms.skills.manage` (all) | 200 |
 | C1 | `GET /api/hrms/calendar` | One job's days: working, weekly off, holiday | `hrms.people.view` (own job, team, all) | 200 |
 | C2 | `GET /api/hrms/holidays` | Holidays of a year | anyone signed in | 200 list |
 | C3 | `POST /api/hrms/holidays` | Add a holiday | `hrms.calendar.manage` (all) | 201 holiday (200 if resent) |
@@ -473,6 +505,8 @@ shapes and built-in defaults are listed in `shared/src/core/policies.ts` (`POLIC
 
 The backend reads them with `CoreFacade.getPolicy(tenantId, key, companyId, date)` (attendance per job's company and date).
 
+The complete People reference (with departments, positions, joining and offer letters) is `backend/docs/api/people.md`.
+
 ### 1. Create a person — `POST /api/hrms/people`
 Creates the person, their contacts and their first job **in one transaction**: all saved or none.
 ```json
@@ -483,11 +517,10 @@ Creates the person, their contacts and their first job **in one transaction**: a
     { "kind": "email", "value": "demo.person@example.com" }
   ],
   "employment": {
-    "legalEntityCode": "AE",
-    "employeeCode": "AE-0101",
+    "legalEntityCode": "ATPL",
+    "departmentCode": "ATS",
     "engagementType": "permanent",
     "joinedOn": "2026-01-05",
-    "department": "Service",
     "designation": "Technician",
     "managerPublicId": "00000000-0000-4000-8000-000000000001"
   }
@@ -498,10 +531,12 @@ Creates the person, their contacts and their first job **in one transaction**: a
 | `displayName` | 2–100 characters |
 | `contacts` | optional, up to 10. `kind`: `phone` / `email` / `other`; `value` 3–100 (email must be valid); `label` up to 40; `isPrimary` optional — at most one per kind. If none of a kind is marked, the first one is primary |
 | `employment.legalEntityCode` | company code (`AE`, `ATPL`) |
-| `employment.employeeCode` | 1–20 characters, unique within that company |
+| `employment.employeeCode` | 1–20 characters, unique within that company; leave it out with a `departmentCode` to get the next code for the department's prefix (ATS001 …); never changes |
 | `employment.engagementType` | `permanent` / `probation` / `contract` / `intern` / `external` |
 | `employment.joinedOn` | `YYYY-MM-DD` |
-| `employment.department`, `designation` | optional, up to 80 |
+| `employment.departmentCode` | optional, a department's code prefix in that company |
+| `employment.designation` | optional, up to 80 |
+| `employment.status`, `recruitedOn` | `active` (default) or `joining`; recruited date optional — see `backend/docs/api/people.md` |
 | `employment.managerPublicId` | optional, a person in your tenant |
 | `employment.isPrimary` | optional, only `true`: the first job is always primary |
 
@@ -523,7 +558,7 @@ Empty values (`?search=`) are ignored. Only people with at least one job are lis
 {
   "items": [
     { "publicId": "cb55b426-…", "displayName": "Demo Person", "status": "active",
-      "primaryEmployment": { "company": "AE", "employeeCode": "AE-0101", "department": "Service",
+      "primaryEmployment": { "company": "AE", "employeeCode": "ATS001", "department": { "code": "ATS", "name": "Software Development" },
                              "designation": "Technician", "status": "active" } }
   ],
   "page": 1, "pageSize": 20, "total": 1
@@ -543,7 +578,7 @@ Contacts: current first (primary first), then ended ones. Employments: primary f
     { "publicId": "eae3367f-…", "company": { "code": "AE", "name": "Ageless Entertainments" },
       "employeeCode": "AE-0101", "engagementType": "permanent", "status": "active", "isPrimary": true,
       "joinedOn": "2026-01-05", "exitOn": null, "exitReason": null,
-      "department": "Service", "designation": "Technician",
+      "department": { "code": "ATS", "name": "Software Development" }, "designation": "Developer", "hasOfferLetter": false,
       "manager": { "publicId": "00000000-0000-4000-8000-000000000001", "displayName": "Demo Supervisor" } }
   ]
 }
@@ -590,7 +625,8 @@ Body — any of:
 | Field | Meaning |
 | --- | --- |
 | `managerPublicId` | new manager (uuid), or `null` to remove |
-| `department`, `designation` | new text, or `null` to clear |
+| `departmentCode` | a department of the job's company (a transfer: the employee code stays), or `null` to clear |
+| `designation` | new text, or `null` to clear |
 | `isPrimary` | `true` only: makes this job primary and removes primary from the person's other job, in one transaction |
 
 A Supervisor may do this for the people they manage (not for their own job); HR for everyone.
@@ -664,7 +700,8 @@ where each row is a history row plus `person`, `summary` counts rows per status 
 ### T5. Work hours — `GET /api/hrms/attendance/work-hours?company=AE&from=2026-11-01&to=2026-11-30`
 Per job held during the range: `days: { present, halfDay, missedPunch, absent, leave }`, `leaveDays`, `absentDays`,
 `workedMinutes`, `extraMinutes`, `approvedOvertimeMinutes` and `overtimePayable` (the company's `hrms.overtime.payable` policy, false by default). A past working day (before today, while
-the job was held) with nothing recorded counts as one absent day. Same visibility as the register.
+the job was held) with nothing recorded counts as one absent day. Same visibility as the register. Has `producedAt`;
+`&format=csv` downloads the same numbers as CSV (period, company and production time on top).
 
 ### T6. Rebuild work days — `POST /api/hrms/attendance/rebuild`
 Body: `{ "personPublicId": "…", "from": "2026-11-01", "to": "2026-11-30" }` (or `employmentPublicId` for one job).
@@ -767,8 +804,28 @@ naming you as approver (Supervisor), or everyone else's (HR).
 a reason is required. HR only, and never on their own balance.
 
 ### L10. Report — `GET /api/hrms/leave/report?company=AE&from=2026-12-01&to=2026-12-31`
-Submitted and approved requests that touch the dates, plus `approvedDaysByType`. HR sees everyone; a Supervisor
-themselves and the people they manage.
+Submitted and approved requests that touch the dates (`rows`), `approvedDaysByType`, and `people`: per person and job the
+approved days **inside the period** by leave type (`takenByType`) and the current balance by type (`balanceByType`).
+HR sees everyone; a Supervisor themselves and the people they manage. `producedAt`; `&format=csv`: one line per
+person, job and leave type.
+
+### M1–M3. Month lock — `/api/hrms/month-locks`
+HR locks an **ended** month for a company: `{ "company": "AE", "year": 2026, "month": 10 }` (`HRMS_MONTH_NOT_ENDED`,
+`HRMS_MONTH_ALREADY_LOCKED`). The month's work days are locked, and nothing may change that month — punches,
+corrections, leave (any day of the request), overtime — `HRMS_MONTH_LOCKED` (409); the database refuses punches and new
+work days too. A System Admin unlocks: `POST …/:publicId/unlock` `{ "reason": "…" }` — who, when and why are kept, and
+the work days are unlocked. Locking again adds a new record.
+
+### S1–S7. Skills and certificates
+HR keeps the skills list per company (optionally per department). A person adds their skill (`level`: trainee /
+skilled / expert) and certificates (name, issuer, number, issued / expires dates, optional PDF / JPEG / PNG file);
+their manager or HR verifies — never the person (`HRMS_SELF_VERIFICATION`). A changed level needs verifying again.
+A certificate past its date shows as `expired` at once and cannot be verified (`HRMS_CERTIFICATE_EXPIRED`).
+`GET /api/hrms/certificates/expiring?days=30` lists the valid ones expiring within the days given, with `daysLeft`.
+
+**Daily job**: `pnpm --filter @ageless/backend build`, then `pnpm --filter @ageless/backend hrms:daily` once a day
+(Windows Task Scheduler or cron). It stores certificates past their date as `expired` and prints how many expire within
+30 days. Notifications come later.
 
 ### E1. Expense categories — `GET /api/hrms/expenses/categories`
 `[ { "code": "food", "name": "Food", "receiptRequired": false }, { "code": "fuel", "name": "Fuel", "receiptRequired": true }, … ]`
@@ -833,7 +890,8 @@ Body: `{ "paymentRef": "NEFT-0001", "paidAt": "2026-11-03T10:00:00Z" }` (`paidAt
 database refuses any update or delete of the row.
 
 ### E8. Report — `GET /api/hrms/expenses/report?company=AE&from=2026-01-01&to=2026-01-31`
-By the date spent (`from`, `to` inclusive, required); `company` optional (all companies). HR (scope all).
+By the date spent (`from`, `to` inclusive, required); `company` optional (all companies). HR (scope all). Also `rows`:
+per person, category and status (paise), and `producedAt`. `&format=csv`: those rows in rupees with a TOTAL line.
 ```json
 {
   "company": "AE", "from": "2026-01-01", "to": "2026-01-31",
@@ -892,12 +950,17 @@ To start again from a clean database: `pnpm db:reset` then `pnpm db:seed`.
 
 ## 9. Tests
 
-`pnpm test` runs 187 tests in 24 files. Before they run, `src/test/global-setup.ts` empties `TEST_DATABASE_URL`
+`pnpm test` runs 215 tests in 32 files. Before they run, `src/test/global-setup.ts` empties `TEST_DATABASE_URL`
 (name must end in `_test`), applies every migration and runs the seed; the app under test only ever uses that database.
 API tests sign in as the seeded demo people with `signIn(app, DEMO.hr.login)` from `src/test/create-app.ts`.
 
 | File | Covers |
 | --- | --- |
+| `hrms/reports/reports.api.spec.ts` | month lock: punches, corrections, leave and overtime refused (and by the database), unlock only by System Admin with a reason, recorded, then changes allowed; expense, work-hours and leave CSV equal the screen |
+| `hrms/skills/skills.api.spec.ts` | skills list per company; add and verify; changed level needs verifying; matrix filters and own scope; self-verification refused; certificate file; expiry list; daily job marks expired |
+| `hrms/people/organisation.api.spec.ts` | ATPL departments and designations; codes per prefix (imports counted, ATH vs ATHR); transfer keeps the code; joining person can't punch, apply or claim until activated; offer letter; position planned → open → filled; department head approves |
+| `platform/csv.spec.ts`, `hrms/attendance/domain/months.spec.ts`, `hrms/people/domain/employee-codes.spec.ts`, `hrms/skills/domain/certificates.spec.ts` | CSV escaping and rupees; months in a range; next employee code; certificate expiry |
+| `platform/http/openapi.api.spec.ts` | every route has `@Doc`; the OpenAPI document has request and answer shapes, security and path parameters; real answers match the documented shapes |
 | `src/app.api.spec.ts` | health without a token; 400 `VALIDATION` format; 401 `AUTH_MISSING` |
 | `core/auth/auth.api.spec.ts` | sign-in by phone (any format) and email; same answer for wrong password and unknown login; `me`; missing / broken / expired token; routes without an access rule are closed; password change and reset end older tokens; a person with no active job loses access; employee, supervisor, HR and admin limits; new login + role, ending a role; login phone/email taken; no self-grant |
 | `core/auth/domain/login.spec.ts` | login parsing, widest scope, token vs password change |
@@ -929,7 +992,8 @@ in `backend/.env`.
 
 ## 10. Adding a new endpoint
 
-1. **Shape** — add the Zod request schema and response type to `shared/src/<module>/<area>.ts` (export it from `shared/src/index.ts`).
+1. **Shape** — add the Zod request schema and the answer schema (`export const X = z.object(...)` plus
+   `export type X = z.infer<typeof X>`) to `shared/src/<module>/<area>.ts`, exported from `shared/src/index.ts`.
 2. **Permission** — new permission codes are added to `core.permissions` by a migration (`INSERT` at the end of a new
    migration); give them to roles in `scripts/db-seed.mjs` for development.
 3. **Table change?** — edit the sub-module's `schema.ts`, run `pnpm db:generate -- --name <what_changed>`, then `pnpm db:migrate`.
@@ -941,6 +1005,8 @@ in `backend/.env`.
 7. **Controller** — in `api/`: mark the route `@Permission('…')` (or `@SignedIn()` / `@Public()` — unmarked routes are
    refused), `@Body(new ZodValidationPipe(Schema))`, `@Ctx() ctx: RequestContext`, call one service method.
    Constructors use `@Inject(Class)`. Register new controllers in the sub-module's `<name>.module.ts`.
+   Add `@Doc({ summary: '…', response: X })` above the route (`file`, `csv`, `multipart`, `resend` when they apply);
+   it then appears at `/api/docs`.
 8. **API test** — `<name>.api.spec.ts` using `createTestApp(AppModule)` and `signIn(app, DEMO.hr.login)` from `src/test/`;
    test at least one caller who is refused.
 9. Run `pnpm typecheck`, `pnpm test`, `pnpm boundaries`, `pnpm build`.
@@ -956,8 +1022,9 @@ in `backend/.env`.
 - **Attendance: night shifts** — work days follow the IST calendar date; a shift past midnight splits into two days.
 - **Attendance: geofencing, shifts** — punches record `not_taken` / `not_configured`. Work on a weekly off or holiday counts like any day (its extra time needs an overtime request like any other).
 - **Calendar** — no edit or end endpoint for a weekly-off rule (a new rule ends the open one); no holiday is seeded.
-- **Leave** — departments have no head yet (the approver goes from manager straight to HR, then the CEO); no drafts (apply submits); no partial cancel of a leave already running; no yearly grant, lapse or carry-forward.
-- **Skills, reports** — tables exist (from `0000_initial`), only health endpoints so far.
+- **Leave** — no department heads are set yet in the seed (HR sets them with `PATCH /api/hrms/departments/:publicId`); no drafts (apply submits); no partial cancel of a leave already running; no yearly grant, lapse or carry-forward.
+- **Skills** — no skills are seeded (waiting for the list); no notifications for expiring certificates yet.
+- **Month lock** — calendar changes (holidays, weekly offs) are not refused in a locked month; they skip its locked days.
 - **Expenses: receipt download** — receipts are saved and the path stored, but there is no endpoint yet to fetch the file.
 - **Expenses: limits per category or grade** — not checked yet (would come from `CoreFacade.getPolicy`); no link to service tickets yet.
 - **Policies** — values are checked one key at a time (nothing stops a half day longer than a full day); a new version does not rebuild work days already stored (use rebuild); `max_open_punch_hours` (16) only limits the running time shown today; with the automatic punch-out at 8 hours it has little effect.

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DateOnly, PersonRef, PublicId } from '../common';
 /** Holidays, weekly offs and each job's work calendar: shared by the API and the web app. Dates are IST. */
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'Not a real date');
@@ -31,7 +32,8 @@ export const CreateHolidayRequest = z.object({
 });
 export type CreateHolidayRequest = z.infer<typeof CreateHolidayRequest>;
 
-export interface Holiday { publicId: string; company: string; date: string; name: string; isOptional: boolean }
+export const Holiday = z.object({ publicId: PublicId, company: z.string(), date: DateOnly, name: z.string(), isOptional: z.boolean() });
+export type Holiday = z.infer<typeof Holiday>;
 
 /** GET /api/hrms/weekly-offs?company=&employment= — company defaults and person overrides. */
 export const WeeklyOffsQuery = z.object({ company: emptyToUndefined(company), employment: emptyToUndefined(z.string().uuid()) });
@@ -52,14 +54,15 @@ export const CreateWeeklyOffRequest = z.object({
   .refine((r) => r.validTo === undefined || r.validTo >= r.validFrom, { message: '`validTo` is before `validFrom`', path: ['validTo'] });
 export type CreateWeeklyOffRequest = z.infer<typeof CreateWeeklyOffRequest>;
 
-export interface WeeklyOff {
-  publicId: string;
-  company: string;
+export const WeeklyOff = z.object({
+  publicId: PublicId,
+  company: z.string(),
   /** null for the company default */
-  employment: { publicId: string; employeeCode: string; person: { publicId: string; displayName: string } } | null;
-  validFrom: string; validTo: string | null;
-  rule: WeeklyOffRule;
-}
+  employment: z.object({ publicId: PublicId, employeeCode: z.string(), person: PersonRef }).nullable(),
+  validFrom: DateOnly, validTo: DateOnly.nullable(),
+  rule: WeeklyOffRule,
+});
+export type WeeklyOff = z.infer<typeof WeeklyOff>;
 
 /** GET /api/hrms/calendar?employment=&from=&to= — at most 366 days. */
 export const CalendarQuery = z.object({ employment: z.string().uuid(), from: isoDate, to: isoDate })
@@ -67,10 +70,14 @@ export const CalendarQuery = z.object({ employment: z.string().uuid(), from: iso
   .refine((q) => (Date.parse(q.to) - Date.parse(q.from)) / 86_400_000 <= 365, { message: 'At most 366 days at a time', path: ['to'] });
 export type CalendarQuery = z.infer<typeof CalendarQuery>;
 
-export interface CalendarDay {
-  date: string;
-  kind: 'working' | 'weekly_off' | 'holiday';
-  holiday: string | null;          // name, when kind is holiday
-  optionalHoliday: string | null;  // name of a restricted holiday on a working day
-}
-export interface WorkCalendar { employment: { publicId: string; company: string }; from: string; to: string; days: CalendarDay[] }
+export const CalendarDay = z.object({
+  date: DateOnly,
+  kind: z.enum(['working', 'weekly_off', 'holiday']),
+  holiday: z.string().nullable(),          // name, when kind is holiday
+  optionalHoliday: z.string().nullable(),  // name of a restricted holiday on a working day
+});
+export type CalendarDay = z.infer<typeof CalendarDay>;
+export const WorkCalendar = z.object({
+  employment: z.object({ publicId: PublicId, company: z.string() }), from: DateOnly, to: DateOnly, days: z.array(CalendarDay),
+});
+export type WorkCalendar = z.infer<typeof WorkCalendar>;

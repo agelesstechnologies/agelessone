@@ -10,6 +10,7 @@ import { OvertimeRepository } from '../infrastructure/overtime.repository';
 import { OvertimeAction, OvertimeStatus, stepNotAllowed } from '../domain/overtime';
 import { ATTENDANCE } from '../domain/permissions';
 import { AttendanceService } from './attendance.service';
+import { MonthLocksService } from './month-locks.service';
 
 /**
  * Use cases live here: open the transaction, call repositories and other facades, write the outbox event.
@@ -24,11 +25,12 @@ export class OvertimeService {
     @Inject(AttendanceRepository) private readonly days: AttendanceRepository,
     @Inject(AttendanceService) private readonly attendance: AttendanceService,
     @Inject(CoreFacade) private readonly core: CoreFacade,
+    @Inject(MonthLocksService) private readonly months: MonthLocksService,
   ) {}
 
   /**
    * For your own job, or (as the job's manager) a team member's; a future date is planned overtime. Not for a locked day.
-   * The approver is the job's manager, then HR, then the CEO — never the person or whoever filed it.
+   * The approver is the job's manager, then the department head, then HR, then the CEO — never the person or whoever filed it.
    */
   async request(ctx: RequestContext, req: CreateOvertimeRequest): Promise<{ request: OvertimeRequestView; created: boolean }> {
     if (req.publicId) {
@@ -50,9 +52,10 @@ export class OvertimeService {
       if (!ticket) throw new AppError('HRMS_UNKNOWN_TICKET', 400, 'Ticket not found');
       ticketId = ticket.id;
     }
+    await this.months.assertOpen(this.db, job.legalEntityId, req.workDate);
     if (await this.days.isDayLocked(this.db, job.id, req.workDate)) throw new AppError('HRMS_DAY_LOCKED', 409, 'This day is locked for payroll');
 
-    const approverPersonId = await this.core.approverFor(ctx.tenantId, [job.personId, ctx.personId], job.managerPersonId);
+    const approverPersonId = await this.core.approverFor(ctx.tenantId, [job.personId, ctx.personId], { managerId: job.managerPersonId, departmentHeadId: job.departmentHeadId });
     const publicId = req.publicId ?? randomUUID();
     try {
       await this.db.transaction((tx) => this.repo.insert(tx, {
@@ -78,6 +81,7 @@ export class OvertimeService {
   async approve(ctx: RequestContext, publicId: string): Promise<OvertimeRequestView> {
     await this.db.transaction(async (tx) => {
       const r = await this.decidable(tx, ctx, publicId, 'approve');
+      await this.months.assertOpen(tx, r.legalEntityId, r.workDate);
       if (await this.days.isDayLocked(tx, r.employmentId, r.workDate)) throw new AppError('HRMS_DAY_LOCKED', 409, 'This day is locked for payroll');
       await this.repo.decide(tx, r.id, 'approved', ctx.personId);
       await this.attendance.rebuildRange(tx, ctx.tenantId, r.personId, r.employmentId, r.workDate, r.workDate);
@@ -99,6 +103,7 @@ export class OvertimeService {
       const r = await this.lock(tx, ctx, publicId);
       if (r.personId !== ctx.personId && r.requestedBy !== ctx.personId) throw new AppError('FORBIDDEN', 403, 'Only the person or whoever filed it can cancel');
       this.checkStep(r.status, 'cancel');
+      if (r.status === 'approved') await this.months.assertOpen(tx, r.legalEntityId, r.workDate);
       if (r.status === 'approved' && await this.days.isDayLocked(tx, r.employmentId, r.workDate)) {
         throw new AppError('HRMS_DAY_LOCKED', 409, 'This day is locked for payroll');
       }
