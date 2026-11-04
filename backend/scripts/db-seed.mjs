@@ -22,19 +22,23 @@ const people = [
   { n: 3, display: 'Demo Engineer', full: 'Demo Engineer Three', company: 'ATPL', code: 'ATPL-D001', phone: null, email: 'demo.engineer@example.com', role: 'employee', scope: 'own' },
   { n: 4, display: 'Demo HR', full: 'Demo HR Four', company: 'AE', code: 'AE-D003', phone: null, email: 'demo.hr@example.com', role: 'hr', scope: 'all' },
   { n: 5, display: 'Demo Admin', full: 'Demo Admin Five', company: 'ATPL', code: 'ATPL-D002', phone: null, email: 'demo.admin@example.com', role: 'system_admin', scope: 'all', grantedBy: 4 },
+  { n: 6, display: 'Demo CEO', full: 'Demo CEO Six', company: 'AE', code: 'AE-D004', phone: null, email: 'demo.ceo@example.com', role: 'ceo', scope: 'team' },
 ];
 
 // Roles for tenant 1 and their permissions (the permission list itself comes from migration 0005).
 const HR = ['hrms.people.view', 'hrms.people.create', 'hrms.people.update', 'hrms.contacts.manage', 'hrms.contacts.review', 'hrms.employments.manage', 'hrms.employments.update',
   'hrms.expenses.submit', 'hrms.expenses.approve', 'hrms.expenses.pay', 'hrms.expenses.report',
-  'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.rebuild'];
+  'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.rebuild', 'hrms.attendance.approve', 'hrms.calendar.manage',
+  'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.manage', 'hrms.leave.report', 'core.policies.manage'];
 const roles = [
-  { code: 'employee', name: 'Employee', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch'] },
+  { code: 'employee', name: 'Employee', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.leave.apply'] },
   { code: 'supervisor', name: 'Supervisor', permissions: ['hrms.people.view', 'hrms.employments.update', 'hrms.expenses.submit', 'hrms.expenses.approve',
-    'hrms.attendance.punch', 'hrms.attendance.view'] },
+    'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report'] },
   { code: 'hr', name: 'HR', permissions: HR },
   { code: 'admin_user', name: 'Admin user', permissions: [] },
-  { code: 'system_admin', name: 'System admin', permissions: ['core.users.manage', 'hrms.people.view', 'hrms.attendance.rebuild'] },
+  { code: 'system_admin', name: 'System admin', permissions: ['core.users.manage', 'core.policies.manage', 'hrms.people.view', 'hrms.attendance.rebuild'] },
+  // Last approver for leave (after the manager and HR); scope team: decides requests that name them.
+  { code: 'ceo', name: 'CEO', permissions: ['hrms.people.view', 'hrms.attendance.punch', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report'] },
 ];
 
 const client = new pg.Client({ connectionString: url.toString() });
@@ -48,6 +52,10 @@ try {
       (1, 'AE', 'Ageless Entertainments', 'other'),
       (1, 'ATPL', 'Ageless Technologies', 'private_limited')
     ON CONFLICT (tenant_id, code) DO NOTHING`);
+
+  // POLICY: until HR confirms the leave types — one paid type for now.
+  await client.query(`INSERT INTO hrms.leave_types (tenant_id, code, name, policy_key, is_paid)
+    VALUES (1, 'GL', 'General leave', 'hrms.leave.gl', true) ON CONFLICT (tenant_id, code) DO NOTHING`);
 
   // Expense categories for tenant 1 (receipt_required: whether a receipt file must be attached).
   for (const [code, name, receiptRequired] of [
@@ -93,6 +101,32 @@ try {
         WHERE public_id = $2 AND manager_person_id IS NULL`, [id(p.manager), id(100 + p.n)]);
   }
 
+  // POLICY: until HR confirms — weekly off for both companies: every Sunday and the 2nd and 4th Saturday (set by Demo HR).
+  const weeklyOff = { weekdays: [0], nthWeekdays: [{ weekday: 6, nth: [2, 4] }] };
+  for (const [n, company] of [[401, 'AE'], [402, 'ATPL']]) {
+    await client.query(
+      `INSERT INTO hrms.weekly_off_rules (tenant_id, public_id, legal_entity_id, valid_from, rule, created_by)
+       SELECT 1, $1, le.id, DATE '2025-04-01', $2::jsonb, hr.id
+         FROM core.legal_entities le, core.persons hr
+        WHERE le.tenant_id = 1 AND le.code = $3 AND hr.public_id = $4
+       ON CONFLICT (public_id) DO NOTHING`,
+      [id(n), JSON.stringify(weeklyOff), company, id(4)]);
+  }
+
+  // POLICY: until HR confirms — group defaults (version 1, all companies), set by Demo HR. HR adds new versions via the API.
+  const policies = [
+    ['core.auth.session_hours', 12], ['hrms.attendance.full_day_minutes', 480], ['hrms.attendance.half_day_minutes', 240],
+    ['hrms.attendance.max_open_punch_hours', 16], ['hrms.leave.balance_check', false], ['hrms.overtime.payable', false],
+    ['hrms.attendance.auto_punch_out_hours', 8],
+  ];
+  for (const [i, [key, value]] of policies.entries()) {
+    await client.query(
+      `INSERT INTO core.policies (tenant_id, public_id, legal_entity_id, policy_key, value, version, effective_from, approved_by)
+       SELECT 1, $1, NULL, $2, $3::jsonb, 1, DATE '2025-04-01', id FROM core.persons WHERE public_id = $4
+       ON CONFLICT (public_id) DO NOTHING`,
+      [id(501 + i), key, JSON.stringify(value), id(4)]);
+  }
+
   // Roles: granted by Demo Admin, whose own role is granted by Demo HR (nobody grants themselves).
   for (const p of people) {
     await client.query(
@@ -109,7 +143,8 @@ try {
     (SELECT count(*) FROM core.tenants) AS tenants, (SELECT count(*) FROM core.legal_entities) AS legal_entities,
     (SELECT count(*) FROM core.persons) AS persons, (SELECT count(*) FROM hrms.employments) AS employments,
     (SELECT count(*) FROM core.users) AS logins, (SELECT count(*) FROM core.role_assignments) AS role_assignments,
-    (SELECT count(*) FROM hrms.expense_categories) AS expense_categories`);
+    (SELECT count(*) FROM hrms.expense_categories) AS expense_categories, (SELECT count(*) FROM hrms.weekly_off_rules) AS weekly_off_rules,
+    (SELECT count(*) FROM core.policies) AS policies`);
   console.log(`Seeded "${dbName}":`, rows[0]);
 } catch (err) {
   await client.query('ROLLBACK');

@@ -1,4 +1,5 @@
-export interface Punch { kind: 'in' | 'out'; at: Date }
+/** auto: a punch-out the system added for a forgotten one. */
+export interface Punch { kind: 'in' | 'out'; at: Date; auto?: boolean }
 export interface DayRules { fullDayMinutes: number; halfDayMinutes: number }
 export type DayStatus = 'present' | 'half_day' | 'absent' | 'missed_punch';
 

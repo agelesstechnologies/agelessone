@@ -113,10 +113,10 @@ function MyHistory() {
       <RangeFilter from={from} to={to} setFrom={setFrom} setTo={setTo} />
       {q.error && <Notice>{q.error}</Notice>}
       {q.loading ? <Loading /> : !q.data?.length ? <Empty title="No days in this range" text="Pick other dates." /> :
-        <div className="table-wrap"><table><thead><tr><th>DATE</th><th>COMPANY</th><th>FIRST IN</th><th>LAST OUT</th><th>WORKED</th><th>OVERTIME</th><th>STATUS</th></tr></thead>
+        <div className="table-wrap"><table><thead><tr><th>DATE</th><th>COMPANY</th><th>FIRST IN</th><th>LAST OUT</th><th>WORKED</th><th>EXTRA</th><th>OVERTIME</th><th>STATUS</th></tr></thead>
           <tbody>{q.data.map((r) => <tr key={`${r.date}-${r.employment.publicId}`}>
             <td>{dayLabel(r.date)}</td><td>{r.employment.company}</td><td>{timeIst(r.firstIn)}</td><td>{r.running ? 'Working…' : timeIst(r.lastOut)}</td>
-            <td>{hm(r.workedMinutes)}</td><td>{r.overtimeMinutes ? hm(r.overtimeMinutes) : '—'}</td>
+            <td>{hm(r.workedMinutes)}</td><td>{r.extraMinutes ? hm(r.extraMinutes) : '—'}</td><td>{r.approvedOvertimeMinutes ? hm(r.approvedOvertimeMinutes) : '—'}</td>
             <td><Badge tone={DAY_TONE[r.status] ?? 'gray'}>{words(r.status)}</Badge></td></tr>)}</tbody></table></div>}
     </div>
   </Panel>;
@@ -168,11 +168,11 @@ function Hours() {
       {(q.error || error) && <Notice onClose={() => setError('')}>{q.error || error}</Notice>}
       {ok && <Notice tone="ok" onClose={() => setOk('')}>{ok}</Notice>}
       {q.loading ? <Loading /> : !q.data?.rows.length ? <Empty title="No work hours" text="Nothing recorded in this range." /> :
-        <div className="table-wrap"><table><thead><tr><th>PERSON</th><th>COMPANY</th><th>PRESENT</th><th>HALF DAY</th><th>MISSED PUNCH</th><th>ABSENT</th><th>WORKED</th><th>OVERTIME</th>{can(ATTENDANCE.rebuild) && <th />}</tr></thead>
+        <div className="table-wrap"><table><thead><tr><th>PERSON</th><th>COMPANY</th><th>PRESENT</th><th>HALF DAY</th><th>MISSED PUNCH</th><th>ABSENT</th><th>WORKED</th><th>EXTRA</th><th>OVERTIME</th>{can(ATTENDANCE.rebuild) && <th />}</tr></thead>
           <tbody>{q.data.rows.map((r) => <tr key={r.employment.publicId}>
             <td><b>{r.person.displayName}</b><small className="sub">{r.employment.employeeCode}</small></td><td>{r.employment.company}</td>
             <td>{r.days.present}</td><td>{r.days.halfDay}</td><td>{r.days.missedPunch}</td><td>{r.days.absent}</td>
-            <td>{hm(r.workedMinutes)}</td><td>{r.overtimeMinutes ? hm(r.overtimeMinutes) : '—'}</td>
+            <td>{hm(r.workedMinutes)}</td><td>{r.extraMinutes ? hm(r.extraMinutes) : '—'}</td><td>{r.approvedOvertimeMinutes ? hm(r.approvedOvertimeMinutes) : '—'}</td>
             {can(ATTENDANCE.rebuild) && <td><button className="text-btn" onClick={() => void rebuild(r.employment.publicId)}>Recalculate</button></td>}</tr>)}</tbody></table></div>}
     </div>
   </Panel>;

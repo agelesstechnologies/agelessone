@@ -10,10 +10,10 @@ module.exports = {
     },
     {
       name: 'hrms-submodules-talk-through-services',
-      comment: 'Inside HRMS, a sub-module may use another only through its application service or schema.ts.',
+      comment: 'Inside HRMS, a sub-module may use another only through its application service or schema.ts (and import its *.module.ts to get that service).',
       severity: 'error',
       from: { path: '^src/modules/hrms/([^/]+)/' },
-      to: { path: '^src/modules/hrms/([^/]+)/', pathNot: ['^src/modules/hrms/$1/', '/application/[^/]+\\.service\\.ts$', '/schema\\.ts$'] },
+      to: { path: '^src/modules/hrms/([^/]+)/', pathNot: ['^src/modules/hrms/$1/', '/application/[^/]+\\.service\\.ts$', '/schema\\.ts$', '^src/modules/hrms/[^/]+/[^/]+\\.module\\.ts$'] },
     },
     {
       name: 'domain-stays-pure',

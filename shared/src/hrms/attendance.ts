@@ -24,15 +24,25 @@ export interface TodayAttendance {
   since: string | null;                                   // time of the open punch-in
   employment: { publicId: string; company: string } | null; // the job punched in on
   workedMinutes: number;                                  // today, all jobs, counting the open punch up to now
+  lastMissedPunchDate: string | null;                     // latest earlier day still a missed punch with no open correction
 }
 
 export interface WorkDayRow {
   date: string;
   employment: { publicId: string; company: string; employeeCode: string };
   firstIn: string | null; lastOut: string | null;
-  workedMinutes: number; overtimeMinutes: number;
+  workedMinutes: number;
+  extraMinutes: number;            // worked beyond the full-day setting — not overtime by itself
+  approvedOvertimeMinutes: number; // approved overtime requests, at most extraMinutes
   status: DayStatus; locked: boolean; running: boolean;   // running: today, still punched in (minutes up to now)
+  leaveDays: number; absentDays: number;                  // each 0, 0.5 or 1
+  workedOnLeave: boolean;                                 // worked on a day of approved leave
 }
+
+/** A punch as history shows it. corrected: an approved correction left it out of the day (it is still stored). */
+export interface HistoryPunch { publicId: string; kind: 'in' | 'out'; occurredAt: string; source: string; corrected: boolean }
+/** A history row: the day plus every punch of that job on that date, in time order. */
+export type HistoryRow = WorkDayRow & { punches: HistoryPunch[] };
 
 /** GET /api/hrms/attendance/history?from=&to= — your own days, newest first. */
 export const AttendanceHistoryQuery = z.object({ from: isoDate, to: isoDate }).refine(...inOrder).refine(...notTooLong);
@@ -45,6 +55,7 @@ export interface AttendanceRegister {
   date: string; company: string | null;
   rows: (Omit<WorkDayRow, 'date'> & { person: { publicId: string; displayName: string } })[];
   summary: Partial<Record<DayStatus, number>>;
+  totals: { leaveDays: number; absentDays: number };
 }
 
 /** GET /api/hrms/attendance/work-hours?company=&from=&to= */
@@ -56,8 +67,11 @@ export interface WorkHours {
   rows: {
     person: { publicId: string; displayName: string };
     employment: { publicId: string; company: string; employeeCode: string };
-    days: { present: number; halfDay: number; missedPunch: number; absent: number };
-    workedMinutes: number; overtimeMinutes: number;
+    days: { present: number; halfDay: number; missedPunch: number; absent: number; leave: number };
+    leaveDays: number;   // full and half days of approved leave
+    absentDays: number;  // absences, including past working days with no punches at all
+    workedMinutes: number; extraMinutes: number; approvedOvertimeMinutes: number;
+    overtimePayable: boolean; // the company's hrms.overtime.payable policy on the last date
   }[];
 }
 

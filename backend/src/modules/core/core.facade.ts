@@ -1,7 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { POLICIES, PolicyKey, PolicyValue } from '@ageless/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Tx } from '../../platform/db/db.module';
 import { personContacts, persons } from './schema';
+import { PolicyService } from './policies/application/policy.service';
+import { ApprovalsService } from './approvals/approvals.service';
 
 export interface NewPerson {
   tenantId: number;
@@ -14,9 +17,22 @@ export interface NewContact { kind: string; value: string; label?: string; isPri
 /** The only Core entry point other modules may use. */
 @Injectable()
 export class CoreFacade {
-  /** Newest version of a policy in force on a date, most specific scope first. */
-  async getPolicy<T>(key: string, _scope: { branchId?: number; departmentId?: number }, _onDate: string, fallback: T): Promise<T> {
-    return fallback; // replaced by a real lookup on core.policies in Sprint 2
+  constructor(
+    @Inject(PolicyService) private readonly policies: PolicyService,
+    @Inject(ApprovalsService) private readonly approvals: ApprovalsService,
+  ) {}
+
+  /** Who decides a request: manager, then department head, then HR, then CEO — never one of notAllowed (person ids). */
+  approverFor(tenantId: number, notAllowed: number[], managerId: number | null): Promise<number | null> {
+    return this.approvals.approverFor(tenantId, notAllowed, managerId);
+  }
+
+  /**
+   * A company policy in force on a date: the company's own newest version, else the group's, else the built-in default
+   * (POLICIES in @ageless/shared). companyId null asks for the group value.
+   */
+  getPolicy<K extends PolicyKey>(tenantId: number, key: K, companyId: number | null, onDate: string): Promise<PolicyValue<K>> {
+    return this.policies.get(tenantId, key, companyId, onDate, POLICIES[key].default as PolicyValue<K>);
   }
 
   /** Creates a person and their contacts inside the caller's transaction. The internal id is for foreign keys only. */

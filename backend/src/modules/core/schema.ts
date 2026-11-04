@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgSchema, bigint, text, uuid, timestamp, boolean, varchar, check, unique, index, uniqueIndex, date, primaryKey } from 'drizzle-orm/pg-core';
+import { pgSchema, bigint, text, uuid, timestamp, boolean, varchar, check, unique, index, uniqueIndex, date, primaryKey, integer, jsonb } from 'drizzle-orm/pg-core';
 export const core = pgSchema('core');
 
 /** One row per company group using the platform. Full Core tables: see docs/reference/ageless_core_tickets_hrms.sql */
@@ -111,4 +111,26 @@ export const roleAssignments = core.table('role_assignments', {
   check('role_assignments_scope_check', sql`scope IN ('own','team','all')`),
   check('role_assignments_not_self', sql`granted_by <> person_id`),
   check('role_assignments_dates', sql`valid_to IS NULL OR valid_to >= valid_from`),
+]);
+
+/**
+ * Company policies (shift rules, leave rules ...), never edited or deleted (trigger, migration 0010): a change is a new
+ * version. On a date, the newest version already in force wins; a company's own policy comes before the group default
+ * (legal_entity_id NULL).
+ */
+export const policies = core.table('policies', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
+  publicId: uuid('public_id').notNull().unique(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).references(() => legalEntities.id),
+  policyKey: text('policy_key').notNull(),
+  value: jsonb('value').notNull(),
+  version: integer('version').notNull(),
+  effectiveFrom: date('effective_from').notNull(),
+  approvedBy: bigint('approved_by', { mode: 'number' }).notNull().references(() => persons.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  unique('policies_version_unique').on(t.tenantId, t.legalEntityId, t.policyKey, t.version).nullsNotDistinct(),
+  index('idx_policies_key').on(t.tenantId, t.policyKey, t.effectiveFrom),
+  check('policies_version_positive', sql`version >= 1`),
 ]);

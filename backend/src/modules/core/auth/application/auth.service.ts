@@ -82,7 +82,7 @@ export class AuthService {
   }
 
   private async issueToken(user: UserRow): Promise<LoginResponse> {
-    const hours = await this.core.getPolicy('core.auth.session_hours', {}, todayIst(), 12);
+    const hours = await this.core.getPolicy(user.tenantId, 'core.auth.session_hours', null, todayIst());
     const token = await this.jwt.signAsync({ sub: user.publicId, tid: user.tenantId }, { expiresIn: hours * 3600 });
     return { token, expiresAt: new Date(Date.now() + hours * 3600 * 1000).toISOString() };
   }

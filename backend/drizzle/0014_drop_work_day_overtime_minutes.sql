@@ -1,0 +1,1 @@
+ALTER TABLE "hrms"."work_days" DROP COLUMN "overtime_minutes";

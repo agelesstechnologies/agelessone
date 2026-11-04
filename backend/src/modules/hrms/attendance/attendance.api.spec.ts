@@ -97,7 +97,8 @@ describe('HRMS attendance API', () => {
       expect(res.body).toEqual([{
         date: day, employment: { publicId: s.jobs.AE, company: 'AE', employeeCode: expect.any(String) },
         firstIn: new Date(ist(day, '09:00')).toISOString(), lastOut: new Date(ist(day, '18:30')).toISOString(),
-        workedMinutes: 510, overtimeMinutes: 30, status: 'present', locked: false, running: false,
+        workedMinutes: 510, extraMinutes: 30, approvedOvertimeMinutes: 0, status: 'present', locked: false, running: false,
+        leaveDays: 0, absentDays: 0, workedOnLeave: false, punches: expect.any(Array),
       }]);
     });
 
@@ -121,6 +122,30 @@ describe('HRMS attendance API', () => {
       const [row] = (await history(s, today.body.date)).body;
       expect(row).toMatchObject({ status: 'working', running: true });
       expect(row.workedMinutes).toBeGreaterThanOrEqual(29);
+    });
+  });
+
+  describe('automatic punch-out', () => {
+    const kinds = (row: { punches: { kind: string; source: string; occurredAt: string }[] }) => row.punches.map((p) => [p.kind, p.source, p.occurredAt]);
+
+    it('a forgotten punch-out is closed 8 hours after the punch-in when the next punch-in arrives', async () => {
+      const s = await staff();
+      await punch(s, 'AE', 'in', ist('2026-07-20', '09:00')).expect(201);
+      await punch(s, 'AE', 'in', ist('2026-07-21', '09:30')).expect(201); // not blocked
+      const [day] = (await history(s, '2026-07-20')).body;
+      expect(day).toMatchObject({ status: 'missed_punch', workedMinutes: 480, absentDays: 0 });
+      expect(kinds(day)).toEqual([['in', 'web', new Date(ist('2026-07-20', '09:00')).toISOString()], ['out', 'auto', new Date(ist('2026-07-20', '17:00')).toISOString()]]);
+      expect((await http().get('/api/hrms/attendance/today').set(s.auth)).body.lastMissedPunchDate).toBe('2026-07-21'); // still open, then also missed
+    });
+
+    it('inside the 8 hours a second punch-in is still refused, and a late real punch-out (overtime) is kept', async () => {
+      const s = await staff();
+      await punch(s, 'AE', 'in', ist('2026-07-22', '09:00')).expect(201);
+      expect((await punch(s, 'AE', 'in', ist('2026-07-22', '15:00'))).body.code).toBe('HRMS_PUNCH_ORDER');
+      await punch(s, 'AE', 'out', ist('2026-07-22', '19:00')).expect(201);
+      const [day] = (await history(s, '2026-07-22')).body;
+      expect(day).toMatchObject({ status: 'present', workedMinutes: 600 });
+      expect(kinds(day).map((k: string[]) => k[1])).toEqual(['web', 'web']);
     });
   });
 
@@ -159,6 +184,21 @@ describe('HRMS attendance API', () => {
     });
   });
 
+  describe('company day rules (policies)', () => {
+    it('a company version of full_day_minutes changes how a day counts, from its date on', async () => {
+      // ATPL: 6 hours is a full day from 1 Jun 2026; a newer version back to 8 hours from 8 Jun (a window no other test uses)
+      await http().post('/api/core/policies').set(hr).send({ key: 'hrms.attendance.full_day_minutes', company: 'ATPL', value: 360, effectiveFrom: '2026-06-01' }).expect(201);
+      await http().post('/api/core/policies').set(hr).send({ key: 'hrms.attendance.full_day_minutes', company: 'ATPL', value: 480, effectiveFrom: '2026-06-08' }).expect(201);
+      const s = await staff(['ATPL']);
+      for (const day of ['2026-06-03', '2026-06-10']) {
+        await punch(s, 'ATPL', 'in', ist(day, '09:00')).expect(201);
+        await punch(s, 'ATPL', 'out', ist(day, '15:00')).expect(201);
+      }
+      const rows = (await history(s, '2026-06-03', '2026-06-10')).body.map((r: { date: string; status: string }) => [r.date, r.status]);
+      expect(rows).toEqual([['2026-06-10', 'half_day'], ['2026-06-03', 'present']]);
+    });
+  });
+
   describe('register and work hours', () => {
     it('the register lists everyone with an active job: their day, or absent', async () => {
       const worked = await staff();
@@ -170,8 +210,10 @@ describe('HRMS attendance API', () => {
       const res = await http().get('/api/hrms/attendance/register').query({ date: day, company: 'AE' }).set(hr);
       expect(res.status).toBe(200);
       const find = (personId: string) => res.body.rows.find((r: { person: { publicId: string } }) => r.person.publicId === personId);
-      expect(find(worked.personId)).toMatchObject({ status: 'present', workedMinutes: 540, overtimeMinutes: 60 });
-      expect(find(idle.personId)).toMatchObject({ status: 'absent', workedMinutes: 0 });
+      expect(find(worked.personId)).toMatchObject({ status: 'present', workedMinutes: 540, extraMinutes: 60, approvedOvertimeMinutes: 0 });
+      expect(find(idle.personId)).toMatchObject({ status: 'absent', workedMinutes: 0, leaveDays: 0, absentDays: 1 });
+      expect(find(worked.personId)).toMatchObject({ leaveDays: 0, absentDays: 0 });
+      expect(res.body.totals.absentDays).toBeGreaterThanOrEqual(1);
       expect(res.body.summary.present).toBeGreaterThanOrEqual(1);
       expect((await http().get('/api/hrms/attendance/register').query({ date: day }).set(tech)).status).toBe(403);
     });
@@ -186,7 +228,13 @@ describe('HRMS attendance API', () => {
       const res = await http().get('/api/hrms/attendance/work-hours').query({ company: 'AE', from: '2026-10-19', to: '2026-10-21' }).set(hr);
       expect(res.status).toBe(200);
       const row = res.body.rows.find((r: { person: { publicId: string } }) => r.person.publicId === s.personId);
-      expect(row).toMatchObject({ days: { present: 1, halfDay: 1, missedPunch: 1, absent: 0 }, workedMinutes: 480 + 240, overtimeMinutes: 0 });
+      expect(row).toMatchObject({ days: { present: 1, halfDay: 1, missedPunch: 1, absent: 0 }, workedMinutes: 480 + 240, extraMinutes: 0, approvedOvertimeMinutes: 0,
+        leaveDays: 0, absentDays: 0.5, overtimePayable: false });
+
+      // Thu 22 Oct holds only the late punch-out (absent); Fri 23 Oct has nothing at all and still counts as absent
+      const wider = await http().get('/api/hrms/attendance/work-hours').query({ company: 'AE', from: '2026-10-19', to: '2026-10-23' }).set(hr);
+      const w = wider.body.rows.find((r: { person: { publicId: string } }) => r.person.publicId === s.personId);
+      expect(w).toMatchObject({ absentDays: 0.5 + 1 + 1, days: { absent: 2 } });
     });
   });
 });

@@ -17,7 +17,7 @@ function toUtc(date: string): number {
 
 /**
  * Working days of leave from `from` to `to` (both included), in steps of 0.5.
- * - Days in `holidays` ('YYYY-MM-DD') and weekdays in `weeklyOffs` (0 = Sunday … 6 = Saturday) are not counted.
+ * - Days in `daysOff` ('YYYY-MM-DD': the job's holidays and weekly offs, from the work calendar) are not counted.
  * - fromHalf 'second_half' takes half a day off the first day; toHalf 'first_half' takes half a day off the last day —
  *   only when that day counts (a half-day on a holiday or weekly off changes nothing).
  * - A single day can be one half or the whole day, not "second half to first half".
@@ -25,7 +25,7 @@ function toUtc(date: string): number {
  * function does not count them.
  */
 export function calculateLeaveDays(
-  from: string, to: string, fromHalf: FromHalf, toHalf: ToHalf, holidays: string[], weeklyOffs: number[],
+  from: string, to: string, fromHalf: FromHalf, toHalf: ToHalf, daysOff: string[],
 ): number {
   const start = toUtc(from);
   const end = toUtc(to);
@@ -34,9 +34,8 @@ export function calculateLeaveDays(
     throw new RangeError('A single day cannot run from the second half to the first half');
   }
 
-  const off = new Set(holidays);
-  const offWeekdays = new Set(weeklyOffs);
-  const counts = (ms: number) => !offWeekdays.has(new Date(ms).getUTCDay()) && !off.has(new Date(ms).toISOString().slice(0, 10));
+  const off = new Set(daysOff);
+  const counts = (ms: number) => !off.has(new Date(ms).toISOString().slice(0, 10));
 
   let days = 0;
   for (let ms = start; ms <= end; ms += DAY_MS) if (counts(ms)) days += 1;
