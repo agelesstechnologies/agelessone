@@ -5,7 +5,7 @@ React + Vite + TypeScript admin panel for HR, supervisors and admin users. Read 
 ## Current implementation
 - Sign-in page (`POST /api/auth/login`); the token is kept in localStorage and sent as `Authorization: Bearer`. A 401 signs the person out.
 - Menus, tabs and buttons are shown from `GET /api/auth/me` permissions (`src/permissions.ts`); the backend still checks every request.
-- Screens: Overview, People, Attendance (punch, history, team register, work hours), Expenses (claims, approvals, report), Roles & access, and a Leave placeholder (the backend has no leave endpoints yet).
+- Screens: Overview, People (with edit actions in the profile), Attendance (punch, history, corrections, overtime, approvals, team register, work hours), Expenses, Leave (balances, apply, approvals, report, HR adjustments), Calendar (month view, holidays, weekly offs), Policies, Roles & access. Every backend endpoint has a screen except lists the backend does not offer (all logins, all role assignments, approved-unpaid claims).
 - Uses `@ageless/shared` schemas and response types. Configure the API URL with `VITE_API_URL`.
 - Run with `pnpm --filter @ageless/web dev`; build with `pnpm --filter @ageless/web build`.
 - The backend has no list of approved-but-unpaid claims, so Mark paid appears on a claim only right after it is approved in the same session.

@@ -1,28 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
 import { Clock, LogIn, LogOut } from 'lucide-react';
 import {
-  PunchRequest, type AttendanceRegister, type RebuildResult, type TodayAttendance, type WorkDayRow, type WorkHours,
+  PunchRequest, type AttendanceRegister, type HistoryRow, type RebuildResult, type TodayAttendance, type WorkHours,
 } from '@ageless/shared';
 import { api, errText } from '../api';
 import { useAuth } from '../auth';
 import { addDays, dayLabel, hm, timeIst, todayIst, useLoad, useMyEmployments, uuidv7, words } from '../hooks';
 import { ATTENDANCE } from '../permissions';
 import { Badge, DAY_TONE, Empty, Loading, Notice, PageHead, Panel, Tabs } from '../ui';
+import { CorrectionModal, MyRequests, OvertimeModal, RequestApprovals } from './AttendanceRequests';
 
-type TabKey = 'today' | 'history' | 'register' | 'hours';
+type TabKey = 'today' | 'history' | 'requests' | 'approve' | 'register' | 'hours';
 
 export default function Attendance() {
   const { can } = useAuth();
   const tabs: { key: TabKey; label: string }[] = [
-    ...(can(ATTENDANCE.punch) ? [{ key: 'today' as const, label: 'My day' }, { key: 'history' as const, label: 'My history' }] : []),
+    ...(can(ATTENDANCE.punch) ? [{ key: 'today' as const, label: 'My day' }, { key: 'history' as const, label: 'My history' }, { key: 'requests' as const, label: 'My requests' }] : []),
+    ...(can(ATTENDANCE.approve) ? [{ key: 'approve' as const, label: 'To approve' }] : []),
     ...(can(ATTENDANCE.view) ? [{ key: 'register' as const, label: 'Team register' }, { key: 'hours' as const, label: 'Work hours' }] : []),
   ];
   const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'today');
   return <>
-    <PageHead eyebrow="HRMS • ATTENDANCE" title="Attendance" subtitle="Daily punch, work hours history and the team register." />
+    <PageHead eyebrow="HRMS • ATTENDANCE" title="Attendance" subtitle="Daily punch, work hours history, corrections, overtime and the team register." />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'today' && <MyDay />}
     {tab === 'history' && <MyHistory />}
+    {tab === 'requests' && <MyRequests />}
+    {tab === 'approve' && <RequestApprovals />}
     {tab === 'register' && <Register />}
     {tab === 'hours' && <Hours />}
   </>;
@@ -107,18 +111,27 @@ const CompanySelect = ({ value, onChange }: { value: string; onChange: (v: strin
 function MyHistory() {
   const [to, setTo] = useState(todayIst());
   const [from, setFrom] = useState(addDays(todayIst(), -13));
-  const q = useLoad(() => api<WorkDayRow[]>(`/hrms/attendance/history?from=${from}&to=${to}`), [from, to]);
-  return <Panel title="Work Hours History" note="Your own days, newest first.">
+  const [fixing, setFixing] = useState<HistoryRow | null>(null);
+  const [overtime, setOvertime] = useState<HistoryRow | null>(null);
+  const [ok, setOk] = useState('');
+  const q = useLoad(() => api<HistoryRow[]>(`/hrms/attendance/history?from=${from}&to=${to}`), [from, to]);
+  return <Panel title="Work Hours History" note="Your own days, newest first. Fix a punch or ask for overtime on any day.">
     <div className="panel-body">
       <RangeFilter from={from} to={to} setFrom={setFrom} setTo={setTo} />
+      {ok && <Notice tone="ok" onClose={() => setOk('')}>{ok}</Notice>}
       {q.error && <Notice>{q.error}</Notice>}
       {q.loading ? <Loading /> : !q.data?.length ? <Empty title="No days in this range" text="Pick other dates." /> :
-        <div className="table-wrap"><table><thead><tr><th>DATE</th><th>COMPANY</th><th>FIRST IN</th><th>LAST OUT</th><th>WORKED</th><th>EXTRA</th><th>OVERTIME</th><th>STATUS</th></tr></thead>
+        <div className="table-wrap"><table><thead><tr><th>DATE</th><th>COMPANY</th><th>FIRST IN</th><th>LAST OUT</th><th>WORKED</th><th>EXTRA</th><th>OVERTIME</th><th>STATUS</th><th /></tr></thead>
           <tbody>{q.data.map((r) => <tr key={`${r.date}-${r.employment.publicId}`}>
             <td>{dayLabel(r.date)}</td><td>{r.employment.company}</td><td>{timeIst(r.firstIn)}</td><td>{r.running ? 'Working…' : timeIst(r.lastOut)}</td>
             <td>{hm(r.workedMinutes)}</td><td>{r.extraMinutes ? hm(r.extraMinutes) : '—'}</td><td>{r.approvedOvertimeMinutes ? hm(r.approvedOvertimeMinutes) : '—'}</td>
-            <td><Badge tone={DAY_TONE[r.status] ?? 'gray'}>{words(r.status)}</Badge></td></tr>)}</tbody></table></div>}
+            <td><Badge tone={DAY_TONE[r.status] ?? 'gray'}>{words(r.status)}</Badge></td>
+            <td className="row-actions">
+              {!r.locked && !r.running && <button className="outline-btn" onClick={() => setFixing(r)}>Fix punch</button>}
+              {r.extraMinutes > r.approvedOvertimeMinutes && <button className="outline-btn" onClick={() => setOvertime(r)}>Request overtime</button>}</td></tr>)}</tbody></table></div>}
     </div>
+    {fixing && <CorrectionModal day={fixing} onClose={() => setFixing(null)} onSaved={() => { setFixing(null); setOk('Correction sent for approval. Track it in My requests.'); q.reload(); }} />}
+    {overtime && <OvertimeModal day={overtime} onClose={() => setOvertime(null)} onSaved={() => { setOvertime(null); setOk('Overtime request sent. Track it in My requests.'); q.reload(); }} />}
   </Panel>;
 }
 

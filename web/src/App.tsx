@@ -1,25 +1,30 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Activity, BriefcaseBusiness, Building2, CalendarDays, ChevronDown, CircleHelp, LayoutDashboard, LoaderCircle, LogOut, Menu, ShieldCheck, Users, X } from 'lucide-react';
+import { Activity, BriefcaseBusiness, Building2, CalendarDays, CalendarRange, ChevronDown, CircleHelp, LayoutDashboard, LoaderCircle, LogOut, Menu, ShieldCheck, SlidersHorizontal, Users, X } from 'lucide-react';
 import { AuthProvider, useAuth } from './auth';
-import { ATTENDANCE, EXPENSES, PEOPLE } from './permissions';
+import { ATTENDANCE, EXPENSES, LEAVE, PEOPLE, POLICIES } from './permissions';
 import Access from './pages/Access';
 import Attendance from './pages/Attendance';
+import Calendar from './pages/Calendar';
 import Expenses from './pages/Expenses';
+import Leave from './pages/Leave';
 import Login from './pages/Login';
 import Overview from './pages/Overview';
 import People from './pages/People';
-import { Empty, Modal, PageHead } from './ui';
+import Policies from './pages/Policies';
+import { Modal } from './ui';
 
-type PageKey = 'overview' | 'people' | 'attendance' | 'expenses' | 'leave' | 'access';
-interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | 'manage'; show: (can: (p: string) => boolean) => boolean; soon?: boolean }
+type PageKey = 'overview' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'policies' | 'access';
+interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | 'manage'; show: (can: (p: string) => boolean) => boolean }
 
 /** Every menu item lists the permission that shows it; the backend still checks each request. */
 const NAV: NavItem[] = [
   { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={18} />, section: 'workspace', show: () => true },
   { key: 'people', label: 'People', icon: <Users size={18} />, section: 'workspace', show: (can) => can(PEOPLE.view) },
-  { key: 'attendance', label: 'Attendance', icon: <Activity size={18} />, section: 'workspace', show: (can) => can(ATTENDANCE.punch) || can(ATTENDANCE.view) },
+  { key: 'attendance', label: 'Attendance', icon: <Activity size={18} />, section: 'workspace', show: (can) => can(ATTENDANCE.punch) || can(ATTENDANCE.view) || can(ATTENDANCE.approve) },
   { key: 'expenses', label: 'Expenses', icon: <BriefcaseBusiness size={18} />, section: 'workspace', show: (can) => can(EXPENSES.submit) || can(EXPENSES.approve) || can(EXPENSES.report) },
-  { key: 'leave', label: 'Leave', icon: <CalendarDays size={18} />, section: 'workspace', show: () => true, soon: true },
+  { key: 'leave', label: 'Leave', icon: <CalendarDays size={18} />, section: 'workspace', show: (can) => can(LEAVE.apply) || can(LEAVE.approve) || can(LEAVE.report) },
+  { key: 'calendar', label: 'Calendar', icon: <CalendarRange size={18} />, section: 'workspace', show: (can) => can(PEOPLE.view) },
+  { key: 'policies', label: 'Policies', icon: <SlidersHorizontal size={18} />, section: 'manage', show: (can) => can(POLICIES.manage) },
   { key: 'access', label: 'Roles & access', icon: <ShieldCheck size={18} />, section: 'manage', show: () => true },
 ];
 
@@ -27,13 +32,6 @@ const pageFromHash = (): PageKey => {
   const h = window.location.hash.replace('#', '');
   return NAV.some((n) => n.key === h) ? (h as PageKey) : 'overview';
 };
-
-function LeaveSoon() {
-  return <>
-    <PageHead eyebrow="HRMS • LEAVE" title="Leave" subtitle="Leave requests and balances." />
-    <section className="directory panel"><div className="panel-body"><Empty title="Leave requests are coming soon" text="The leave screens will appear here once leave is available in the backend." /></div></section>
-  </>;
-}
 
 function Shell() {
   const { me, can, logout } = useAuth();
@@ -53,8 +51,8 @@ function Shell() {
   const current = items.find((n) => n.key === page) ?? items[0]!;
   const role = me.roles[0]?.name ?? 'No role';
   const initials = me.person.displayName.split(/\s+/).slice(0, 2).map((s) => s[0]).join('').toUpperCase();
-  const link = (n: NavItem) => <a key={n.key} href={`#${n.key}`} className={`${n.key === current.key ? 'active' : ''} ${n.soon ? 'muted' : ''}`} onClick={() => setMobileNav(false)}>
-    {n.icon}{n.label}{n.soon && <span className="soon">SOON</span>}</a>;
+  const link = (n: NavItem) => <a key={n.key} href={`#${n.key}`} className={`${n.key === current.key ? 'active' : ''} `} onClick={() => setMobileNav(false)}>
+    {n.icon}{n.label}</a>;
 
   return <div className="app-shell">
     {mobileNav && <div className="nav-scrim" onClick={() => setMobileNav(false)} />}
@@ -78,7 +76,9 @@ function Shell() {
         {current.key === 'people' && <People />}
         {current.key === 'attendance' && <Attendance />}
         {current.key === 'expenses' && <Expenses />}
-        {current.key === 'leave' && <LeaveSoon />}
+        {current.key === 'leave' && <Leave />}
+        {current.key === 'calendar' && <Calendar />}
+        {current.key === 'policies' && <Policies />}
         {current.key === 'access' && <Access />}
         <footer className="footer"><span>© 2026 Ageless Universe</span><span>Built for the people who make it happen <span className="heart">♥</span></span><span>v0.1.0</span></footer>
       </div>

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import {
-  AssignRoleRequest, ChangePasswordRequest, CreateUserRequest, type PersonList, type RoleScope,
+  AssignRoleRequest, ChangePasswordRequest, CreateUserRequest, ResetPasswordRequest, type PersonList, type RoleScope,
 } from '@ageless/shared';
 import { api, errText, setToken } from '../api';
 import { useAuth } from '../auth';
@@ -73,6 +73,7 @@ function PersonSelect({ id }: { id: string }) {
 }
 
 function CreateLogin() {
+  const [created, setCreated] = useState('');
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
@@ -84,7 +85,7 @@ function CreateLogin() {
     const parsed = CreateUserRequest.safeParse({ personPublicId: d.get('personPublicId'), loginPhone: text('loginPhone'), loginEmail: text('loginEmail'), password: d.get('password') });
     if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
     setBusy(true); setError(''); setOk('');
-    try { await api('/core/users', { method: 'POST', json: parsed.data }); form.reset(); setOk('Login created. Share the password with the person directly.'); }
+    try { const r = await api<{ publicId: string }>('/core/users', { method: 'POST', json: parsed.data }); form.reset(); setCreated(r.publicId); setOk('Login created. Share the password with the person directly.'); }
     catch (err) { setError(errText(err)); }
     finally { setBusy(false); }
   }
@@ -99,10 +100,12 @@ function CreateLogin() {
       </div>
       <div className="form-foot"><button className="primary-btn" disabled={busy}>Create login</button></div>
     </form>
+    {created && <div className="panel-body"><ResetPassword userId={created} /></div>}
   </Panel>;
 }
 
 function AssignRole() {
+  const [assigned, setAssigned] = useState('');
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
@@ -116,7 +119,7 @@ function AssignRole() {
     });
     if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
     setBusy(true); setError(''); setOk('');
-    try { await api('/core/role-assignments', { method: 'POST', json: parsed.data }); form.reset(); setOk('Role assigned. It applies the next time that person signs in or reloads.'); }
+    try { const r = await api<{ publicId: string }>('/core/role-assignments', { method: 'POST', json: parsed.data }); form.reset(); setAssigned(r.publicId); setOk('Role assigned. It applies the next time that person signs in or reloads.'); }
     catch (err) { setError(errText(err)); }
     finally { setBusy(false); }
   }
@@ -131,6 +134,25 @@ function AssignRole() {
         <label>Valid to <span className="optional">optional</span><input id="role-to" name="validTo" type="date" /></label>
       </div>
       <div className="form-foot"><button className="primary-btn" disabled={busy}>Give role</button></div>
+      {assigned && <button type="button" className="text-btn" onClick={async () => {
+        try { await api(`/core/role-assignments/${assigned}/end`, { method: 'POST', json: {} }); setAssigned(''); setOk('Role ended.'); } catch (err) { setError(errText(err)); }
+      }}>Undo the role just given</button>}
     </form>
   </Panel>;
+}
+
+/** Only the login just created is known here (there is no list of logins), so a reset is offered right after creating one. */
+function ResetPassword({ userId }: { userId: string }) {
+  const [pw, setPw] = useState('');
+  const [msg, setMsg] = useState('');
+  async function reset() {
+    const parsed = ResetPasswordRequest.safeParse({ newPassword: pw });
+    if (!parsed.success) { setMsg(parsed.error.issues[0]?.message ?? 'Check the password'); return; }
+    try { await api(`/core/users/${userId}/reset-password`, { method: 'POST', json: parsed.data }); setPw(''); setMsg('Password reset.'); }
+    catch (err) { setMsg(errText(err)); }
+  }
+  return <div className="filters">
+    <label className="inline-field">Reset this login's password<input id="login-reset" className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} minLength={8} maxLength={72} /></label>
+    <button type="button" className="outline-btn" onClick={() => void reset()}>Reset password</button>{msg && <span className="muted-text">{msg}</span>}
+  </div>;
 }

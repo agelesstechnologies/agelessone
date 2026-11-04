@@ -143,3 +143,17 @@ body{min-width:320px;overflow-x:hidden}
 }
 
 @media(prefers-reduced-motion:reduce){.sidebar{transition:none}}
+
+/* calendar, check rows */
+.check-row{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;color:#4b4c55}
+.check-row input{width:auto;height:auto;margin:0}
+fieldset{border:1px solid #ededef;border-radius:7px;padding:8px 12px 12px;margin:0;min-width:0}
+legend{font-size:10px;font-weight:600;color:#555660;padding:0 4px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.cal-head{font-size:10px;letter-spacing:1px;color:#85849c;text-align:center;padding:4px 0}
+.cal-day{min-height:62px;border:1px solid #ededef;border-radius:7px;padding:6px;font-size:12px;background:#fff;overflow:hidden}
+.cal-day small{display:block;font-size:9px;margin-top:3px;color:#9a6a1c;line-height:1.2}
+.cal-weekly_off{background:#f0f0f3;color:#6b6c76}
+.cal-holiday{background:#fdf1dd;border-color:#f3dfb8}
+.cal-today{outline:2px solid #7774a9;outline-offset:-2px}
+@media(max-width:560px){.cal-day{min-height:46px;padding:4px}.cal-day small{display:none}}

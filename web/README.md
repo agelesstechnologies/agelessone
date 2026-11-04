@@ -37,6 +37,12 @@ Menus and buttons follow the permissions from `GET /api/auth/me`; the backend st
 | Expenses: To approve | `hrms.expenses.approve` | Approve, reject; Mark paid needs `hrms.expenses.pay` |
 | Expenses: Report | `hrms.expenses.report` | Totals by category and status |
 | Roles & access | signed in | Create login and Give role need `core.users.manage` |
-| Leave | none | Placeholder: the backend has no leave endpoints yet |
+| Attendance: My requests | `hrms.attendance.punch` | Corrections and overtime you asked for; Fix punch and Request overtime are in My history |
+| Attendance: To approve | `hrms.attendance.approve` | Approve or reject corrections and overtime |
+| Leave: My leave | `hrms.leave.apply` | Balances, apply, cancel; Adjust balance needs `hrms.leave.manage` |
+| Leave: To approve, Report | `hrms.leave.approve`, `hrms.leave.report` | |
+| Calendar | `hrms.people.view` | Month view, holidays; add or delete holidays and set weekly offs need `hrms.calendar.manage` |
+| Policies | `core.policies.manage` | Built-in defaults, stored versions, new version |
+| People profile: Manage | `hrms.people.update`, `hrms.contacts.manage`, `hrms.employments.manage` and others | Edit person, add or end contacts, add, edit or end employments |
 
 Build with `pnpm --filter @ageless/web build`.

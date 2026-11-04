@@ -1,7 +1,13 @@
 /** Permission codes the backend checks (same strings as the backend's domain/permissions files). */
-export const PEOPLE = { view: 'hrms.people.view', create: 'hrms.people.create' } as const;
-export const ATTENDANCE = { punch: 'hrms.attendance.punch', view: 'hrms.attendance.view', rebuild: 'hrms.attendance.rebuild' } as const;
+export const PEOPLE = {
+  view: 'hrms.people.view', create: 'hrms.people.create', update: 'hrms.people.update', manageContacts: 'hrms.contacts.manage',
+  reviewContacts: 'hrms.contacts.review', manageEmployments: 'hrms.employments.manage', updateEmployments: 'hrms.employments.update',
+} as const;
+export const ATTENDANCE = { punch: 'hrms.attendance.punch', view: 'hrms.attendance.view', rebuild: 'hrms.attendance.rebuild', approve: 'hrms.attendance.approve' } as const;
 export const EXPENSES = { submit: 'hrms.expenses.submit', approve: 'hrms.expenses.approve', pay: 'hrms.expenses.pay', report: 'hrms.expenses.report' } as const;
+export const LEAVE = { apply: 'hrms.leave.apply', approve: 'hrms.leave.approve', manage: 'hrms.leave.manage', report: 'hrms.leave.report' } as const;
+export const CALENDAR = { manage: 'hrms.calendar.manage', view: 'hrms.people.view' } as const;
+export const POLICIES = { manage: 'core.policies.manage' } as const;
 export const USERS = { manage: 'core.users.manage' } as const;
 
 /** Plain-language names for the "Roles & access" page. Unknown codes are shown as they are. */
@@ -20,6 +26,13 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'hrms.expenses.approve': 'Approve expense claims',
   'hrms.expenses.pay': 'Mark claims as paid',
   'hrms.expenses.report': 'See expense reports',
+  'hrms.attendance.approve': 'Approve corrections and overtime',
+  'hrms.leave.apply': 'Apply for leave',
+  'hrms.leave.approve': 'Approve leave',
+  'hrms.leave.manage': 'Adjust leave balances',
+  'hrms.leave.report': 'See leave reports',
+  'hrms.calendar.manage': 'Manage holidays and weekly offs',
+  'core.policies.manage': 'Manage company policies',
   'core.users.manage': 'Manage logins and roles',
 };
 
