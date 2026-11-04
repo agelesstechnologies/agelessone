@@ -12,7 +12,7 @@ export class HttpModule {}
 export function configureApp(app: INestApplication): INestApplication {
   app.enableCors({
     origin: process.env.WEB_ORIGIN ?? 'http://localhost:5173',
-    allowedHeaders: ['Content-Type', 'x-tenant-id', 'x-person-id'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
     methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
   });
   return app.setGlobalPrefix('api');

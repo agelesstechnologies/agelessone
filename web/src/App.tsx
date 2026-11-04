@@ -1,50 +1,101 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Activity, ArrowDown, ArrowLeft, ArrowRight, BriefcaseBusiness, Building2, ChevronDown, CircleHelp, ContactRound, Filter, LayoutDashboard, LoaderCircle, Menu, MoreHorizontal, Plus, Search, Settings2, ShieldCheck, SlidersHorizontal, Users, X } from 'lucide-react';
-import { CreatePersonRequest, type PersonDetail, type PersonListItem } from '@ageless/shared';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Activity, BriefcaseBusiness, Building2, CalendarDays, ChevronDown, CircleHelp, LayoutDashboard, LoaderCircle, LogOut, Menu, ShieldCheck, Users, X } from 'lucide-react';
+import { AuthProvider, useAuth } from './auth';
+import { ATTENDANCE, EXPENSES, PEOPLE } from './permissions';
+import Access from './pages/Access';
+import Attendance from './pages/Attendance';
+import Expenses from './pages/Expenses';
+import Login from './pages/Login';
+import Overview from './pages/Overview';
+import People from './pages/People';
+import { Empty, Modal, PageHead } from './ui';
 
-const API = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace(/\/$/, '');
-const tenantId = import.meta.env.VITE_TENANT_ID || '1';
-const callerId = import.meta.env.VITE_PERSON_ID || '00000000-0000-4000-8000-000000000001';
-type ListResponse = { items: PersonListItem[]; page: number; pageSize: number; total: number };
-type ApiError = { code?: string; message?: string; details?: {path:string;message:string}[] };
+type PageKey = 'overview' | 'people' | 'attendance' | 'expenses' | 'leave' | 'access';
+interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | 'manage'; show: (can: (p: string) => boolean) => boolean; soon?: boolean }
 
-async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API}${path}`, { ...options, headers: { 'x-tenant-id': tenantId, 'x-person-id': callerId, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } });
-  if (!response.ok) { let e: ApiError = {}; try { e = await response.json() as ApiError; } catch { /* no JSON response */ } throw Object.assign(new Error(e.message || `Request failed (${response.status})`), { api: e }); }
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+/** Every menu item lists the permission that shows it; the backend still checks each request. */
+const NAV: NavItem[] = [
+  { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={18} />, section: 'workspace', show: () => true },
+  { key: 'people', label: 'People', icon: <Users size={18} />, section: 'workspace', show: (can) => can(PEOPLE.view) },
+  { key: 'attendance', label: 'Attendance', icon: <Activity size={18} />, section: 'workspace', show: (can) => can(ATTENDANCE.punch) || can(ATTENDANCE.view) },
+  { key: 'expenses', label: 'Expenses', icon: <BriefcaseBusiness size={18} />, section: 'workspace', show: (can) => can(EXPENSES.submit) || can(EXPENSES.approve) || can(EXPENSES.report) },
+  { key: 'leave', label: 'Leave', icon: <CalendarDays size={18} />, section: 'workspace', show: () => true, soon: true },
+  { key: 'access', label: 'Roles & access', icon: <ShieldCheck size={18} />, section: 'manage', show: () => true },
+];
+
+const pageFromHash = (): PageKey => {
+  const h = window.location.hash.replace('#', '');
+  return NAV.some((n) => n.key === h) ? (h as PageKey) : 'overview';
+};
+
+function LeaveSoon() {
+  return <>
+    <PageHead eyebrow="HRMS • LEAVE" title="Leave" subtitle="Leave requests and balances." />
+    <section className="directory panel"><div className="panel-body"><Empty title="Leave requests are coming soon" text="The leave screens will appear here once leave is available in the backend." /></div></section>
+  </>;
 }
-const initials = (name:string) => name.split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase();
-const colors = ['lavender','mint','peach','blue','rose'];
-function App() {
-  const [people,setPeople]=useState<PersonListItem[]>([]), [total,setTotal]=useState(0), [page,setPage]=useState(1), [query,setQuery]=useState(''), [search,setSearch]=useState(''), [status,setStatus]=useState(''), [company,setCompany]=useState('');
-  const [selected,setSelected]=useState<PersonDetail|null>(null), [modal,setModal]=useState(false), [loading,setLoading]=useState(true), [apiConnected,setApiConnected]=useState<boolean|null>(null), [error,setError]=useState(''), [saving,setSaving]=useState(false), [mobileNav,setMobileNav]=useState(false);
-  const pageSize=20;
-  const load=useCallback(async()=>{setLoading(true);setError('');try{const p=new URLSearchParams({page:String(page),pageSize:String(pageSize)});if(search)p.set('search',search);if(status)p.set('status',status);if(company)p.set('company',company);const r=await api<ListResponse>(`/hrms/people?${p}`);setPeople(r.items);setTotal(r.total);setApiConnected(true);}catch(e){setApiConnected(false);setError((e as Error).message);setPeople([]);}finally{setLoading(false);}},[page,search,status,company]);
-  useEffect(()=>{void load();},[load]);
-  useEffect(()=>{const t=setTimeout(()=>{setPage(1);setSearch(query.trim())},250);return()=>clearTimeout(t);},[query]);
-  const stats=useMemo(()=>({ total, active:people.filter(p=>p.status==='active').length, teams:new Set(people.map(p=>p.primaryEmployment?.company).filter(Boolean)).size }),[people,total]);
-  async function openPerson(id:string){try{setError('');setSelected(await api<PersonDetail>(`/hrms/people/${id}`));}catch(e){setError((e as Error).message);}}
-  async function createPerson(e:FormEvent<HTMLFormElement>){e.preventDefault();const form=new FormData(e.currentTarget);const raw={displayName:String(form.get('displayName')),contacts:form.get('value')?[{kind:String(form.get('kind')),value:String(form.get('value')),label:String(form.get('label')||''),isPrimary:true}]:[],employment:{legalEntityCode:String(form.get('company')),employeeCode:String(form.get('employeeCode')),engagementType:String(form.get('engagementType')),joinedOn:String(form.get('joinedOn')),department:String(form.get('department')||''),designation:String(form.get('designation')||''),managerPublicId:String(form.get('manager')||'')||undefined,isPrimary:true}};const parsed=CreatePersonRequest.safeParse(raw);if(!parsed.success){setError(parsed.error.issues[0]?.message||'Check the form fields');return;}setSaving(true);try{const result=await api<{publicId:string}>('/hrms/people',{method:'POST',body:JSON.stringify(parsed.data)});setModal(false);await load();await openPerson(result.publicId);}catch(e){setError((e as Error).message);}finally{setSaving(false);}}
+
+function Shell() {
+  const { me, can, logout } = useAuth();
+  const [page, setPage] = useState<PageKey>(pageFromHash);
+  const [mobileNav, setMobileNav] = useState(false);
+  const [confirmOut, setConfirmOut] = useState(false);
+  const go = useCallback((p: string) => { window.location.hash = p; setMobileNav(false); }, []);
+  useEffect(() => {
+    const onHash = () => setPage(pageFromHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  if (!me) return null;
+
+  const items = NAV.filter((n) => n.show(can));
+  // A page the person may not open (typed in the address bar) falls back to the overview.
+  const current = items.find((n) => n.key === page) ?? items[0]!;
+  const role = me.roles[0]?.name ?? 'No role';
+  const initials = me.person.displayName.split(/\s+/).slice(0, 2).map((s) => s[0]).join('').toUpperCase();
+  const link = (n: NavItem) => <a key={n.key} href={`#${n.key}`} className={`${n.key === current.key ? 'active' : ''} ${n.soon ? 'muted' : ''}`} onClick={() => setMobileNav(false)}>
+    {n.icon}{n.label}{n.soon && <span className="soon">SOON</span>}</a>;
+
   return <div className="app-shell">
-    <aside className={`sidebar ${mobileNav?'show':''}`}><div className="brand"><div className="brand-mark">a<span>.</span></div><div><b>ageless</b><small>PEOPLE PLATFORM</small></div><button className="icon-button mobile-close" onClick={()=>setMobileNav(false)}><X size={18}/></button></div>
-      <div className="workspace"><div className="workspace-icon"><Building2 size={18}/></div><div><b>Ageless Group</b><small>Organization</small></div><ChevronDown size={15}/></div>
-      <div className="nav-label">WORKSPACE</div><nav><a><LayoutDashboard size={18}/>Overview</a><a className="active"><Users size={18}/>People<span className="nav-count">{total}</span></a><a className="muted"><Activity size={18}/>Attendance<span className="soon">SOON</span></a><a className="muted"><BriefcaseBusiness size={18}/>Leave & expenses<span className="soon">SOON</span></a></nav>
-      <div className="nav-label manage-label">MANAGE</div><nav><a className="muted"><Building2 size={18}/>Companies</a><a className="muted"><ShieldCheck size={18}/>Roles & access</a></nav>
-      <div className="sidebar-bottom"><div className="help-card"><div className="help-icon"><CircleHelp size={18}/></div><div><b>Need a hand?</b><small>Visit the help center</small></div><ArrowRight size={15}/></div><button className="profile"><div className="avatar avatar-blue">DS</div><div><b>Demo Supervisor</b><small>Administrator</small></div><MoreHorizontal size={18}/></button></div>
+    {mobileNav && <div className="nav-scrim" onClick={() => setMobileNav(false)} />}
+    <aside className={`sidebar ${mobileNav ? 'show' : ''}`}>
+      <div className="brand"><div className="brand-mark">a<span>.</span></div><div><b>ageless</b><small>PEOPLE PLATFORM</small></div><button className="icon-button mobile-close" onClick={() => setMobileNav(false)} aria-label="Close menu"><X size={18} /></button></div>
+      <div className="workspace"><div className="workspace-icon"><Building2 size={18} /></div><div><b>Ageless Group</b><small>Organization</small></div><ChevronDown size={15} /></div>
+      <div className="nav-label">WORKSPACE</div><nav>{items.filter((n) => n.section === 'workspace').map(link)}</nav>
+      <div className="nav-label manage-label">MANAGE</div><nav>{items.filter((n) => n.section === 'manage').map(link)}</nav>
+      <div className="sidebar-bottom">
+        <div className="help-card"><div className="help-icon"><CircleHelp size={18} /></div><div><b>Need a hand?</b><small>Visit the help center</small></div></div>
+        <div className="profile"><div className="avatar avatar-blue">{initials}</div><div><b>{me.person.displayName}</b><small>{role}</small></div>
+          <button className="icon-button" onClick={() => setConfirmOut(true)} aria-label="Sign out" title="Sign out"><LogOut size={17} /></button></div>
+      </div>
     </aside>
-    <main className="main"><header className="topbar"><button className="icon-button hamburger" onClick={()=>setMobileNav(!mobileNav)}><Menu size={20}/></button><div className="crumb">Workspace <span>/</span> <b>People</b></div><div className="top-actions"><span className="env"><i/>Development</span><button className="icon-button"><CircleHelp size={18}/></button><button className="icon-button"><Settings2 size={18}/></button><div className="avatar avatar-blue top-avatar">DS</div></div></header>
-      <div className="content"><div className="heading-row"><div><div className="eyebrow">HRMS <span>•</span> DIRECTORY</div><h1>People <span className="title-count">{total}</span></h1><p>Manage your people, their roles, and company details.</p></div><button className="primary-btn" onClick={()=>{setError('');setModal(true)}}><Plus size={17}/> Add person</button></div>
-        <div className="stats"><div className="stat-card"><div className="stat-icon purple"><Users size={18}/></div><div><small>PEOPLE IN DIRECTORY</small><strong>{total}</strong></div><div className="stat-foot">Across all companies</div></div><div className="stat-card"><div className="stat-icon green"><Activity size={18}/></div><div><small>ACTIVE ON TEAM</small><strong>{stats.active}</strong></div><div className="stat-foot"><span className="live-dot"/>Based on current page</div></div><div className="stat-card"><div className="stat-icon amber"><Building2 size={18}/></div><div><small>COMPANIES</small><strong>{stats.teams || '—'}</strong></div><div className="stat-foot">Represented in results</div></div><div className="stat-card sync-card"><div className="sync-top"><span className={`sync-dot ${apiConnected===false?'offline':apiConnected===null?'checking':''}`}/>{apiConnected===false?'API CONNECTION':apiConnected===null?'CHECKING API':'API CONNECTION'}</div><b>{apiConnected===false?'Unavailable':apiConnected===null?'Checking…':'Connected'}</b><small>{apiConnected===false?'People API request failed':apiConnected===null?'Contacting People service':'People directory is responding'}</small></div></div>
-        <section className="directory"><div className="directory-head"><div><h2>Team directory</h2><p>Browse and manage everyone in your organization.</p></div><button className="outline-btn" onClick={()=>void load()}><SlidersHorizontal size={15}/> Refresh</button></div>
-          <div className="toolbar"><div className="searchbox"><Search size={17}/><input value={query} placeholder="Search name, email, or employee ID..." onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){setPage(1);setSearch(query)}}}/>{query&&<button onClick={()=>{setQuery('');setSearch('')}}><X size={15}/></button>}<kbd>↵</kbd></div><button className="filter-btn" onClick={()=>setStatus(status?'':'active')}><Filter size={16}/> Status {status&&<span className="filter-value">{status}<X size={12}/></span>}<ChevronDown size={14}/></button><select className="filter-select" value={company} onChange={e=>{setCompany(e.target.value);setPage(1)}}><option value="">All companies</option><option value="AE">Ageless Entertainments</option><option value="ATPL">Ageless Technologies</option></select><button className="view-btn"><MoreHorizontal size={19}/></button></div>
-          {error&&<div className="error-banner"><span>{error}</span><button onClick={()=>setError('')}><X size={15}/></button></div>}
-          <div className="table-wrap"><table><thead><tr><th><input aria-label="Select all" type="checkbox"/></th><th>NAME <ArrowDown size={12}/></th><th>EMPLOYEE ID</th><th>COMPANY</th><th>ROLE & DEPARTMENT</th><th>STATUS</th><th/></tr></thead><tbody>{loading&&people.length===0?<tr><td colSpan={7} className="loading"><LoaderCircle className="spin" size={20}/>Loading people…</td></tr>:people.length===0?<tr><td colSpan={7} className="empty"><div className="empty-icon"><Users size={22}/></div><b>{error?'Could not load people':'No people found'}</b><span>{error?'Check that the API is running and your local environment is configured.':'Try another search or add someone to your directory.'}</span>{!error&&<button className="text-btn" onClick={()=>setModal(true)}>Add a person <ArrowRight size={14}/></button>}</td></tr>:people.map((person,i)=><tr key={person.publicId} onClick={()=>void openPerson(person.publicId)}><td><input type="checkbox" onClick={e=>e.stopPropagation()}/></td><td><div className="person-cell"><div className={`avatar ${colors[i%colors.length]}`}>{initials(person.displayName)}</div><div><b>{person.displayName}</b><small>{person.primaryEmployment?.designation||'No designation'}</small></div></div></td><td><span className="mono">{person.primaryEmployment?.employeeCode||'—'}</span></td><td><span className="company-pill"><span/>{person.primaryEmployment?.company||'—'}</span></td><td><div className="role-cell"><b>{person.primaryEmployment?.designation||'—'}</b><small>{person.primaryEmployment?.department||'Unassigned'}</small></div></td><td><span className={`status ${person.status==='active'?'is-active':person.status==='inactive'?'is-inactive':'is-exited'}`}><i/>{person.status}</span></td><td><button className="row-more" onClick={e=>{e.stopPropagation();void openPerson(person.publicId)}}><MoreHorizontal size={17}/></button></td></tr>)}</tbody></table></div>
-          <div className="table-footer"><span>Showing <b>{total?((page-1)*pageSize+1):0}–{Math.min(page*pageSize,total)}</b> of <b>{total}</b> people</span><div className="pagination"><button disabled={page<=1||loading} onClick={()=>setPage(page-1)}><ArrowLeft size={14}/> Previous</button><button disabled={page*pageSize>=total||loading} onClick={()=>setPage(page+1)}>Next <ArrowRight size={14}/></button></div></div>
-        </section><footer className="footer"><span>© 2026 Ageless Universe</span><span>Built for the people who make it happen <span className="heart">♥</span></span><span>v0.1.0 <span className="footer-dot">·</span> <a>System status <span className="online"/></a></span></footer>
-      </div></main>
-    {modal&&<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setModal(false)}}><form className="modal" onSubmit={createPerson}><div className="modal-head"><div><div className="eyebrow">DIRECTORY</div><h2>Add a person</h2><p>Create a person and their first employment.</p></div><button type="button" className="icon-button" onClick={()=>setModal(false)}><X size={19}/></button></div>{error&&<div className="error-banner">{error}</div>}<div className="form-grid"><label className="span-two">Full name<input name="displayName" required minLength={2} maxLength={100} placeholder="e.g. Asha Kumar"/></label><label>Company<select name="company" required><option value="AE">AE · Ageless Entertainments</option><option value="ATPL">ATPL · Ageless Technologies</option></select></label><label>Employee ID<input name="employeeCode" required maxLength={20} placeholder="AE-0104"/></label><label>Designation<input name="designation" maxLength={80} placeholder="e.g. Operations Manager"/></label><label>Department<input name="department" maxLength={80} placeholder="e.g. Operations"/></label><label>Engagement type<select name="engagementType"><option value="permanent">Permanent</option><option value="probation">Probation</option><option value="contract">Contract</option><option value="intern">Intern</option><option value="external">External</option></select></label><label>Joining date<input name="joinedOn" type="date" required defaultValue={new Date().toISOString().slice(0,10)}/></label><label className="span-two">Manager public ID <span className="optional">optional</span><input name="manager" placeholder="Supervisor UUID"/></label><div className="span-two divider"/><label>Contact type<select name="kind"><option value="phone">Phone</option><option value="email">Email</option></select></label><label>Contact value <span className="optional">optional</span><input name="value" placeholder="Phone number or email"/></label></div><div className="modal-foot"><button type="button" className="outline-btn" onClick={()=>setModal(false)}>Cancel</button><button className="primary-btn" disabled={saving}>{saving?<LoaderCircle className="spin" size={16}/>:<Plus size={16}/>}Create person</button></div></form></div>}
-    {selected&&<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setSelected(null)}}><section className="modal detail-modal"><div className="modal-head"><div><div className="eyebrow">PEOPLE DIRECTORY</div><h2>{selected.displayName}</h2><p>{selected.employments[0]?.company.name||'Person profile'}</p></div><button className="icon-button" onClick={()=>setSelected(null)}><X size={19}/></button></div><div className="detail-summary"><div className="avatar lavender">{initials(selected.displayName)}</div><div><b>{selected.displayName}</b><span className={`status ${selected.status==='active'?'is-active':'is-inactive'}`}><i/>{selected.status}</span></div></div><div className="detail-section"><h3><ContactRound size={16}/>Contact information</h3>{selected.contacts.length?selected.contacts.map(c=><div className="detail-row" key={c.publicId}><span>{c.kind}{c.label?` · ${c.label}`:''}{c.isPrimary?' · Primary':''}</span><b>{c.value}{c.endedAt?' (ended)':''}</b></div>):<p className="muted-text">No contacts recorded.</p>}</div><div className="detail-section"><h3><BriefcaseBusiness size={16}/>Employments</h3>{selected.employments.map(job=><div className="job-card" key={job.publicId}><div className="job-title"><b>{job.designation||'Role not set'}</b>{job.isPrimary&&<span>PRIMARY</span>}</div><div>{job.company.name} <span>·</span> {job.employeeCode}</div><small>{job.department||'No department'} · Joined {job.joinedOn} · {job.status}</small>{job.manager&&<small>Manager: {job.manager.displayName}</small>}</div>)}</div><div className="modal-foot"><button className="outline-btn" onClick={()=>setSelected(null)}>Close profile</button></div></section></div>}
+    <main className="main">
+      <header className="topbar"><button className="icon-button hamburger" onClick={() => setMobileNav(!mobileNav)} aria-label="Open menu"><Menu size={20} /></button>
+        <div className="crumb">Workspace <span>/</span> <b>{current.label}</b></div>
+        <div className="top-actions"><span className="env"><i />Development</span><div className="avatar avatar-blue top-avatar">{initials}</div></div></header>
+      <div className="content">
+        {current.key === 'overview' && <Overview go={go} />}
+        {current.key === 'people' && <People />}
+        {current.key === 'attendance' && <Attendance />}
+        {current.key === 'expenses' && <Expenses />}
+        {current.key === 'leave' && <LeaveSoon />}
+        {current.key === 'access' && <Access />}
+        <footer className="footer"><span>© 2026 Ageless Universe</span><span>Built for the people who make it happen <span className="heart">♥</span></span><span>v0.1.0</span></footer>
+      </div>
+    </main>
+    {confirmOut && <Modal title="Sign out?" subtitle="You will need to sign in again to continue." onClose={() => setConfirmOut(false)}>
+      <div className="modal-foot"><button type="button" className="outline-btn" onClick={() => setConfirmOut(false)} autoFocus>Stay signed in</button>
+        <button type="button" className="primary-btn" onClick={() => { setConfirmOut(false); logout(); }}>Sign out</button></div>
+    </Modal>}
   </div>;
 }
-export default App;
+
+function Gate() {
+  const { me, loading } = useAuth();
+  if (loading) return <div className="boot"><LoaderCircle className="spin" size={22} />Loading…</div>;
+  return me ? <Shell /> : <Login />;
+}
+
+export default function App() {
+  return <AuthProvider><Gate /></AuthProvider>;
+}
