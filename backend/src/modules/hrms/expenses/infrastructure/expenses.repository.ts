@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, between, count, desc, eq, ne, sql, SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { ExpenseCategory, ExpenseClaim, ExpenseReport, ExpenseStatus } from '@ageless/shared';
-import { DB, Db, Tx } from '../../../../platform/db/db.module';
+import { DecidedAs, ExpenseCategory, ExpenseClaim, ExpenseReport, ExpenseStatus } from '@ageless/shared';
+import { Conn, DB, Db, Tx } from '../../../../platform/db/db.module';
 import { legalEntities, persons } from '../../../core/schema';
 import { employments } from '../../people/schema';
 import { expenseCategories, expenseClaims } from '../schema';
@@ -46,8 +46,8 @@ export class ExpensesRepository {
     return row;
   }
 
-  async insertClaim(c: NewClaim): Promise<string> {
-    const [row] = await this.db.insert(expenseClaims).values(c).returning({ publicId: expenseClaims.publicId });
+  async insertClaim(conn: Conn, c: NewClaim): Promise<string> {
+    const [row] = await conn.insert(expenseClaims).values(c).returning({ publicId: expenseClaims.publicId });
     return row.publicId;
   }
 
@@ -56,17 +56,20 @@ export class ExpensesRepository {
     const [row] = await tx.select({
       id: expenseClaims.id, personId: expenseClaims.personId, status: expenseClaims.status,
       amountPaise: expenseClaims.amountPaise, managerPersonId: employments.managerPersonId,
+      publicId: expenseClaims.publicId, legalEntityId: expenseClaims.legalEntityId, personName: claimant.displayName,
     }).from(expenseClaims).innerJoin(employments, eq(employments.id, expenseClaims.employmentId))
+      .innerJoin(claimant, eq(claimant.id, expenseClaims.personId))
       .where(and(eq(expenseClaims.tenantId, tenantId), eq(expenseClaims.publicId, publicId))).for('update');
     return row as (Omit<typeof row, 'status'> & { status: ExpenseStatus }) | undefined;
   }
 
-  async approve(tx: Tx, id: number, by: number, approvedAmountPaise: number): Promise<void> {
-    await tx.update(expenseClaims).set({ status: 'approved', approvedBy: by, approvedAt: new Date(), approvedAmountPaise }).where(eq(expenseClaims.id, id));
+  /** by null only with decidedAs 'no_approval_required' (the database checks it). The claim still waits for payment. */
+  async approve(tx: Tx, id: number, by: number | null, decidedAs: DecidedAs, approvedAmountPaise: number): Promise<void> {
+    await tx.update(expenseClaims).set({ status: 'approved', approvedBy: by, decidedAs, approvedAt: new Date(), approvedAmountPaise }).where(eq(expenseClaims.id, id));
   }
 
-  async reject(tx: Tx, id: number, by: number, reason: string): Promise<void> {
-    await tx.update(expenseClaims).set({ status: 'rejected', rejectedBy: by, rejectedAt: new Date(), rejectionReason: reason }).where(eq(expenseClaims.id, id));
+  async reject(tx: Tx, id: number, by: number, decidedAs: DecidedAs, reason: string): Promise<void> {
+    await tx.update(expenseClaims).set({ status: 'rejected', rejectedBy: by, decidedAs, rejectedAt: new Date(), rejectionReason: reason }).where(eq(expenseClaims.id, id));
   }
 
   async markPaid(tx: Tx, id: number, paidAt: Date, paymentRef: string): Promise<void> {
@@ -86,10 +89,10 @@ export class ExpensesRepository {
     return { items: rows.map(toClaim), page: q.page, pageSize: q.pageSize, total };
   }
 
-  /** Submitted claims on jobs this person manages (never their own), oldest first. */
-  async toApprove(tenantId: number, managerId: number): Promise<ExpenseClaim[]> {
+  /** Submitted claims on jobs this person manages (team) or anyone's (everyone) — never their own — oldest first. */
+  async toApprove(tenantId: number, managerId: number, everyone = false): Promise<ExpenseClaim[]> {
     const rows = await this.view().where(and(eq(expenseClaims.tenantId, tenantId), eq(expenseClaims.status, 'submitted'),
-      eq(employments.managerPersonId, managerId), ne(expenseClaims.personId, managerId)))
+      everyone ? undefined : eq(employments.managerPersonId, managerId), ne(expenseClaims.personId, managerId)))
       .orderBy(asc(expenseClaims.createdAt), asc(expenseClaims.id));
     return rows.map(toClaim);
   }
@@ -140,9 +143,9 @@ export class ExpensesRepository {
       personPublicId: claimant.publicId, personName: claimant.displayName,
       employmentPublicId: employments.publicId, company: legalEntities.code, employeeCode: employments.employeeCode,
       categoryCode: expenseCategories.code, categoryName: expenseCategories.name,
-      spentOn: expenseClaims.spentOn, amountPaise: expenseClaims.amountPaise, description: expenseClaims.description,
+      spentOn: expenseClaims.spentOn, amountPaise: expenseClaims.amountPaise, currency: expenseClaims.currency, description: expenseClaims.description,
       receiptPath: expenseClaims.receiptPath, status: expenseClaims.status, approvedAmountPaise: expenseClaims.approvedAmountPaise,
-      approverPublicId: approver.publicId, approverName: approver.displayName, approvedAt: expenseClaims.approvedAt,
+      approverPublicId: approver.publicId, approverName: approver.displayName, approvedAt: expenseClaims.approvedAt, decidedAs: expenseClaims.decidedAs,
       rejecterPublicId: rejecter.publicId, rejecterName: rejecter.displayName, rejectedAt: expenseClaims.rejectedAt,
       rejectionReason: expenseClaims.rejectionReason, paidAt: expenseClaims.paidAt, paymentRef: expenseClaims.paymentRef,
       createdAt: expenseClaims.createdAt,
@@ -167,9 +170,9 @@ function toClaim(r: ViewRow): ExpenseClaim {
     person: { publicId: r.personPublicId, displayName: r.personName },
     employment: { publicId: r.employmentPublicId, company: r.company, employeeCode: r.employeeCode },
     category: { code: r.categoryCode, name: r.categoryName },
-    spentOn: r.spentOn, amountPaise: r.amountPaise, description: r.description, receiptPath: r.receiptPath,
+    spentOn: r.spentOn, amountPaise: r.amountPaise, currency: r.currency, description: r.description, receiptPath: r.receiptPath,
     status: r.status as ExpenseStatus, approvedAmountPaise: r.approvedAmountPaise,
-    approvedBy: who(r.approverPublicId, r.approverName), approvedAt: iso(r.approvedAt),
+    approvedBy: who(r.approverPublicId, r.approverName), approvedAt: iso(r.approvedAt), decidedAs: r.decidedAs as DecidedAs | null,
     rejectedBy: who(r.rejecterPublicId, r.rejecterName), rejectedAt: iso(r.rejectedAt), rejectionReason: r.rejectionReason,
     paidAt: iso(r.paidAt), paymentRef: r.paymentRef, createdAt: r.createdAt.toISOString(),
   };

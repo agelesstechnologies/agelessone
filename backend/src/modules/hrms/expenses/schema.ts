@@ -32,6 +32,7 @@ export const expenseClaims = hrms.table('expense_claims', {
   status: text('status').notNull().default('submitted'),
   approvedBy: bigint('approved_by', { mode: 'number' }).references(() => persons.id),
   approvedAt: timestamp('approved_at', { withTimezone: true }),
+  decidedAs: text('decided_as'), // approver | hr | management | no_approval_required (see migration 0021)
   approvedAmountPaise: bigint('approved_amount_paise', { mode: 'number' }),
   rejectedBy: bigint('rejected_by', { mode: 'number' }).references(() => persons.id),
   rejectedAt: timestamp('rejected_at', { withTimezone: true }),
@@ -49,5 +50,10 @@ export const expenseClaims = hrms.table('expense_claims', {
   check('expense_claims_not_self_rejected', sql`rejected_by IS NULL OR rejected_by <> person_id`),
   check('expense_claims_approved_within_claim', sql`approved_amount_paise IS NULL OR (approved_amount_paise > 0 AND approved_amount_paise <= amount_paise)`),
   check('expense_claims_paid_has_details', sql`status <> 'paid' OR (paid_at IS NOT NULL AND payment_ref IS NOT NULL)`),
+  check('expense_claims_decided_fields', sql`(status NOT IN ('approved','paid') OR (approved_at IS NOT NULL AND decided_as IS NOT NULL))
+    AND (status <> 'rejected' OR (rejected_by IS NOT NULL AND decided_as IS NOT NULL))`),
+  check('expense_claims_decided_as_check', sql`decided_as IS NULL OR decided_as IN ('approver','hr','management','no_approval_required')`),
+  // an approval always has an approver, except a claim that needed no approval (and that one never has one)
+  check('expense_claims_decider_required', sql`decided_as IS NULL OR (decided_as = 'no_approval_required') = (approved_by IS NULL AND rejected_by IS NULL)`),
   check('expense_claims_rejected_has_reason', sql`status <> 'rejected' OR rejection_reason IS NOT NULL`),
 ]);

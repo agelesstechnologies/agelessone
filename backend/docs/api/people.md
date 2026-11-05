@@ -48,6 +48,16 @@ Each item has `primaryEmployment: { company, employeeCode, department: { code, n
 ### View — `GET /hrms/people/:publicId`
 Contacts (current first) and employments (primary first), each employment with `department { code, name }`,
 `designation`, `manager`, `recruitedOn`, `joinedOn`, `exitOn`, `exitReason`, `status`, `isPrimary`, `hasOfferLetter`.
+`private`: Aadhaar, PAN and salary bank accounts, **masked** (`XXXX XXXX 1234`, `XXXXXX234F`, `XXXXXXXX7890`), for HR
+(`hrms.private.view`) and Management; `null` for everyone else.
+
+### Private details — `PUT /hrms/people/:publicId/private`, `POST /hrms/people/:publicId/private/reveal`
+| Call | Permission |
+| --- | --- |
+| `PUT …/private` `{ "aadhaar": "9999 8888 7777", "pan": "ABCDE1234F" }` (either; `null` clears) → masked | `hrms.private.manage` (HR, all) |
+| `POST …/private/reveal` → the same with `masked: false` and full values | `hrms.private.reveal` (Management, all) |
+
+Both write an audit entry (`private.updated` with the field names, `private.revealed`) — never the values.
 
 ### Edit — `PATCH /hrms/people/:publicId`
 `{ "displayName": "Demo P.", "status": "inactive" }` — one or both. Permission `hrms.people.update`.

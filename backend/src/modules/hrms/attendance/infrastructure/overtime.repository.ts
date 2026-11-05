@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { aliasedTable, and, asc, desc, eq, ne, or } from 'drizzle-orm';
-import { OvertimeRequestView, OvertimeStatus } from '@ageless/shared';
+import { DecidedAs, OvertimeRequestView, OvertimeStatus } from '@ageless/shared';
 import { DB, Db, Tx } from '../../../../platform/db/db.module';
 import { legalEntities, persons } from '../../../core/schema';
 import { employments } from '../../people/schema';
@@ -41,13 +41,15 @@ export class OvertimeRepository {
     const [row] = await tx.select({
       id: overtimeRequests.id, personId: overtimeRequests.personId, employmentId: overtimeRequests.employmentId, legalEntityId: overtimeRequests.legalEntityId,
       workDate: overtimeRequests.workDate, status: overtimeRequests.status, requestedBy: overtimeRequests.requestedBy,
-      approverPersonId: overtimeRequests.approverPersonId,
-    }).from(overtimeRequests).where(and(eq(overtimeRequests.tenantId, tenantId), eq(overtimeRequests.publicId, publicId))).for('update');
+      approverPersonId: overtimeRequests.approverPersonId, publicId: overtimeRequests.publicId, personName: persons.displayName,
+      minutes: overtimeRequests.minutes,
+    }).from(overtimeRequests).innerJoin(persons, eq(persons.id, overtimeRequests.personId)).where(and(eq(overtimeRequests.tenantId, tenantId), eq(overtimeRequests.publicId, publicId))).for('update');
     return row && { ...row, status: row.status as OvertimeStatus };
   }
 
-  async decide(tx: Tx, id: number, status: 'approved' | 'rejected', decidedBy: number, reason?: string): Promise<void> {
-    await tx.update(overtimeRequests).set({ status, decidedBy, decidedAt: new Date(), decisionReason: reason ?? null }).where(eq(overtimeRequests.id, id));
+  /** decidedBy null only with decidedAs 'no_approval_required' (the database checks it). */
+  async decide(tx: Tx, id: number, status: 'approved' | 'rejected', decidedBy: number | null, decidedAs: DecidedAs, reason?: string): Promise<void> {
+    await tx.update(overtimeRequests).set({ status, decidedBy, decidedAs, decidedAt: new Date(), decisionReason: reason ?? null }).where(eq(overtimeRequests.id, id));
   }
 
   async cancel(tx: Tx, id: number, cancelledBy: number): Promise<void> {
@@ -83,7 +85,7 @@ export class OvertimeRepository {
       status: overtimeRequests.status, requesterPublicId: requester.publicId, requesterName: requester.displayName,
       approverPublicId: approver.publicId, approverName: approver.displayName,
       deciderPublicId: decider.publicId, deciderName: decider.displayName,
-      decidedAt: overtimeRequests.decidedAt, decisionReason: overtimeRequests.decisionReason,
+      decidedAs: overtimeRequests.decidedAs, decidedAt: overtimeRequests.decidedAt, decisionReason: overtimeRequests.decisionReason,
       cancelledAt: overtimeRequests.cancelledAt, createdAt: overtimeRequests.createdAt,
     }).from(overtimeRequests)
       .innerJoin(persons, eq(persons.id, overtimeRequests.personId))
@@ -101,7 +103,7 @@ interface ViewRow {
   publicId: string; personPublicId: string; personName: string; employmentPublicId: string; company: string; workDate: string;
   minutes: number; reason: string; ticketPublicId: string | null; ticketNumber: string | null; status: string;
   requesterPublicId: string; requesterName: string; approverPublicId: string | null; approverName: string | null;
-  deciderPublicId: string | null; deciderName: string | null; decidedAt: Date | null; decisionReason: string | null;
+  deciderPublicId: string | null; deciderName: string | null; decidedAs: string | null; decidedAt: Date | null; decisionReason: string | null;
   cancelledAt: Date | null; createdAt: Date;
 }
 function toView(r: ViewRow): OvertimeRequestView {
@@ -112,6 +114,7 @@ function toView(r: ViewRow): OvertimeRequestView {
     status: r.status as OvertimeStatus, requestedBy: { publicId: r.requesterPublicId, displayName: r.requesterName },
     approver: r.approverPublicId ? { publicId: r.approverPublicId, displayName: r.approverName! } : null,
     decidedBy: r.deciderPublicId ? { publicId: r.deciderPublicId, displayName: r.deciderName! } : null,
+    decidedAs: r.decidedAs as DecidedAs | null,
     decidedAt: r.decidedAt?.toISOString() ?? null, decisionReason: r.decisionReason,
     cancelledAt: r.cancelledAt?.toISOString() ?? null, createdAt: r.createdAt.toISOString(),
   };

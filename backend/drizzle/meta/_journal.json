@@ -141,6 +141,20 @@
       "when": 1793775290155,
       "tag": "0019_month_locks",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793790160872,
+      "tag": "0020_payroll",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793792596332,
+      "tag": "0021_management_audit_private",
+      "breakpoints": true
     }
   ]
 }

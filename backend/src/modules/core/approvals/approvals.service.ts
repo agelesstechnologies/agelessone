@@ -17,6 +17,15 @@ export class ApprovalsService {
    * The job's manager, then its department's head, then HR, then the CEO — never one of `notAllowed`. HR and CEO are
    * the active holders of those roles today, oldest assignment first.
    */
+  /** The codes of the roles a person holds today (active assignments). */
+  async rolesOf(tenantId: number, personId: number): Promise<string[]> {
+    const today = todayIst();
+    const rows = await this.db.select({ role: roles.code }).from(roleAssignments).innerJoin(roles, eq(roles.id, roleAssignments.roleId))
+      .where(and(eq(roleAssignments.tenantId, tenantId), eq(roleAssignments.personId, personId), isNull(roleAssignments.endedAt),
+        lte(roleAssignments.validFrom, today), or(isNull(roleAssignments.validTo), gte(roleAssignments.validTo, today))));
+    return [...new Set(rows.map((r) => r.role))];
+  }
+
   async approverFor(tenantId: number, notAllowed: number[], job: JobApprovers): Promise<number | null> {
     const today = todayIst();
     const people = await this.db.select({ personId: roleAssignments.personId, role: roles.code }).from(roleAssignments)

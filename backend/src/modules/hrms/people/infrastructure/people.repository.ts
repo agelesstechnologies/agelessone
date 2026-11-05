@@ -184,7 +184,7 @@ export class PeopleRepository {
     };
   }
 
-  async getDetail(tenantId: number, publicId: string): Promise<PersonDetail | undefined> {
+  async getDetail(tenantId: number, publicId: string): Promise<Omit<PersonDetail, 'private'> | undefined> {
     const [person] = await this.db.select({ id: persons.id, publicId: persons.publicId, displayName: persons.displayName, status: persons.status })
       .from(persons).where(and(eq(persons.tenantId, tenantId), eq(persons.publicId, publicId)));
     if (!person) return undefined;

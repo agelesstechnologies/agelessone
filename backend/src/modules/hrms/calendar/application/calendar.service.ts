@@ -5,7 +5,7 @@ import {
 } from '@ageless/shared';
 import { Conn, DB, Db, Tx, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
-import { RequestContext, requireAll } from '../../../../platform/http/request-context';
+import { RequestContext, requireAll, requireReadAll } from '../../../../platform/http/request-context';
 import { addDays, datesBetween, todayIst } from '../../../../platform/time';
 import { CalendarRepository, RuleTarget } from '../infrastructure/calendar.repository';
 import { calendarDays, DayKind } from '../domain/work-calendar';
@@ -116,7 +116,7 @@ export class CalendarService {
   }
 
   weeklyOffs(ctx: RequestContext, q: WeeklyOffsQuery): Promise<WeeklyOff[]> {
-    requireAll(ctx, CALENDAR.manage);
+    requireReadAll(ctx, CALENDAR.manage);
     return this.repo.weeklyOffs(ctx.tenantId, q);
   }
 

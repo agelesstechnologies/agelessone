@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DateOnly, Instant, PersonRef, PublicId } from '../common';
+import { DateOnly, DecidedAs, Instant, PersonRef, PublicId } from '../common';
 /** Attendance corrections: requests and answers shared by the API and the web app. Times are ISO with offset; dates IST. */
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'Not a real date');
@@ -56,7 +56,8 @@ export const Correction = z.object({
   status: CorrectionStatus,
   requestedBy: PersonRef,
   approver: PersonRef.nullable(),
-  decidedBy: PersonRef.nullable(),
+  decidedBy: PersonRef.nullable(),   // null when decidedAs is no_approval_required
+  decidedAs: DecidedAs.nullable(),
   decidedAt: Instant.nullable(), decisionReason: z.string().nullable(),
   cancelledAt: Instant.nullable(), createdAt: Instant,
 });

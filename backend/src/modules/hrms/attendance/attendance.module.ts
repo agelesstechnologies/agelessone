@@ -18,6 +18,6 @@ import { MonthLocksRepository } from './infrastructure/month-locks.repository';
   controllers: [AttendanceController, CorrectionsController, OvertimeController, MonthLocksController],
   providers: [AttendanceService, AttendanceRepository, CorrectionsService, CorrectionsRepository, OvertimeService, OvertimeRepository,
     MonthLocksService, MonthLocksRepository],
-  exports: [AttendanceService, MonthLocksService],
+  exports: [AttendanceService, MonthLocksService, CorrectionsService, OvertimeService],
 })
 export class AttendanceModule {}

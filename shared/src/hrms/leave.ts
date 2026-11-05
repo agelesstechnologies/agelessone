@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DateOnly, Instant, PersonRef, PublicId } from '../common';
+import { DateOnly, DecidedAs, Instant, PersonRef, PublicId } from '../common';
 /** Leave: requests and answers shared by the API and the web app. Dates are IST; days come in steps of 0.5. */
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'Not a real date');
@@ -56,7 +56,8 @@ export const LeaveRequestView = z.object({
   reason: z.string().nullable(),
   status: LeaveStatus,
   approver: PersonRef.nullable(),  // manager, department head, HR, then CEO; null only when nobody is left
-  decidedBy: PersonRef.nullable(),
+  decidedBy: PersonRef.nullable(),   // null when decidedAs is no_approval_required
+  decidedAs: DecidedAs.nullable(),
   decidedAt: Instant.nullable(),
   decisionReason: z.string().nullable(),
   cancelledAt: Instant.nullable(),

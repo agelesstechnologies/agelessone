@@ -4,7 +4,7 @@ import {
   CreateDepartmentRequest, CreatePositionRequest, Department, DepartmentsQuery, Designation, DesignationsQuery, FillPositionRequest, Position, PositionsQuery, PositionStatusRequest, UpdateDepartmentRequest,
 } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
-import { Ctx, Permission, RequestContext, SignedIn } from '../../../../platform/http/request-context';
+import { Ctx, MANAGEMENT, Permission, RequestContext, SignedIn } from '../../../../platform/http/request-context';
 import { Doc } from '../../../../platform/http/doc';
 import { OrganisationService } from '../application/organisation.service';
 import { PEOPLE } from '../domain/permissions';
@@ -41,7 +41,7 @@ export class OrganisationController {
   }
 
   @Doc({ summary: 'Positions (planned, open, filled)', response: z.array(Position) })
-  @Permission(PEOPLE.managePositions) @Get('positions')
+  @Permission(PEOPLE.managePositions, MANAGEMENT) @Get('positions')
   positions(@Ctx() ctx: RequestContext, @Query(new ZodValidationPipe(PositionsQuery)) q: PositionsQuery) {
     return this.service.positions(ctx, q);
   }

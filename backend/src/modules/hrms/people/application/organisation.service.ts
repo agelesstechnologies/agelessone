@@ -6,7 +6,7 @@ import {
 } from '@ageless/shared';
 import { DB, Db, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
-import { RequestContext, requireAll } from '../../../../platform/http/request-context';
+import { RequestContext, requireAll, requireReadAll } from '../../../../platform/http/request-context';
 import { OrganisationRepository } from '../infrastructure/organisation.repository';
 import { PEOPLE } from '../domain/permissions';
 
@@ -55,7 +55,7 @@ export class OrganisationService {
   }
 
   positions(ctx: RequestContext, q: PositionsQuery): Promise<Position[]> {
-    requireAll(ctx, PEOPLE.managePositions);
+    requireReadAll(ctx, PEOPLE.managePositions);
     return this.repo.positions(ctx.tenantId, q);
   }
 

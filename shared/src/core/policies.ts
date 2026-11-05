@@ -18,9 +18,17 @@ export const POLICIES = {
   'hrms.attendance.auto_punch_out_hours': { value: z.number().int().min(1).max(24), default: 8, description: 'A forgotten punch-out is closed this many hours after the punch-in (when the next punch-in arrives)' },
   'hrms.leave.balance_check': { value: z.boolean(), default: false, description: 'Refuse leave that would take the balance below zero' },
   'hrms.overtime.payable': { value: z.boolean(), default: false, description: 'Overtime is paid' },
+  'hrms.approvals.auto_approve_roles': {
+    value: z.array(z.string().trim().min(1).max(40)).max(10), default: ['ceo'] as string[],
+    description: 'Roles whose own requests (leave, expense, correction, overtime) need no approval: approved on submit, with no decider',
+  },
+  'payroll.lop_basis': {
+    value: z.enum(['calendar_days', 'fixed_30']), default: 'calendar_days' as 'calendar_days' | 'fixed_30',
+    description: 'Days a monthly salary is divided by for loss of pay and part months: calendar days of the month, or always 30',
+  },
 } as const;
 export type PolicyKey = keyof typeof POLICIES;
-export type PolicyValue<K extends PolicyKey> = (typeof POLICIES)[K]['default'] extends number ? number : boolean;
+export type PolicyValue<K extends PolicyKey> = z.infer<(typeof POLICIES)[K]['value']>;
 const keys = Object.keys(POLICIES) as [PolicyKey, ...PolicyKey[]];
 export const PolicyKeySchema = z.enum(keys);
 

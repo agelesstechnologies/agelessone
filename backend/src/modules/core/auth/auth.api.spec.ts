@@ -67,7 +67,7 @@ describe('Sign-in and roles', () => {
       expect(res.body.permissions).toEqual({
         'hrms.people.view': 'team', 'hrms.employments.update': 'team', 'hrms.expenses.submit': 'team', 'hrms.expenses.approve': 'team',
         'hrms.attendance.punch': 'team', 'hrms.attendance.view': 'team', 'hrms.attendance.approve': 'team', 'hrms.leave.apply': 'team', 'hrms.leave.approve': 'team', 'hrms.leave.report': 'team',
-        'hrms.skills.add': 'team', 'hrms.skills.verify': 'team', 'hrms.skills.view': 'team',
+        'hrms.skills.add': 'team', 'hrms.skills.verify': 'team', 'hrms.skills.view': 'team', 'hrms.dashboard.view': 'team', 'payroll.payslip.own': 'team',
       });
     });
   });

@@ -5,7 +5,7 @@ import {
 } from '@ageless/shared';
 import { Conn, DB, Db, Tx } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
-import { RequestContext, requireAll } from '../../../../platform/http/request-context';
+import { isManagement, RequestContext, requireAll } from '../../../../platform/http/request-context';
 import { CoreFacade } from '../../../core/core.facade';
 import { CONTENT_TYPES, detectDocumentType, discardUpload, DocumentType, readUpload, saveUpload } from '../../../../platform/storage';
 import { EmploymentPatch, PeopleRepository } from '../infrastructure/people.repository';
@@ -13,6 +13,7 @@ import { normalizeContactValue, normalizeLookupValue, prepareContacts } from '..
 import { isValidExitDate, pickNextPrimary } from '../domain/employments';
 import { nextEmployeeCode } from '../domain/employee-codes';
 import { PEOPLE } from '../domain/permissions';
+import { PrivateService } from './private.service';
 
 /**
  * Use cases live here: open the transaction, call repositories and other facades, write the outbox event.
@@ -25,6 +26,7 @@ export class PeopleService {
     @Inject(DB) private readonly db: Db,
     @Inject(PeopleRepository) private readonly repo: PeopleRepository,
     @Inject(CoreFacade) private readonly core: CoreFacade,
+    @Inject(PrivateService) private readonly privacy: PrivateService,
   ) {}
 
   health() { return { module: 'hrms', sub: 'people', ok: true }; }
@@ -174,7 +176,7 @@ export class PeopleService {
   async offerLetter(ctx: RequestContext, publicId: string): Promise<{ data: Buffer; contentType: string }> {
     const job = await this.db.transaction(async (tx) => {
       const j = await this.employment(tx, ctx.tenantId, publicId);
-      if (j.personId !== ctx.personId) await this.checkScope(tx, ctx, PEOPLE.manageEmployments, j.personId);
+      if (j.personId !== ctx.personId && !isManagement(ctx)) await this.checkScope(tx, ctx, PEOPLE.manageEmployments, j.personId);
       return j;
     });
     if (!job.offerLetterPath) throw new AppError('HRMS_NO_OFFER_LETTER', 404, 'No offer letter stored for this employment');
@@ -195,7 +197,7 @@ export class PeopleService {
   private async detail(ctx: RequestContext, publicId: string): Promise<PersonDetail> {
     const person = await this.repo.getDetail(ctx.tenantId, publicId);
     if (!person) throw new AppError('HRMS_PERSON_NOT_FOUND', 404, 'Person not found');
-    return person;
+    return { ...person, private: await this.privacy.masked(ctx, publicId) };
   }
 
   /**

@@ -37,6 +37,7 @@ export const leaveRequests = hrms.table('leave_requests', {
   approverPersonId: bigint('approver_person_id', { mode: 'number' }).references(() => persons.id),
   decidedBy: bigint('decided_by', { mode: 'number' }).references(() => persons.id),
   decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decidedAs: text('decided_as'), // approver | hr | management | no_approval_required (see migration 0021)
   decisionReason: text('decision_reason'),
   cancelledBy: bigint('cancelled_by', { mode: 'number' }).references(() => persons.id),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
@@ -51,7 +52,10 @@ export const leaveRequests = hrms.table('leave_requests', {
   check('leave_requests_days_check', sql`days > 0`),
   check('leave_requests_not_own_decision', sql`decided_by IS NULL OR decided_by <> person_id`),
   check('leave_requests_not_own_approver', sql`approver_person_id IS NULL OR approver_person_id <> person_id`),
-  check('leave_requests_decided_fields', sql`(status IN ('approved','rejected')) = (decided_by IS NOT NULL AND decided_at IS NOT NULL) OR status = 'cancelled'`),
+  check('leave_requests_decided_fields', sql`status = 'cancelled' OR (status IN ('approved','rejected')) = (decided_at IS NOT NULL AND decided_as IS NOT NULL)`),
+  check('leave_requests_decided_as_check', sql`decided_as IS NULL OR decided_as IN ('approver','hr','management','no_approval_required')`),
+  // a decision always has a decider, except a request that needed no approval (and that one never has one)
+  check('leave_requests_decider_required', sql`decided_as IS NULL OR (decided_as = 'no_approval_required') = (decided_by IS NULL)`),
   check('leave_requests_rejected_has_reason', sql`status <> 'rejected' OR decision_reason IS NOT NULL`),
 ]);
 

@@ -9,3 +9,10 @@ export const PEOPLE = {
   updateEmployments: 'hrms.employments.update',
   managePositions: 'hrms.positions.manage',
 } as const;
+
+/** Private details (rows added by migration 0021): view masked (HR, Management), reveal in full (Management), change (HR). */
+export const PRIVATE = {
+  view: 'hrms.private.view',
+  reveal: 'hrms.private.reveal',
+  manage: 'hrms.private.manage',
+} as const;

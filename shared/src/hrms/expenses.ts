@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DateOnly, Instant, PersonRef, PublicId } from '../common';
+import { DateOnly, Instant, PersonRef, PublicId, DecidedAs } from '../common';
 /** Expense claims: requests and responses shared by the API and the web app. Money is always integer paise. */
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'Not a real date');
@@ -69,12 +69,14 @@ export const ExpenseClaim = z.object({
   category: CodeName,
   spentOn: DateOnly,
   amountPaise: Paise,
+  currency: z.string(),   // of amountPaise and approvedAmountPaise
   description: z.string().nullable(),
   receiptPath: z.string().nullable(),
   status: ExpenseStatus,
   approvedAmountPaise: Paise.nullable(),
   approvedBy: PersonRef.nullable(),
   approvedAt: Instant.nullable(),
+  decidedAs: DecidedAs.nullable(),   // approvedBy is null when no_approval_required
   rejectedBy: PersonRef.nullable(),
   rejectedAt: Instant.nullable(),
   rejectionReason: z.string().nullable(),

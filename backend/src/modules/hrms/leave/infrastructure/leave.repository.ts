@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { aliasedTable, and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql, SQL } from 'drizzle-orm';
-import { LeaveLedgerEntry, LeaveRequestView, LeaveStatus, LeaveType } from '@ageless/shared';
+import { DecidedAs, LeaveLedgerEntry, LeaveRequestView, LeaveStatus, LeaveType } from '@ageless/shared';
 import { Conn, DB, Db, Tx } from '../../../../platform/db/db.module';
 import { legalEntities, persons } from '../../../core/schema';
 import { departments, employments } from '../../people/schema';
@@ -128,13 +128,15 @@ export class LeaveRepository {
       id: leaveRequests.id, personId: leaveRequests.personId, employmentId: leaveRequests.employmentId,
       leaveTypeId: leaveRequests.leaveTypeId, legalEntityId: leaveRequests.legalEntityId, fromDate: leaveRequests.fromDate, toDate: leaveRequests.toDate,
       fromHalf: leaveRequests.fromHalf, toHalf: leaveRequests.toHalf, days: leaveRequests.days,
-      status: leaveRequests.status, approverPersonId: leaveRequests.approverPersonId,
-    }).from(leaveRequests).where(and(eq(leaveRequests.tenantId, tenantId), eq(leaveRequests.publicId, publicId))).for('update');
+      status: leaveRequests.status, approverPersonId: leaveRequests.approverPersonId, publicId: leaveRequests.publicId, personName: persons.displayName,
+    }).from(leaveRequests).innerJoin(persons, eq(persons.id, leaveRequests.personId))
+      .where(and(eq(leaveRequests.tenantId, tenantId), eq(leaveRequests.publicId, publicId))).for('update');
     return row && { ...row, days: Number(row.days), status: row.status as LeaveStatus };
   }
 
-  async decide(tx: Tx, id: number, status: 'approved' | 'rejected', decidedBy: number, reason?: string): Promise<void> {
-    await tx.update(leaveRequests).set({ status, decidedBy, decidedAt: new Date(), decisionReason: reason ?? null }).where(eq(leaveRequests.id, id));
+  /** decidedBy null only with decidedAs 'no_approval_required' (the database checks it). */
+  async decide(tx: Tx, id: number, status: 'approved' | 'rejected', decidedBy: number | null, decidedAs: DecidedAs, reason?: string): Promise<void> {
+    await tx.update(leaveRequests).set({ status, decidedBy, decidedAs, decidedAt: new Date(), decisionReason: reason ?? null }).where(eq(leaveRequests.id, id));
   }
 
   async cancel(tx: Tx, id: number, cancelledBy: number): Promise<void> {
@@ -210,7 +212,7 @@ export class LeaveRepository {
       days: leaveRequests.days, reason: leaveRequests.reason, status: leaveRequests.status,
       approverPublicId: approver.publicId, approverName: approver.displayName,
       deciderPublicId: decider.publicId, deciderName: decider.displayName,
-      decidedAt: leaveRequests.decidedAt, decisionReason: leaveRequests.decisionReason,
+      decidedAs: leaveRequests.decidedAs, decidedAt: leaveRequests.decidedAt, decisionReason: leaveRequests.decisionReason,
       cancelledAt: leaveRequests.cancelledAt, createdAt: leaveRequests.createdAt,
     }).from(leaveRequests)
       .innerJoin(persons, eq(persons.id, leaveRequests.personId))
@@ -227,7 +229,7 @@ interface ViewRow {
   publicId: string; personPublicId: string; personName: string; employmentPublicId: string; company: string; employeeCode: string;
   typeCode: string; typeName: string; fromDate: string; toDate: string; fromHalf: string; toHalf: string; days: string;
   reason: string | null; status: string; approverPublicId: string | null; approverName: string | null;
-  deciderPublicId: string | null; deciderName: string | null; decidedAt: Date | null; decisionReason: string | null;
+  deciderPublicId: string | null; deciderName: string | null; decidedAs: string | null; decidedAt: Date | null; decisionReason: string | null;
   cancelledAt: Date | null; createdAt: Date;
 }
 function toView(r: ViewRow): LeaveRequestView {
@@ -240,6 +242,7 @@ function toView(r: ViewRow): LeaveRequestView {
     days: Number(r.days), reason: r.reason, status: r.status as LeaveStatus,
     approver: r.approverPublicId ? { publicId: r.approverPublicId, displayName: r.approverName! } : null,
     decidedBy: r.deciderPublicId ? { publicId: r.deciderPublicId, displayName: r.deciderName! } : null,
+    decidedAs: r.decidedAs as DecidedAs | null,
     decidedAt: r.decidedAt?.toISOString() ?? null, decisionReason: r.decisionReason,
     cancelledAt: r.cancelledAt?.toISOString() ?? null, createdAt: r.createdAt.toISOString(),
   };

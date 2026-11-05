@@ -22,7 +22,7 @@ export interface Route {
   method: 'get' | 'post' | 'patch' | 'put' | 'delete';
   path: string;                       // OpenAPI form: /api/hrms/leave/requests/{publicId}
   controller: string;                 // e.g. hrms/leave
-  permission: string | undefined;     // a permission code, '*' (anyone signed in) or undefined (no sign-in)
+  permission: string | undefined;     // permission code(s) ("a or b"), '*' (anyone signed in) or undefined (no sign-in)
   status: number;
   body?: ZodTypeAny; query?: ZodTypeAny; params: Record<string, ZodTypeAny>;
   doc?: DocOptions;
@@ -50,7 +50,8 @@ export function routesOf(app: INestApplication, prefix = 'api'): Route[] {
         const path = `/${[prefix, base, sub].filter((p) => p && p !== '/').join('/')}`.replace(/\/+/g, '/').replace(/:(\w+)/g, '{$1}');
         const route: Route = {
           method, path, controller: base, params: {},
-          permission: Reflect.getMetadata(IS_PUBLIC, handler) ? undefined : (Reflect.getMetadata(REQUIRED_PERMISSION, handler) as string | undefined),
+          permission: Reflect.getMetadata(IS_PUBLIC, handler) ? undefined
+            : [Reflect.getMetadata(REQUIRED_PERMISSION, handler) as string | string[] | undefined].flat().filter(Boolean).join(' or ') || undefined,
           status: (Reflect.getMetadata(HTTP_CODE_METADATA, handler) as number | undefined) ?? (method === 'post' ? 201 : 200),
           doc: Reflect.getMetadata(API_DOC, handler) as DocOptions | undefined,
         };

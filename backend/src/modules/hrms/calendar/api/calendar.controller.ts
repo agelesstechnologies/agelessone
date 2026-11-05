@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Query, Re
 import { z } from 'zod';
 import { CalendarQuery, CreateHolidayRequest, CreateWeeklyOffRequest, Holiday, HolidaysQuery, WeeklyOff, WeeklyOffsQuery, WorkCalendar } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
-import { Ctx, Permission, Public, RequestContext, SignedIn } from '../../../../platform/http/request-context';
+import { Ctx, MANAGEMENT, Permission, Public, RequestContext, SignedIn } from '../../../../platform/http/request-context';
 import { Doc } from '../../../../platform/http/doc';
 import { CalendarService } from '../application/calendar.service';
 import { CALENDAR } from '../domain/permissions';
@@ -46,7 +46,7 @@ export class CalendarController {
   }
 
   @Doc({ summary: 'Weekly-off rules: company defaults and person overrides', response: z.array(WeeklyOff) })
-  @Permission(CALENDAR.manage) @Get('weekly-offs')
+  @Permission(CALENDAR.manage, MANAGEMENT) @Get('weekly-offs')
   weeklyOffs(@Ctx() ctx: RequestContext, @Query(new ZodValidationPipe(WeeklyOffsQuery)) q: WeeklyOffsQuery) {
     return this.service.weeklyOffs(ctx, q);
   }

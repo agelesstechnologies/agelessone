@@ -88,6 +88,7 @@ export const attendanceCorrections = hrms.table('attendance_corrections', {
   approverPersonId: bigint('approver_person_id', { mode: 'number' }).references(() => persons.id),
   decidedBy: bigint('decided_by', { mode: 'number' }).references(() => persons.id),
   decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decidedAs: text('decided_as'), // approver | hr | management | no_approval_required (see migration 0021)
   decisionReason: text('decision_reason'),
   cancelledBy: bigint('cancelled_by', { mode: 'number' }).references(() => persons.id),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
@@ -102,6 +103,9 @@ export const attendanceCorrections = hrms.table('attendance_corrections', {
   check('attendance_corrections_times_order', sql`requested_in IS NULL OR requested_out IS NULL OR requested_in < requested_out`),
   check('attendance_corrections_not_own_decision', sql`decided_by IS NULL OR (decided_by <> person_id AND decided_by <> requested_by)`),
   check('attendance_corrections_not_own_approver', sql`approver_person_id IS NULL OR (approver_person_id <> person_id AND approver_person_id <> requested_by)`),
+  check('attendance_corrections_decided_fields', sql`status NOT IN ('approved','rejected') OR (decided_at IS NOT NULL AND decided_as IS NOT NULL)`),
+  check('attendance_corrections_decided_as_check', sql`decided_as IS NULL OR decided_as IN ('approver','hr','management','no_approval_required')`),
+  check('attendance_corrections_decider_required', sql`decided_as IS NULL OR (decided_as = 'no_approval_required') = (decided_by IS NULL)`),
   check('attendance_corrections_rejected_has_reason', sql`status <> 'rejected' OR decision_reason IS NOT NULL`),
 ]);
 
@@ -134,6 +138,7 @@ export const overtimeRequests = hrms.table('overtime_requests', {
   approverPersonId: bigint('approver_person_id', { mode: 'number' }).references(() => persons.id),
   decidedBy: bigint('decided_by', { mode: 'number' }).references(() => persons.id),
   decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decidedAs: text('decided_as'), // approver | hr | management | no_approval_required (see migration 0021)
   decisionReason: text('decision_reason'),
   cancelledBy: bigint('cancelled_by', { mode: 'number' }).references(() => persons.id),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
@@ -147,6 +152,9 @@ export const overtimeRequests = hrms.table('overtime_requests', {
   check('overtime_requests_reason_length', sql`char_length(reason) >= 3`),
   check('overtime_requests_not_own_decision', sql`decided_by IS NULL OR (decided_by <> person_id AND decided_by <> requested_by)`),
   check('overtime_requests_not_own_approver', sql`approver_person_id IS NULL OR (approver_person_id <> person_id AND approver_person_id <> requested_by)`),
+  check('overtime_requests_decided_fields', sql`status NOT IN ('approved','rejected') OR (decided_at IS NOT NULL AND decided_as IS NOT NULL)`),
+  check('overtime_requests_decided_as_check', sql`decided_as IS NULL OR decided_as IN ('approver','hr','management','no_approval_required')`),
+  check('overtime_requests_decider_required', sql`decided_as IS NULL OR (decided_as = 'no_approval_required') = (decided_by IS NULL)`),
   check('overtime_requests_rejected_has_reason', sql`status <> 'rejected' OR decision_reason IS NOT NULL`),
 ]);
 /**

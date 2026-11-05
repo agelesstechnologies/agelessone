@@ -11,6 +11,13 @@ export const PublicId = z.string().uuid();
 export const PersonRef = z.object({ publicId: PublicId, displayName: z.string() });
 export type PersonRef = z.infer<typeof PersonRef>;
 
+/**
+ * How a request was decided: by its named approver, by HR, by Management (CEO), or not at all because the requester's
+ * role needs no approval (policy hrms.approvals.auto_approve_roles). Set by the server only, never by a request.
+ */
+export const DecidedAs = z.enum(['approver', 'hr', 'management', 'no_approval_required']);
+export type DecidedAs = z.infer<typeof DecidedAs>;
+
 /** The answer to a create call that only returns the new record's id. */
 export const CreatedId = z.object({ publicId: PublicId });
 export type CreatedId = z.infer<typeof CreatedId>;

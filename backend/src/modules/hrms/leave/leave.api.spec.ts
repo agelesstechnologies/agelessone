@@ -74,20 +74,16 @@ describe('HRMS leave API', () => {
     expect((await act(tech, r.body.publicId, 'approve')).status).toBe(403);
   });
 
-  it('approver fallback: manager, then HR, then the CEO; the CEO decides only what names them', async () => {
-    const ceo = await signIn(app, DEMO.ceo.login);
-    const CEO_JOB = '00000000-0000-4000-8000-000000000106';
-    // the CEO's own request skips the CEO and goes to HR
-    const ceoLeave = await http().post('/api/hrms/leave/requests').set(ceo).send({ employmentPublicId: CEO_JOB, leaveTypeCode: 'GL', fromDate: day(35), toDate: day(35) });
-    expect(ceoLeave.body.approver).toEqual({ publicId: DEMO.hr.publicId, displayName: 'Demo HR' });
-
+  it('approver fallback: the manager first, else HR; a supervisor decides only what names them', async () => {
     const s = await staff();
     await http().patch(`/api/hrms/employments/${s.jobs.AE}`).set(hr).send({ managerPublicId: DEMO.supervisor.publicId }).expect(200);
     expect((await apply(s, day(35), day(35))).body.approver.publicId).toBe(DEMO.supervisor.publicId);
 
-    // the CEO (scope team) cannot decide a request that names someone else
+    // no manager and no department head: HR
     const other = await apply(await staff(), day(35), day(35));
-    expect((await act(ceo, other.body.publicId, 'approve')).status).toBe(403);
+    expect(other.body.approver.publicId).toBe(DEMO.hr.publicId);
+    expect((await act(sup, other.body.publicId, 'approve')).status).toBe(403);
+    // the CEO's own requests and Management decisions: reports/management.api.spec.ts
   });
 
   it('with the company balance-check policy on, leave may not take the balance below zero', async () => {

@@ -193,8 +193,13 @@ export class AttendanceService {
    * Per job over the range: day counts, minutes, leave days and absent days. A past working day (before today, while
    * the job was held) with no stored day at all counts as one absent day.
    */
-  async workHours(ctx: RequestContext, q: WorkHoursQuery): Promise<WorkHours> {
-    const jobs = await this.repo.jobsInRange(ctx.tenantId, q.from, q.to, q.company, this.visibility(ctx));
+  workHours(ctx: RequestContext, q: WorkHoursQuery): Promise<WorkHours> {
+    return this.hoursOf(ctx.tenantId, q, this.visibility(ctx));
+  }
+
+  /** The work-hours figures for a period, for the callers given (also used by payroll through HrmsFacade). */
+  async hoursOf(tenantId: number, q: { company?: string; from: string; to: string }, visibility: Visibility): Promise<WorkHours> {
+    const jobs = await this.repo.jobsInRange(tenantId, q.from, q.to, q.company, visibility);
     const totals = new Map((await this.repo.workDayTotals(jobs.map((j) => j.id), q.from, q.to)).map((t) => [t.employmentId, t]));
     const calendar = await this.calendar.daysFor(this.db, jobs.map((j) => j.id), q.from, q.to);
     const today = todayIst();
@@ -210,7 +215,7 @@ export class AttendanceService {
         days: { present: t?.present ?? 0, halfDay: t?.halfDay ?? 0, missedPunch: t?.missedPunch ?? 0, absent: (t?.absent ?? 0) + unrecorded, leave: t?.leave ?? 0 },
         leaveDays: t?.leaveDays ?? 0, absentDays: (t?.absentDays ?? 0) + unrecorded,
         workedMinutes: t?.workedMinutes ?? 0, extraMinutes: t?.extraMinutes ?? 0, approvedOvertimeMinutes: t?.approvedOvertimeMinutes ?? 0,
-        overtimePayable: await this.core.getPolicy(ctx.tenantId, 'hrms.overtime.payable', j.legalEntityId, q.to),
+        overtimePayable: await this.core.getPolicy(tenantId, 'hrms.overtime.payable', j.legalEntityId, q.to),
       });
     }
     return { company: q.company ?? null, from: q.from, to: q.to, producedAt: new Date().toISOString(), rows };

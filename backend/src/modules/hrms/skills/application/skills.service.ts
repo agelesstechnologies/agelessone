@@ -5,7 +5,7 @@ import {
 } from '@ageless/shared';
 import { DB, Db, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
-import { RequestContext, requireAll } from '../../../../platform/http/request-context';
+import { isManagement, RequestContext, requireAll, requireReadAll } from '../../../../platform/http/request-context';
 import { CONTENT_TYPES, detectDocumentType, discardUpload, DocumentType, readUpload, saveUpload } from '../../../../platform/storage';
 import { addDays, todayIst } from '../../../../platform/time';
 import { SkillsRepository, Visibility } from '../infrastructure/skills.repository';
@@ -103,7 +103,7 @@ export class SkillsService {
   async certificateFile(ctx: RequestContext, publicId: string): Promise<{ data: Buffer; contentType: string }> {
     const c = await this.db.transaction((tx) => this.repo.lockCertificate(tx, ctx.tenantId, publicId));
     if (!c) throw new AppError('HRMS_CERTIFICATE_NOT_FOUND', 404, 'Certificate not found');
-    const allowed = c.personId === ctx.personId || ctx.permissions[SKILLS.manage] === 'all' || await this.inScope(ctx, SKILLS.verify, c.personId);
+    const allowed = c.personId === ctx.personId || ctx.permissions[SKILLS.manage] === 'all' || isManagement(ctx) || await this.inScope(ctx, SKILLS.verify, c.personId);
     if (!allowed) throw new AppError('FORBIDDEN', 403, 'This certificate is outside what you may see');
     if (!c.filePath) throw new AppError('HRMS_NO_FILE', 404, 'No file stored for this certificate');
     return { data: await readUpload(c.filePath), contentType: CONTENT_TYPES[c.fileType as DocumentType] };
@@ -130,7 +130,7 @@ export class SkillsService {
 
   /** HR: certificates still valid that expire within the next days (worked out now, whether or not the job ran). */
   async expiring(ctx: RequestContext, q: ExpiringCertificatesQuery): Promise<ExpiringCertificates> {
-    requireAll(ctx, SKILLS.manage);
+    requireReadAll(ctx, SKILLS.manage);
     const today = todayIst();
     const until = addDays(today, q.days);
     const certs = await this.repo.expiring(ctx.tenantId, today, until);

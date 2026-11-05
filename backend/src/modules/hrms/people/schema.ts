@@ -90,3 +90,18 @@ export const positions = hrms.table('positions', {
   check('positions_filled_has_employment', sql`(status = 'filled') = (filled_by_employment_id IS NOT NULL)`),
 ]);
 // Next: job_assignments, grades, person_private, bank_accounts, person_documents
+
+/**
+ * A person's private details. Returned masked; shown in full only by a reveal, which is audited. Never logged.
+ */
+export const personPrivate = hrms.table('person_private', {
+  personId: bigint('person_id', { mode: 'number' }).primaryKey().references(() => persons.id),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  aadhaar: text('aadhaar'),
+  pan: text('pan'),
+  updatedBy: bigint('updated_by', { mode: 'number' }).notNull().references(() => persons.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, () => [
+  check('person_private_aadhaar_format', sql`aadhaar IS NULL OR aadhaar ~ '^[0-9]{12}$'`),
+  check('person_private_pan_format', sql`pan IS NULL OR pan ~ '^[A-Z]{5}[0-9]{4}[A-Z]$'`),
+]);

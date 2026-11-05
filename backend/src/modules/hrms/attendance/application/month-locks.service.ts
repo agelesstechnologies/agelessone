@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { LockMonthRequest, MonthLock, MonthLocksQuery, UnlockMonthRequest } from '@ageless/shared';
 import { Conn, DB, Db, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
-import { RequestContext, requireAll } from '../../../../platform/http/request-context';
+import { isManagement, RequestContext, requireAll } from '../../../../platform/http/request-context';
 import { todayIst } from '../../../../platform/time';
 import { MonthLocksRepository } from '../infrastructure/month-locks.repository';
 import { monthEnded, monthRange, monthsBetween } from '../domain/months';
@@ -29,7 +29,7 @@ export class MonthLocksService {
   }
 
   list(ctx: RequestContext, q: MonthLocksQuery): Promise<MonthLock[]> {
-    if (ctx.permissions[ATTENDANCE.lockMonth] !== 'all' && ctx.permissions[ATTENDANCE.unlockMonth] !== 'all') {
+    if (ctx.permissions[ATTENDANCE.lockMonth] !== 'all' && ctx.permissions[ATTENDANCE.unlockMonth] !== 'all' && !isManagement(ctx)) {
       throw new AppError('FORBIDDEN', 403, 'Only HR and System Admin see month locks');
     }
     return this.repo.list(ctx.tenantId, q.company, q.year);

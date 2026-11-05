@@ -23,13 +23,15 @@ export class AuthGuard implements CanActivate {
     if (kind !== 'Bearer' || !token) throw new AppError('AUTH_MISSING', 401, 'Sign in first (Authorization: Bearer <token>)');
     req.context = await this.auth.authenticate(token);
 
-    const required = this.reflector.getAllAndOverride<string | undefined>(REQUIRED_PERMISSION, targets);
+    const required = this.reflector.getAllAndOverride<string | string[] | undefined>(REQUIRED_PERMISSION, targets);
     if (!required) {
       this.logger.error(`Route without access rule: ${ctx.getClass().name}.${ctx.getHandler().name}`);
       throw new AppError('FORBIDDEN', 403, 'This route has no access rule');
     }
-    if (required !== ANY_SIGNED_IN && !req.context.permissions[required]) {
-      throw new AppError('FORBIDDEN', 403, `You need the permission ${required}`);
+    const anyOf = Array.isArray(required) ? required : [required];
+    const permissions = req.context.permissions;
+    if (required !== ANY_SIGNED_IN && !anyOf.some((p) => permissions[p])) {
+      throw new AppError('FORBIDDEN', 403, `You need the permission ${anyOf.join(' or ')}`);
     }
     return true;
   }

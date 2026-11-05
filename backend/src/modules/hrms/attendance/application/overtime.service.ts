@@ -3,7 +3,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CreateOvertimeRequest, MyOvertimeQuery, OvertimeRequestView, RejectOvertimeRequest } from '@ageless/shared';
 import { DB, Db, Tx, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
-import { RequestContext } from '../../../../platform/http/request-context';
+import { decidedAs, DecidedAs, RequestContext } from '../../../../platform/http/request-context';
+import { todayIst } from '../../../../platform/time';
 import { CoreFacade } from '../../../core/core.facade';
 import { AttendanceRepository } from '../infrastructure/attendance.repository';
 import { OvertimeRepository } from '../infrastructure/overtime.repository';
@@ -55,13 +56,19 @@ export class OvertimeService {
     await this.months.assertOpen(this.db, job.legalEntityId, req.workDate);
     if (await this.days.isDayLocked(this.db, job.id, req.workDate)) throw new AppError('HRMS_DAY_LOCKED', 409, 'This day is locked for payroll');
 
-    const approverPersonId = await this.core.approverFor(ctx.tenantId, [job.personId, ctx.personId], { managerId: job.managerPersonId, departmentHeadId: job.departmentHeadId });
+    // POLICY hrms.approvals.auto_approve_roles (default: ceo): their own overtime is approved on submit, with no decider
+    const noApproval = job.personId === ctx.personId && await this.core.needsNoApproval(ctx.tenantId, ctx.personId, job.legalEntityId, todayIst());
+    const approverPersonId = noApproval ? null
+      : await this.core.approverFor(ctx.tenantId, [job.personId, ctx.personId], { managerId: job.managerPersonId, departmentHeadId: job.departmentHeadId });
     const publicId = req.publicId ?? randomUUID();
     try {
-      await this.db.transaction((tx) => this.repo.insert(tx, {
-        tenantId: ctx.tenantId, publicId, personId: job.personId, employmentId: job.id, legalEntityId: job.legalEntityId,
-        workDate: req.workDate, minutes: req.minutes, reason: req.reason, ticketId, requestedBy: ctx.personId, approverPersonId,
-      }));
+      await this.db.transaction(async (tx) => {
+        await this.repo.insert(tx, {
+          tenantId: ctx.tenantId, publicId, personId: job.personId, employmentId: job.id, legalEntityId: job.legalEntityId,
+          workDate: req.workDate, minutes: req.minutes, reason: req.reason, ticketId, requestedBy: ctx.personId, approverPersonId,
+        });
+        if (noApproval) await this.applyApproval(tx, ctx.tenantId, (await this.repo.lock(tx, ctx.tenantId, publicId))!, null, 'no_approval_required');
+      });
     } catch (err) {
       if (violatedConstraint(err) === 'overtime_requests_public_id_unique') return this.request(ctx, req); // the same request twice at once
       throw err;
@@ -81,10 +88,7 @@ export class OvertimeService {
   async approve(ctx: RequestContext, publicId: string): Promise<OvertimeRequestView> {
     await this.db.transaction(async (tx) => {
       const r = await this.decidable(tx, ctx, publicId, 'approve');
-      await this.months.assertOpen(tx, r.legalEntityId, r.workDate);
-      if (await this.days.isDayLocked(tx, r.employmentId, r.workDate)) throw new AppError('HRMS_DAY_LOCKED', 409, 'This day is locked for payroll');
-      await this.repo.decide(tx, r.id, 'approved', ctx.personId);
-      await this.attendance.rebuildRange(tx, ctx.tenantId, r.personId, r.employmentId, r.workDate, r.workDate);
+      await this.applyApproval(tx, ctx.tenantId, r, ctx.personId, decidedAs(ctx, r.approverPersonId === ctx.personId));
     });
     return (await this.repo.request(ctx.tenantId, publicId))!;
   }
@@ -92,7 +96,11 @@ export class OvertimeService {
   async reject(ctx: RequestContext, publicId: string, req: RejectOvertimeRequest): Promise<OvertimeRequestView> {
     await this.db.transaction(async (tx) => {
       const r = await this.decidable(tx, ctx, publicId, 'reject');
-      await this.repo.decide(tx, r.id, 'rejected', ctx.personId, req.reason);
+      const as = decidedAs(ctx, r.approverPersonId === ctx.personId);
+      await this.repo.decide(tx, r.id, 'rejected', ctx.personId, as, req.reason);
+      await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'overtime.rejected', entity: 'overtime_request',
+        entityPublicId: r.publicId, subjectPersonId: r.personId, legalEntityId: r.legalEntityId,
+        summary: `Overtime of ${r.minutes} min for ${r.personName} on ${r.workDate} rejected (${as})` });
     });
     return (await this.repo.request(ctx.tenantId, publicId))!;
   }
@@ -111,6 +119,22 @@ export class OvertimeService {
       if (r.status === 'approved') await this.attendance.rebuildRange(tx, ctx.tenantId, r.personId, r.employmentId, r.workDate, r.workDate);
     });
     return (await this.repo.request(ctx.tenantId, publicId))!;
+  }
+
+  /** Approved with decided_by / decided_as and the day rebuilt (a future day has nothing to rebuild yet); an audit entry. */
+  private async applyApproval(tx: Tx, tenantId: number, r: NonNullable<Awaited<ReturnType<OvertimeRepository['lock']>>>,
+    deciderId: number | null, as: DecidedAs): Promise<void> {
+    await this.months.assertOpen(tx, r.legalEntityId, r.workDate);
+    if (await this.days.isDayLocked(tx, r.employmentId, r.workDate)) throw new AppError('HRMS_DAY_LOCKED', 409, 'This day is locked for payroll');
+    await this.repo.decide(tx, r.id, 'approved', deciderId, as);
+    await this.attendance.rebuildRange(tx, tenantId, r.personId, r.employmentId, r.workDate, r.workDate);
+    await this.core.audit(tx, { tenantId, actorPersonId: deciderId ?? r.requestedBy,
+      action: as === 'no_approval_required' ? 'overtime.auto_approved' : 'overtime.approved', entity: 'overtime_request',
+      entityPublicId: r.publicId, subjectPersonId: r.personId, legalEntityId: r.legalEntityId,
+      summary: as === 'no_approval_required'
+        ? `Overtime of ${r.minutes} min for ${r.personName} on ${r.workDate} approved on submit: no approval required`
+        : `Overtime of ${r.minutes} min for ${r.personName} on ${r.workDate} approved (${as})`,
+      details: { decidedAs: as, minutes: r.minutes } });
   }
 
   /** Never about yourself or filed by you; scope team means the request names you as approver; scope all means anyone's. */

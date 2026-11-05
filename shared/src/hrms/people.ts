@@ -114,6 +114,23 @@ export type PersonListItem = z.infer<typeof PersonListItem>;
 export const PersonList = z.object({ items: z.array(PersonListItem), page: z.number().int(), pageSize: z.number().int(), total: z.number().int() });
 export type PersonList = z.infer<typeof PersonList>;
 
+/**
+ * Private details (Aadhaar, PAN, salary bank accounts). Person detail shows them masked to HR and Management
+ * (null to everyone else); POST /api/hrms/people/:publicId/private/reveal returns them in full and is audited.
+ */
+export const PrivateBankAccount = z.object({
+  publicId: PublicId, company: z.string(), employeeCode: z.string(), accountHolder: z.string(),
+  accountNumber: z.string(), ifsc: z.string(), effectiveFrom: DateOnly,
+});
+export type PrivateBankAccount = z.infer<typeof PrivateBankAccount>;
+export const PrivateDetails = z.object({
+  masked: z.boolean(),
+  aadhaar: z.string().nullable(),   // masked: XXXX XXXX 1234
+  pan: z.string().nullable(),       // masked: XXXXXX234F
+  bankAccounts: z.array(PrivateBankAccount), // newest first; account numbers masked unless revealed
+});
+export type PrivateDetails = z.infer<typeof PrivateDetails>;
+
 export const PersonDetail = PersonRef.extend({
   status: z.string(),
   contacts: z.array(z.object({
@@ -125,5 +142,15 @@ export const PersonDetail = PersonRef.extend({
     exitReason: z.string().nullable(), department: DepartmentRef.nullable(), designation: z.string().nullable(), manager: PersonRef.nullable(),
     hasOfferLetter: z.boolean(),
   })),
+  /** Masked Aadhaar, PAN and bank accounts for HR and Management; null for everyone else. */
+  private: PrivateDetails.nullable(),
 });
 export type PersonDetail = z.infer<typeof PersonDetail>;
+
+const compact = (v: unknown) => (typeof v === 'string' ? v.replace(/[\s-]/g, '').toUpperCase() : v);
+/** PUT /api/hrms/people/:publicId/private (HR) — a field left out stays as it is; null clears it. Spaces and dashes are ignored. */
+export const UpdatePrivateRequest = z.object({
+  aadhaar: z.preprocess(compact, z.string().regex(/^[0-9]{12}$/, 'Aadhaar is 12 digits').nullable()).optional(),
+  pan: z.preprocess(compact, z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, 'PAN looks like ABCDE1234F').nullable()).optional(),
+}).refine((r) => r.aadhaar !== undefined || r.pan !== undefined, 'Give aadhaar or pan');
+export type UpdatePrivateRequest = z.infer<typeof UpdatePrivateRequest>;

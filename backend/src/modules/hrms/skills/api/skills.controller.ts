@@ -3,7 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import { AddCertificateRequest, AddPersonSkillRequest, Certificate, CreateSkillRequest, ExpiringCertificates, ExpiringCertificatesQuery, PersonSkill, Skill, SkillsMatrix, SkillsMatrixQuery, SkillsQuery } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
-import { Ctx, Permission, Public, RequestContext, SignedIn } from '../../../../platform/http/request-context';
+import { Ctx, MANAGEMENT, Permission, Public, RequestContext, SignedIn } from '../../../../platform/http/request-context';
 import { Doc } from '../../../../platform/http/doc';
 import { SkillsService } from '../application/skills.service';
 import { SKILLS } from '../domain/permissions';
@@ -65,7 +65,7 @@ export class SkillsController {
   }
 
   @Doc({ summary: 'Certificates expiring within the next days (HR)', response: ExpiringCertificates })
-  @Permission(SKILLS.manage) @Get('certificates/expiring')
+  @Permission(SKILLS.manage, MANAGEMENT) @Get('certificates/expiring')
   expiring(@Ctx() ctx: RequestContext, @Query(new ZodValidationPipe(ExpiringCertificatesQuery)) q: ExpiringCertificatesQuery) {
     return this.service.expiring(ctx, q);
   }
