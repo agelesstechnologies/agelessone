@@ -12,6 +12,8 @@ interface AuthState {
   /** Does the signed-in person hold this permission (any scope)? The backend still checks every request. */
   can: (permission: string) => boolean;
   scopeOf: (permission: string) => RoleScope | null;
+  /** More than their own records: employees (own scope only) do not see People or Roles & access. */
+  seesOthers: boolean;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -39,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     me, loading, login, logout, refresh,
     can: (p) => !!me?.permissions[p],
     scopeOf: (p) => me?.permissions[p] ?? null,
+    seesOthers: me?.permissions['hrms.people.view'] === 'team' || me?.permissions['hrms.people.view'] === 'all' || !!me?.permissions['core.users.manage'],
   }), [me, loading, login, logout, refresh]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

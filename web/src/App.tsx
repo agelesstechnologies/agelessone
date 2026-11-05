@@ -14,18 +14,18 @@ import Policies from './pages/Policies';
 import { Modal } from './ui';
 
 type PageKey = 'overview' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'policies' | 'access';
-interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | 'manage'; show: (can: (p: string) => boolean) => boolean }
+interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | 'manage'; show: (can: (p: string) => boolean, others: boolean) => boolean }
 
 /** Every menu item lists the permission that shows it; the backend still checks each request. */
 const NAV: NavItem[] = [
   { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={18} />, section: 'workspace', show: () => true },
-  { key: 'people', label: 'People', icon: <Users size={18} />, section: 'workspace', show: (can) => can(PEOPLE.view) },
+  { key: 'people', label: 'People', icon: <Users size={18} />, section: 'workspace', show: (_can, others) => others },
   { key: 'attendance', label: 'Attendance', icon: <Activity size={18} />, section: 'workspace', show: (can) => can(ATTENDANCE.punch) || can(ATTENDANCE.view) || can(ATTENDANCE.approve) },
   { key: 'expenses', label: 'Expenses', icon: <BriefcaseBusiness size={18} />, section: 'workspace', show: (can) => can(EXPENSES.submit) || can(EXPENSES.approve) || can(EXPENSES.report) },
   { key: 'leave', label: 'Leave', icon: <CalendarDays size={18} />, section: 'workspace', show: (can) => can(LEAVE.apply) || can(LEAVE.approve) || can(LEAVE.report) },
   { key: 'calendar', label: 'Calendar', icon: <CalendarRange size={18} />, section: 'workspace', show: (can) => can(PEOPLE.view) },
   { key: 'policies', label: 'Policies', icon: <SlidersHorizontal size={18} />, section: 'manage', show: (can) => can(POLICIES.manage) },
-  { key: 'access', label: 'Roles & access', icon: <ShieldCheck size={18} />, section: 'manage', show: () => true },
+  { key: 'access', label: 'Roles & access', icon: <ShieldCheck size={18} />, section: 'manage', show: (_can, others) => others },
 ];
 
 const pageFromHash = (): PageKey => {
@@ -34,7 +34,7 @@ const pageFromHash = (): PageKey => {
 };
 
 function Shell() {
-  const { me, can, logout } = useAuth();
+  const { me, can, logout, seesOthers } = useAuth();
   const [page, setPage] = useState<PageKey>(pageFromHash);
   const [mobileNav, setMobileNav] = useState(false);
   const [confirmOut, setConfirmOut] = useState(false);
@@ -46,7 +46,7 @@ function Shell() {
   }, []);
   if (!me) return null;
 
-  const items = NAV.filter((n) => n.show(can));
+  const items = NAV.filter((n) => n.show(can, seesOthers));
   // A page the person may not open (typed in the address bar) falls back to the overview.
   const current = items.find((n) => n.key === page) ?? items[0]!;
   const role = me.roles[0]?.name ?? 'No role';
@@ -69,7 +69,7 @@ function Shell() {
     </aside>
     <main className="main">
       <header className="topbar"><button className="icon-button hamburger" onClick={() => setMobileNav(!mobileNav)} aria-label="Open menu"><Menu size={20} /></button>
-        <div className="crumb">Workspace <span>/</span> <b>{current.label}</b></div>
+        {/* <div className="crumb"><b>{current.label}</b></div> */}
         <div className="top-actions"><span className="env"><i />Development</span><div className="avatar avatar-blue top-avatar">{initials}</div></div></header>
       <div className="content">
         {current.key === 'overview' && <Overview go={go} />}
