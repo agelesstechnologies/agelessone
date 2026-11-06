@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, gte, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { DB, Db } from '../../../../platform/db/db.module';
-import { permissions, persons, roleAssignments, rolePermissions, roles, users } from '../../schema';
+import { loginThrottle, permissions, persons, roleAssignments, rolePermissions, roles, users } from '../../schema';
 import { Scope } from '../domain/login';
 
 const userColumns = {
@@ -15,6 +15,46 @@ const userColumns = {
 @Injectable()
 export class AuthRepository {
   constructor(@Inject(DB) private readonly db: Db) {}
+
+  // ---- sign-in throttling (core.login_throttle) ----
+
+  /** The lockouts in force for these keys (account and IP). */
+  async lockouts(keys: string[]): Promise<(Date | null)[]> {
+    const rows = await this.db.select({ lockedUntil: loginThrottle.lockedUntil }).from(loginThrottle).where(inArray(loginThrottle.key, keys));
+    return rows.map((r) => r.lockedUntil);
+  }
+
+  /**
+   * Counts one failed sign-in for the key, in one statement (parallel guesses cannot slip past the limit): failures older
+   * than the window start a new count. Reaching `max` locks the key until now + lockout and starts the count again.
+   * Answers when the key is locked until, or null.
+   */
+  async recordFailure(key: string, now: Date, max: number, windowMs: number, lockoutMs: number): Promise<Date | null> {
+    const windowStart = new Date(now.getTime() - windowMs);
+    const lockedUntil = new Date(now.getTime() + lockoutMs);
+    // the count after this failure: 1 when the earlier ones are older than the window
+    const count = sql`(CASE WHEN t.window_started_at <= ${windowStart} THEN 1 ELSE t.failures + 1 END)`;
+    const { rows } = await this.db.execute<{ locked_until: Date | string | null }>(sql`
+      INSERT INTO ${loginThrottle} AS t (key, failures, window_started_at, locked_until)
+      VALUES (${key}, CASE WHEN 1 >= ${max} THEN 0 ELSE 1 END, ${now}, CASE WHEN 1 >= ${max} THEN ${lockedUntil}::timestamptz END)
+      ON CONFLICT (key) DO UPDATE SET
+        failures = CASE WHEN ${count} >= ${max} THEN 0 ELSE ${count} END,
+        window_started_at = CASE WHEN ${count} >= ${max} OR t.window_started_at <= ${windowStart} THEN ${now}::timestamptz ELSE t.window_started_at END,
+        locked_until = CASE WHEN ${count} >= ${max} THEN ${lockedUntil}::timestamptz ELSE t.locked_until END
+      RETURNING locked_until`);
+    const until = rows[0]?.locked_until ?? null;
+    return until === null ? null : new Date(until);
+  }
+
+  /** A successful sign-in (or a password reset) clears the account's count and lockout. */
+  async clearThrottle(keys: string[]): Promise<void> {
+    await this.db.update(loginThrottle).set({ failures: 0, lockedUntil: null }).where(inArray(loginThrottle.key, keys));
+  }
+
+  /** Counts that ended long ago and are not locked are forgotten (keeps the table small). */
+  async forgetOldThrottles(before: Date, now: Date): Promise<void> {
+    await this.db.delete(loginThrottle).where(and(lte(loginThrottle.windowStartedAt, before), or(isNull(loginThrottle.lockedUntil), lte(loginThrottle.lockedUntil, now))));
+  }
 
   async findUserByLogin(login: { email: string } | { phone: string }) {
     const where = 'email' in login ? eq(users.loginEmail, login.email) : eq(users.loginPhone, login.phone);

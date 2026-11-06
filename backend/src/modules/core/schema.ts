@@ -182,3 +182,18 @@ export const places = core.table('places', {
   check('places_coordinates_check', sql`latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180`),
   check('places_attempts_check', sql`attempts >= 0`),
 ]);
+
+/**
+ * Failed sign-ins, counted per account and per IP address, and the brief lockout they lead to. The key is a keyed hash
+ * (HMAC with JWT_SECRET) of the login or the IP, never the phone, email or address itself. Throttle state, not tenant
+ * data: it has no tenant_id because a sign-in is counted before its tenant is known (unknown logins included).
+ */
+export const loginThrottle = core.table('login_throttle', {
+  key: text('key').primaryKey(),
+  failures: integer('failures').notNull().default(0),
+  windowStartedAt: timestamp('window_started_at', { withTimezone: true }).notNull(),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+}, (t) => [
+  index('idx_login_throttle_window').on(t.windowStartedAt),
+  check('login_throttle_failures_check', sql`failures >= 0`),
+]);

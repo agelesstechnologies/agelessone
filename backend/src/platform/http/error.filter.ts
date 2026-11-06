@@ -1,7 +1,7 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from '@nestjs/common';
 import { AppError, ErrorBody } from './app-error';
 
-const CODES: Record<number, string> = { 400: 'BAD_REQUEST', 401: 'UNAUTHORIZED', 403: 'FORBIDDEN', 404: 'NOT_FOUND', 409: 'CONFLICT', 413: 'TOO_LARGE' };
+const CODES: Record<number, string> = { 400: 'BAD_REQUEST', 401: 'UNAUTHORIZED', 403: 'FORBIDDEN', 404: 'NOT_FOUND', 409: 'CONFLICT', 413: 'TOO_LARGE', 429: 'TOO_MANY_REQUESTS' };
 
 /** Every error leaves the API as { code, message, details? }. Unknown errors become 500 without internals. */
 @Catch()
@@ -9,8 +9,10 @@ export class ErrorFilter implements ExceptionFilter {
   private readonly logger = new Logger('Error');
 
   catch(err: unknown, host: ArgumentsHost) {
-    const res = host.switchToHttp().getResponse<{ status(code: number): { json(body: ErrorBody): void } }>();
+    const res = host.switchToHttp().getResponse<{ status(code: number): { json(body: ErrorBody): void }; setHeader(k: string, v: string): void }>();
     if (err instanceof AppError) {
+      const retry = (err.details as { retryAfterSeconds?: unknown } | undefined)?.retryAfterSeconds;
+      if (err.status === 429 && typeof retry === 'number') res.setHeader('Retry-After', String(retry));
       return res.status(err.status).json({ code: err.code, message: err.message, ...(err.details === undefined ? {} : { details: err.details }) });
     }
     if (err instanceof HttpException) {

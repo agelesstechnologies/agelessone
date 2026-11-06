@@ -8,7 +8,17 @@ import { ErrorFilter } from './error.filter';
 })
 export class HttpModule {}
 
-/** Settings shared by main.ts and the API tests. */
+/**
+ * Settings shared by main.ts and the API tests.
+ * TRUST_PROXY (backend/.env): set it when the API runs behind a reverse proxy (IIS, nginx), so the client's address is
+ * read from X-Forwarded-For — e.g. 1 (one proxy in front) or loopback. Without it every request seems to come from the
+ * proxy, and the sign-in limit per IP address would lock everyone at once. Leave it unset when clients connect directly.
+ */
 export function configureApp(app: INestApplication): INestApplication {
+  const trust = process.env.TRUST_PROXY?.trim();
+  if (trust) {
+    const value = /^\d+$/.test(trust) ? Number(trust) : trust === 'true' ? true : trust;
+    (app.getHttpAdapter().getInstance() as { set(k: string, v: unknown): void }).set('trust proxy', value);
+  }
   return app.setGlobalPrefix('api');
 }

@@ -4,10 +4,11 @@ import { AssignRoleRequest, CreateUserRequest, ResetPasswordRequest } from '@age
 import { violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
 import { RequestContext } from '../../../../platform/http/request-context';
-import { todayIst } from '../../../../platform/time';
+import { requireEnv, todayIst } from '../../../../platform/time';
 import { AuthRepository } from '../infrastructure/auth.repository';
 import { normalizeEmail, normalizePhone } from '../domain/login';
 import { BCRYPT_ROUNDS } from './auth.service';
+import { throttleKey } from '../domain/throttle';
 
 /** Logins and roles, managed by people with core.users.manage over the whole tenant. */
 @Injectable()
@@ -34,11 +35,15 @@ export class UsersService {
     }
   }
 
-  /** The new password ends every token the person had. */
+  /** The new password ends every token the person had, and lifts a sign-in lockout of the login. */
   async resetPassword(ctx: RequestContext, userPublicId: string, req: ResetPasswordRequest): Promise<void> {
     const user = await this.repo.findUser(ctx.tenantId, userPublicId);
     if (!user) throw new AppError('CORE_USER_NOT_FOUND', 404, 'Login not found');
     await this.repo.setPassword(user.id, await bcrypt.hash(req.newPassword, BCRYPT_ROUNDS));
+    // a reset also lifts a sign-in lockout of this login (its phone and email)
+    const secret = requireEnv('JWT_SECRET');
+    const keys = [user.loginPhone, user.loginEmail].filter((v): v is string => v !== null).map((v) => throttleKey('login', v, secret));
+    if (keys.length) await this.repo.clearThrottle(keys);
   }
 
   async assignRole(ctx: RequestContext, req: AssignRoleRequest): Promise<{ publicId: string }> {
