@@ -16,6 +16,7 @@ export const skills = hrms.table('skills', {
 }, (t) => [
   foreignKey({ name: 'skills_department_company_fk', columns: [t.departmentId, t.legalEntityId], foreignColumns: [departments.id, departments.legalEntityId] }),
   unique('skills_company_code_unique').on(t.legalEntityId, t.code),
+  unique('skills_id_company_unique').on(t.id, t.legalEntityId), // target of company-safe foreign keys (tickets)
 ]);
 
 /** A person's skill and level. Verified by someone else (never themselves). */

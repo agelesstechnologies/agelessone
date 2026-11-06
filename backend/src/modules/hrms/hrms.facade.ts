@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Availability, HrmsFacadeContract } from '@ageless/shared';
-import { AttendanceService } from './attendance/application/attendance.service';
+import { Conn } from '../../platform/db/db.module';
+import { AttendanceService, DayListener, PunchListener } from './attendance/application/attendance.service';
 import { LeaveService } from './leave/application/leave.service';
 
 /** The only HRMS entry point other modules may use. */
@@ -10,6 +11,18 @@ export class HrmsFacade implements HrmsFacadeContract {
     @Inject(AttendanceService) private readonly attendance: AttendanceService,
     @Inject(LeaveService) private readonly leave: LeaveService,
   ) {}
+
+  /** Follow work-day changes (punches, corrections, leave, rebuilds), inside their transaction. */
+  onWorkDayChanged(listener: DayListener): void { this.attendance.onDayChanged(listener); }
+
+  /** Add notices to the answer of a new punch (e.g. tickets without today's update at punch-out). */
+  onPunchStored(listener: PunchListener): void { this.attendance.onPunchStored(listener); }
+
+  /** The person's latest punch that counts (any job); undefined if none. */
+  latestPunch(conn: Conn, personId: number) { return this.attendance.latestPunchOf(conn, personId); }
+
+  /** The person's attended periods (complete in/out pairs) on an IST date and their minutes. */
+  attendedPeriods(conn: Conn, personId: number, date: string) { return this.attendance.attendedPeriods(conn, personId, date); }
 
   async getAvailability(_date: string, _skillCode?: string): Promise<Availability[]> { return []; }
   async isOnLeave(_personPublicId: string, _date: string): Promise<boolean> { return false; }

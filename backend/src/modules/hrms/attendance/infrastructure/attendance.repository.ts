@@ -119,6 +119,15 @@ export class AttendanceRepository {
     return row;
   }
 
+  /** The person's latest punch that counts (any job), readable inside or outside a transaction. */
+  async latestPunchOf(conn: Conn, personId: number) {
+    const [row] = await conn.select({
+      kind: attendanceEvents.kind, at: attendanceEvents.occurredAt, auto: sql<boolean>`${attendanceEvents.source} = 'auto'`, legalEntityId: employments.legalEntityId,
+    }).from(attendanceEvents).innerJoin(employments, eq(employments.id, attendanceEvents.employmentId))
+      .where(and(eq(attendanceEvents.personId, personId), notExcluded)).orderBy(desc(attendanceEvents.occurredAt), desc(attendanceEvents.id)).limit(1);
+    return row as { kind: 'in' | 'out'; at: Date; auto: boolean; legalEntityId: number } | undefined;
+  }
+
   /** Automatic punch-outs of the job in [from, to) that still count. */
   async autoPunches(tx: Tx, employmentId: number, from: Date, to: Date) {
     return tx.select({ id: attendanceEvents.id }).from(attendanceEvents)

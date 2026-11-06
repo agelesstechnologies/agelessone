@@ -16,9 +16,20 @@ const JobWithCode = Job.extend({ employeeCode: z.string() });
 export const DayStatus = z.enum(['present', 'half_day', 'absent', 'leave', 'holiday', 'weekly_off', 'missed_punch', 'working']);
 export type DayStatus = z.infer<typeof DayStatus>;
 
+/**
+ * Something the app should ask about after a punch, never a refusal — e.g. TICKETS_DAILY_UPDATE_MISSING at punch-out:
+ * today's tickets without a daily update (items: the tickets).
+ */
+export const PunchNotice = z.object({
+  code: z.string(), message: z.string(), items: z.array(z.object({ publicId: PublicId, label: z.string() })),
+});
+export type PunchNotice = z.infer<typeof PunchNotice>;
+
 export const Punch = z.object({
   publicId: PublicId, kind: z.enum(['in', 'out']), occurredAt: Instant, receivedAt: Instant,
   employment: Job, locationStatus: z.string().nullable(),
+  /** only on the answer to a new punch, when there is something to ask */
+  notices: z.array(PunchNotice).optional(),
 });
 export type Punch = z.infer<typeof Punch>;
 

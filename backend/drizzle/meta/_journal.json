@@ -155,6 +155,27 @@
       "when": 1793792596332,
       "tag": "0021_management_audit_private",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793941447282,
+      "tag": "0022_ticket_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793942696105,
+      "tag": "0023_tickets",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793944436583,
+      "tag": "0024_ticket_time",
+      "breakpoints": true
     }
   ]
 }

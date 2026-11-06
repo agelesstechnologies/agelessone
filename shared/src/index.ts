@@ -19,3 +19,6 @@ export * from './hrms/people';
 export * from './hrms/punch';
 export * from './hrms/skills';
 export * from './payroll';
+export * from './tickets';
+export * from './ticket-records';
+export * from './ticket-time';

@@ -42,5 +42,6 @@ uploads/
 .DS_Store
 Thumbs.db
 
-# Claude Code personal settings (CLAUDE.md is shared and committed)
+# Claude Code: personal settings and CLAUDE.md files (kept local, not committed)
 .claude/settings.local.json
+CLAUDE.md

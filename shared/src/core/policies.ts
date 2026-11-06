@@ -22,6 +22,10 @@ export const POLICIES = {
     value: z.array(z.string().trim().min(1).max(40)).max(10), default: ['ceo'] as string[],
     description: 'Roles whose own requests (leave, expense, correction, overtime) need no approval: approved on submit, with no decider',
   },
+  'tickets.time.split': {
+    value: z.enum(['equal']), default: 'equal' as 'equal',
+    description: 'How time is shared between tickets running at the same moment: equal = each of n tickets gets 1/n of that period',
+  },
   'payroll.lop_basis': {
     value: z.enum(['calendar_days', 'fixed_30']), default: 'calendar_days' as 'calendar_days' | 'fixed_30',
     description: 'Days a monthly salary is divided by for loss of pay and part months: calendar days of the month, or always 30',
