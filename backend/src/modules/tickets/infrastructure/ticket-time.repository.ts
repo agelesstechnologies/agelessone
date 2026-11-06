@@ -5,7 +5,7 @@ import { Conn, DB, Db, Tx } from '../../../platform/db/db.module';
 import { persons } from '../../core/schema';
 import { departments, employments } from '../../hrms/people/schema';
 import {
-  ticketAssignees, ticketAttachments, ticketDailyUpdates, tickets, ticketTimeAdjustments, ticketTimeAllocations, ticketTimelogs,
+  ticketAssignees, ticketAttachments, ticketDailyUpdates, tickets, ticketTimeAdjustments, ticketTimeAllocations, ticketTimelogs, ticketTypes,
 } from '../schema';
 
 const adjuster = alias(persons, 'adjuster');
@@ -25,6 +25,18 @@ export class TicketTimeRepository {
     const [row] = await this.db.select({ tenantId: ticketTimelogs.tenantId, personId: employments.personId }).from(ticketTimelogs)
       .innerJoin(employments, eq(employments.id, ticketTimelogs.employmentId)).where(eq(ticketTimelogs.publicId, publicId));
     return row;
+  }
+
+  /** Timelogs by their public ids, with the ticket's number, description, type details and the type's fields. */
+  async timelogsByPublicIds(conn: Conn, publicIds: string[]) {
+    if (publicIds.length === 0) return [];
+    return conn.select({
+      publicId: ticketTimelogs.publicId, startedAt: ticketTimelogs.startedAt, placeId: ticketTimelogs.placeId,
+      ticketPublicId: tickets.publicId, number: tickets.number, description: tickets.description, details: tickets.typeDetails, fields: ticketTypes.fields,
+    }).from(ticketTimelogs)
+      .innerJoin(tickets, eq(tickets.id, ticketTimelogs.ticketId))
+      .innerJoin(ticketTypes, eq(ticketTypes.id, tickets.typeId))
+      .where(inArray(ticketTimelogs.publicId, publicIds));
   }
 
   /** The person's open timelogs, oldest first. */

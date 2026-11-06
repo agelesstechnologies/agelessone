@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DateOnly, Instant, PersonRef, PublicId } from './common';
 import { TicketStatus } from './ticket-records';
+import { PunchConfirmation } from './hrms/attendance';
 /** Ticket time: ticket punch in / out, shared time per work day, the head's adjustments, daily updates. */
 
 const emptyToUndefined = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((v) => (v === '' ? undefined : v), schema.optional());
@@ -16,7 +17,11 @@ export const TicketPunchInRequest = z.object({
     publicId: z.string().uuid(),
     ticketPublicId: z.string().uuid(),
   })).min(1).max(20).refine((i) => new Set(i.map((x) => x.ticketPublicId)).size === i.length, 'Each ticket once'),
-});
+  /** where the person is (one place for all the tickets); the address is looked up for the confirmation */
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  accuracyM: z.number().int().nonnegative().optional(),
+}).refine((p) => (p.latitude === undefined) === (p.longitude === undefined), { message: 'Send latitude and longitude together', path: ['longitude'] });
 export type TicketPunchInRequest = z.infer<typeof TicketPunchInRequest>;
 
 /** POST /api/tickets/punch-out — stop the timers of some tickets, or all of mine. */
@@ -35,7 +40,16 @@ export const RunningTicket = z.object({
 });
 export type RunningTicket = z.infer<typeof RunningTicket>;
 /** The answer to ticket punch in / out: how many timers changed, and what runs now. */
-export const TicketPunchResult = z.object({ started: z.number().int(), stopped: z.number().int(), running: z.array(RunningTicket) });
+export const TicketPunchConfirmation = PunchConfirmation.extend({
+  /** the tickets of this punch-in: number, customer (from the type's customer field) and description */
+  tickets: z.array(z.object({ publicId: PublicId, number: z.string(), customer: z.string().nullable(), description: z.string().nullable() })),
+});
+export type TicketPunchConfirmation = z.infer<typeof TicketPunchConfirmation>;
+export const TicketPunchResult = z.object({
+  started: z.number().int(), stopped: z.number().int(), running: z.array(RunningTicket),
+  /** on punch-in only */
+  confirmation: TicketPunchConfirmation.optional(),
+});
 export type TicketPunchResult = z.infer<typeof TicketPunchResult>;
 
 // ---- daily updates ----

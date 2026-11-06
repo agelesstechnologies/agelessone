@@ -98,12 +98,15 @@ export class AttendanceService {
     const occurredAt = new Date(req.occurredAt);
     if (occurredAt.getTime() > Date.now() + FUTURE_TOLERANCE_MS) throw new AppError('HRMS_PUNCH_IN_FUTURE', 400, 'The punch time is in the future');
     await this.months.assertOpen(this.db, job.legalEntityId, todayIst(occurredAt));
+    // the address is looked up before the transaction (a slow provider never holds a lock); no answer: coordinates only
+    const found = req.latitude === undefined ? null : await this.core.lookUpAddress(req.latitude, req.longitude!);
 
     const notices: PunchNotice[] = [];
     try {
       await this.db.transaction(async (tx) => {
         if (req.kind === 'in') await this.autoPunchOut(tx, ctx.tenantId, ctx.personId, occurredAt);
-        await this.repo.insertPunch(tx, {
+        const place = found ? await this.core.savePlace(tx, { tenantId: ctx.tenantId, latitude: req.latitude!, longitude: req.longitude!, accuracyM: req.accuracyM }, found) : null;
+        await this.repo.insertPunch(tx, { placeId: place?.id ?? null,
           tenantId: ctx.tenantId, publicId: req.publicId, personId: ctx.personId, employmentId: job.id, legalEntityId: job.legalEntityId, kind: req.kind, source: 'web',
           occurredAt, latitude: req.latitude?.toString(), longitude: req.longitude?.toString(), accuracyM: req.accuracyM,
           // geofencing needs work locations (not built yet): record whether a position was sent

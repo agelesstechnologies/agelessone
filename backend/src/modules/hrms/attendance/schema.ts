@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { bigint, text, uuid, timestamp, numeric, integer, date, boolean, unique, check, index, uniqueIndex, foreignKey } from 'drizzle-orm/pg-core';
 import { hrms } from '../schema';
-import { legalEntities, persons } from '../../core/schema';
+import { legalEntities, persons, places } from '../../core/schema';
 import { employments } from '../people/schema';
 import { tickets } from '../../tickets/schema';
 
@@ -26,6 +26,7 @@ export const attendanceEvents = hrms.table('attendance_events', {
   accuracyM: integer('accuracy_m'),
   locationStatus: text('location_status'),
   correctionId: bigint('correction_id', { mode: 'number' }).references(() => attendanceCorrections.id), // set on source 'correction'
+  placeId: bigint('place_id', { mode: 'number' }).references(() => places.id),          // where it was made (address looked up by core)
 }, (t) => [
   foreignKey({ name: 'attendance_events_employment_company_fk', columns: [t.employmentId, t.legalEntityId], foreignColumns: [employments.id, employments.legalEntityId] }),
   index('idx_att_person_time').on(sql`person_id`, sql`occurred_at`),

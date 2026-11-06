@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { pgSchema, bigint, boolean, check, date, foreignKey, index, integer, jsonb, smallint, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
-import { legalEntities, persons } from '../core/schema';
+import { legalEntities, persons, places } from '../core/schema';
 import { departments, employments } from '../hrms/people/schema';
 import { skills } from '../hrms/skills/schema';
 export const ticketsSchema = pgSchema('tickets');
@@ -301,6 +301,8 @@ export const ticketTimelogs = ticketsSchema.table('ticket_timelogs', {
   startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
   endedAt: timestamp('ended_at', { withTimezone: true }),
   endReason: text('end_reason'),
+  /** where the ticket punch-in was made (address looked up by core) */
+  placeId: bigint('place_id', { mode: 'number' }).references(() => places.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   foreignKey({ name: 'ticket_timelogs_ticket_company_fk', columns: [t.ticketId, t.legalEntityId], foreignColumns: [tickets.id, tickets.legalEntityId] }),

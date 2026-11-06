@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgSchema, bigint, text, uuid, timestamp, boolean, varchar, check, unique, index, uniqueIndex, date, primaryKey, integer, jsonb } from 'drizzle-orm/pg-core';
+import { pgSchema, bigint, text, uuid, timestamp, boolean, varchar, check, unique, index, uniqueIndex, date, primaryKey, integer, jsonb, numeric } from 'drizzle-orm/pg-core';
 export const core = pgSchema('core');
 
 /** One row per company group using the platform. Full Core tables: see docs/reference/ageless_core_tickets_hrms.sql */
@@ -155,4 +155,30 @@ export const auditLog = core.table('audit_log', {
   details: jsonb('details'),
 }, (t) => [
   index('idx_audit_log_tenant_at').on(t.tenantId, t.at),
+]);
+
+/**
+ * Where a punch was made: the coordinates sent and, once the reverse-geocoding provider answers, the address.
+ * pending: no address yet (no provider configured, or the lookup failed) — the addresses:retry job tries again;
+ * failed: given up after too many attempts. Written only through CoreFacade. Never logged (exact locations).
+ */
+export const places = core.table('places', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
+  latitude: numeric('latitude', { precision: 9, scale: 6 }).notNull(),
+  longitude: numeric('longitude', { precision: 9, scale: 6 }).notNull(),
+  accuracyM: integer('accuracy_m'),
+  address: text('address'),
+  status: text('status').notNull(),
+  provider: text('provider'),
+  attempts: integer('attempts').notNull().default(0),
+  lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('idx_places_pending').on(t.status).where(sql`status = 'pending'`),
+  check('places_status_check', sql`status IN ('resolved','pending','failed')`),
+  check('places_resolved_fields', sql`(status = 'resolved') = (address IS NOT NULL AND resolved_at IS NOT NULL)`),
+  check('places_coordinates_check', sql`latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180`),
+  check('places_attempts_check', sql`attempts >= 0`),
 ]);

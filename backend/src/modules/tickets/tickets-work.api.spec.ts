@@ -63,7 +63,7 @@ describe('Tickets API', () => {
        SELECT 1, e.person_id, e.id, e.legal_entity_id, lt.id, $2, $2, 1, 'approved', hr.id, now(), 'hr'
          FROM hrms.employments e, hrms.leave_types lt, core.persons hr
         WHERE e.public_id = $1 AND lt.tenant_id = 1 AND lt.code = 'GL' AND hr.public_id = $3`, [onLeave.jobs.AE, DAY, DEMO.hr.publicId]);
-  });
+  }, 60_000); // heavy setup: give it time when the whole suite runs in parallel
   afterAll(async () => { await db?.end(); await app?.close(); });
 
   it('type details are checked against the type version\'s fields', async () => {

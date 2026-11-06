@@ -22,3 +22,4 @@ export * from './payroll';
 export * from './tickets';
 export * from './ticket-records';
 export * from './ticket-time';
+export * from './ticket-reports';

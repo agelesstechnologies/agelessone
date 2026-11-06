@@ -354,9 +354,12 @@ There is no automatic ticket punch-out: an automatic daily punch-out never count
 ### Punch in — `POST /tickets/punch-in`
 `tickets.work`. Starts a timer on each ticket, **in one transaction** (all or none).
 ```json
-{ "occurredAt": "2026-10-05T03:30:00Z", "items": [{ "publicId": "uuid made on the device", "ticketPublicId": "uuid" }] }
+{ "occurredAt": "2026-10-05T03:30:00Z", "latitude": 15.4909, "longitude": 73.8278, "accuracyM": 12,
+  "items": [{ "publicId": "uuid made on the device", "ticketPublicId": "uuid" }] }
 ```
 - `occurredAt` is optional (default now), never in the future (`400 TICKETS_TIME_IN_FUTURE`).
+- `latitude` / `longitude` (together) and `accuracyM` are optional: one place for all the tickets; its address goes in
+  the confirmation (see **Punch confirmations and addresses**).
 - Only while punched in for the day at that time: the person's latest punch is a real punch-in at or before it, open for
   no longer than the open-punch limit (`409 TICKETS_NOT_PUNCHED_IN`).
 - Only on tickets the caller is currently assigned to (`403 TICKETS_NOT_ASSIGNEE`; a ticket they cannot see: `404`),
@@ -366,8 +369,18 @@ There is no automatic ticket punch-out: an automatic daily punch-out never count
 - Items whose `publicId` is already stored are not stored again; if all are, the answer is `200` (else `201`). A
   `publicId` of someone else: `409 TICKETS_DUPLICATE_ID`.
 
-Answer: `{ "started": 2, "stopped": 0, "running": [{ "timelogPublicId", "ticket": { publicId, number, title, status }, "startedAt" }] }`.
-Event `time_started` on each ticket.
+Answer:
+```json
+{ "started": 2, "stopped": 0,
+  "running": [{ "timelogPublicId": "uuid", "ticket": { "publicId", "number", "title", "status" }, "startedAt": "..." }],
+  "confirmation": {
+    "message": "Ticket punch-in (2 tickets) at 09:30 IST on 25 Oct 2026, Test Road 1, Test Town, Goa",
+    "at": "2026-10-25T04:00:00.000Z", "address": "Test Road 1, Test Town, Goa", "latitude": 15.4909, "longitude": 73.8278,
+    "tickets": [{ "publicId": "uuid", "number": "AE-0012", "customer": "Wonder Park", "description": "Demo of the new ride" }] } }
+```
+`confirmation.tickets` lists the tickets of this request: `customer` is the value of the type's `customer` field (null
+when the type has none), `description` the ticket's. A resend answers the same confirmation. Event `time_started` on
+each ticket.
 
 ### Punch out — `POST /tickets/punch-out`
 `tickets.work`. `{ "tickets": ["uuid", ...] }` (one or several) **or** `{ "all": true }`, optional `occurredAt`.
@@ -431,3 +444,68 @@ The person themselves; the head or supervisor of one of their tickets that day; 
 ### Daily job
 `pnpm --filter @ageless/backend tickets:daily` (after `pnpm --filter @ageless/backend build`), every morning: closes the
 timers of people whose daily punch-in has been open longer than the open-punch limit, as `unfinished`.
+
+## Punch confirmations and addresses
+
+The daily punch (`POST /hrms/attendance/punches`) and the ticket punch-in answer a **confirmation**: what the person is
+shown now (push and WhatsApp later use the same text). Every punch answer carries it, a resend included.
+```json
+"confirmation": { "message": "Punched in at 09:00 IST on 22 Oct 2026, Test Road 1, Test Town, Goa",
+  "at": "2026-10-22T03:30:00.000Z", "address": "Test Road 1, Test Town, Goa", "latitude": 15.4909, "longitude": 73.8278 }
+```
+- With coordinates but no address yet the message shows them: `…, location 15.490900, 73.827800 (address to follow)`;
+  without a location sent: `…, no location sent` (address, latitude and longitude null).
+- The ticket punch-in confirmation adds `tickets` (number, customer, description) — see **Punch in** above.
+
+**Addresses.** When a punch carries `latitude` / `longitude`, the reverse-geocoding adapter (`platform/geocoding.ts`) is
+asked for the address **before** the punch's transaction, and the place is stored with the punch (`core.places`;
+`hrms.attendance_events.place_id`, `tickets.ticket_timelogs.place_id`):
+
+| Outcome | Stored |
+| --- | --- |
+| the provider answers | `status = resolved`, the address |
+| no provider configured | coordinates only, `status = pending`, 0 attempts |
+| the lookup fails (error, timeout, empty answer) | coordinates only, `status = pending`, 1 attempt |
+
+The background job `pnpm --filter @ageless/backend addresses:retry` (every 15 minutes or so) asks again for pending
+places, oldest first; after 10 failed attempts a place is `failed`. While no provider is configured it does nothing.
+Settings (`backend/.env`, never in code): `GEOCODING_PROVIDER` = `none` (default) | `nominatim` | `google`,
+`GEOCODING_URL` (the provider's base URL, e.g. your own Nominatim server), `GEOCODING_API_KEY` (Google needs one),
+`GEOCODING_TIMEOUT_MS` (default 3000). Locations and addresses are never logged; the job prints counts only.
+
+## Reports
+
+All under `GET /tickets/reports/...`, JSON or CSV (`format=csv`). Time is always **allocated time**: the shared time
+per work day plus heads' adjustments (`ticket_time_allocations` + `ticket_time_adjustments`), never raw overlapping
+timer time. Every report answers `report`, `company` (or null for all), `from`, `to`, `producedAt`, `rows`, `totals`; the
+CSV starts with the same facts (Report, Company, Period, Produced at), then the rows and a `TOTAL` line with the same
+totals as the screen.
+
+| Who | Sees |
+| --- | --- |
+| HR, admin user, Management | every ticket (and every person) |
+| Department head | tickets of the departments they head; utilisation: the people of those departments |
+| Anyone else | `403 TICKETS_FORBIDDEN` |
+
+Period reports take `from`, `to` (IST dates, at most 366 days) and optional `company`; `overdue` and `on-hold` are
+as of today (`from = to = today`) and take only `company`. Unknown company: `400 TICKETS_UNKNOWN_COMPANY`.
+
+| Path | Rows | Totals |
+| --- | --- | --- |
+| `hours?by=ticket\|type\|person\|department\|customer` (default ticket) | `{ key, label, minutes, hours }` — key is the ticket / type / person / department publicId; customers are grouped by the type's customer field (`(no customer)`), key null | `{ minutes, hours }` |
+| `utilisation` | per person `{ person, attendanceMinutes, ticketMinutes, unallocatedMinutes, utilisationPercent }` — utilisation = ticket ÷ attendance × 100 (one decimal; null without attendance); unallocated = attendance − ticket time (information only). Attendance is the stored work days' minutes | the same fields over all rows |
+| `overdue` | due date before today and not completed or cancelled: ticket, company, type, status, priority, department, supervisor, primary assignee, due date, `daysOverdue` | `{ tickets }` |
+| `on-hold` | the same ticket fields plus `holdReason` and `heldSince` (when it was last put on hold) | `{ tickets }` |
+| `weekly` | per week (Monday, IST) and type: `{ weekStart, type, created, completed }` (created by creation time, completed by completion time) | `{ created, completed }` |
+| `missing-updates` | per person: `missingUpdates` (ticket-days with a timer but no daily update), `tickets`, `minutes` (allocated on those ticket-days) | `{ missingUpdates, minutes }` |
+
+## Dashboard — `GET /tickets/dashboard?company=`
+Numbers for the CEO dashboard, with the same visibility as the reports (Management: every ticket).
+```json
+{ "company": null, "producedAt": "...", "month": "2026-11", "lastMonth": "2026-10",
+  "open": 3, "overdue": 1, "completedThisMonth": 1, "completedLastMonth": 0,
+  "openByType": [{ "type": { "code": "site_work", "name": "Site work" }, "count": 2 }],
+  "openByPriority": [{ "priority": 1, "count": 1 }, { "priority": 3, "count": 2 }],
+  "openByTypeAndPriority": [{ "type": { "code": "site_work", "name": "Site work" }, "priority": 1, "count": 1 }] }
+```
+Open = open, assigned, in progress or on hold. Months are IST calendar months, by completion time.

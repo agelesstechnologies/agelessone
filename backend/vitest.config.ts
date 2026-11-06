@@ -10,6 +10,7 @@ export default defineConfig({
     env: {
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? '',    // the app under test never touches your dev database
       UPLOAD_DIR: join(tmpdir(), 'ageless-test-uploads'),   // test receipts never land in backend/uploads
+      GEOCODING_PROVIDER: 'none',                            // tests never call a real geocoder (the geocoding test runs its own)
     },
   },
 });

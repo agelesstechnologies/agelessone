@@ -25,11 +25,21 @@ export const PunchNotice = z.object({
 });
 export type PunchNotice = z.infer<typeof PunchNotice>;
 
+/**
+ * What the person is shown after punching (and, later, sent by push or WhatsApp): the time and where. address is null
+ * until the reverse-geocoding provider answers (coordinates are shown meanwhile); all null when no location was sent.
+ */
+export const PunchConfirmation = z.object({
+  message: z.string(), at: Instant, address: z.string().nullable(), latitude: z.number().nullable(), longitude: z.number().nullable(),
+});
+export type PunchConfirmation = z.infer<typeof PunchConfirmation>;
+
 export const Punch = z.object({
   publicId: PublicId, kind: z.enum(['in', 'out']), occurredAt: Instant, receivedAt: Instant,
   employment: Job, locationStatus: z.string().nullable(),
   /** only on the answer to a new punch, when there is something to ask */
   notices: z.array(PunchNotice).optional(),
+  confirmation: PunchConfirmation,
 });
 export type Punch = z.infer<typeof Punch>;
 

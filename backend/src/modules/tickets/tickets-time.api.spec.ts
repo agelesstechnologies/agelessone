@@ -59,7 +59,7 @@ describe('Ticket time API', () => {
     dept = (await http().post('/api/hrms/departments').set(hr).send({ company: 'AE', name: `Time ${tag()}`, codePrefix: letters() }).expect(201)).body.publicId;
     await http().patch(`/api/hrms/departments/${dept}`).set(hr).send({ headPublicId: head.personId }).expect(200);
     siteWork = (await http().get('/api/tickets/types').query({ company: 'AE' }).set(hr)).body.find((t: any) => t.code === 'site_work').publicId;
-  });
+  }, 60_000); // heavy setup: give it time when the whole suite runs in parallel
   afterAll(async () => { await db?.end(); await app?.close(); });
 
   describe('a shared day', () => {

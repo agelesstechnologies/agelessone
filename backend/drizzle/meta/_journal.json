@@ -176,6 +176,13 @@
       "when": 1793944436583,
       "tag": "0024_ticket_time",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793945924242,
+      "tag": "0025_punch_places",
+      "breakpoints": true
     }
   ]
 }

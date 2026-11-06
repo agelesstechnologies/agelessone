@@ -2,13 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   AdjustTimeRequest, AllocationQuery, DailyUpdate, DailyUpdateRequest, DayAllocation, MissingUpdate, MissingUpdatesQuery, PunchNotice, RunningTicket,
-  TicketPunchInRequest, TicketPunchOutRequest, TicketPunchResult,
+  TicketField, TicketPunchConfirmation, TicketPunchInRequest, TicketPunchOutRequest, TicketPunchResult,
 } from '@ageless/shared';
 import { DB, Db, Tx, violatedConstraint } from '../../../platform/db/db.module';
 import { AppError } from '../../../platform/http/app-error';
 import { isManagement, RequestContext } from '../../../platform/http/request-context';
 import { addDays, istDayStart, todayIst } from '../../../platform/time';
 import { detectDocumentType, discardUpload, saveUpload } from '../../../platform/storage';
+import { punchConfirmation } from '../../../platform/confirmation';
 import { CoreFacade } from '../../core/core.facade';
 import { HrmsFacade } from '../../hrms/hrms.facade';
 import { TicketsRepository } from '../infrastructure/tickets.repository';
@@ -58,11 +59,15 @@ export class TicketTimeService {
       if (!owner) fresh.push(item);
       else if (owner.tenantId !== ctx.tenantId || owner.personId !== ctx.personId) throw new AppError('TICKETS_DUPLICATE_ID', 409, 'This publicId is already used');
     }
-    if (fresh.length === 0) return { result: { started: 0, stopped: 0, running: await this.running(ctx) }, created: false };
+    const ids = req.items.map((i) => i.publicId);
+    if (fresh.length === 0) return { result: { started: 0, stopped: 0, running: await this.running(ctx), confirmation: await this.confirmation(ids) }, created: false };
+    // the address is looked up before the transaction; no answer: coordinates only (addresses:retry tries again)
+    const found = req.latitude === undefined ? null : await this.core.lookUpAddress(req.latitude, req.longitude!);
     try {
       await this.db.transaction(async (tx) => {
         await this.repo.lockPerson(tx, ctx.personId);
         await this.requirePunchedIn(tx, ctx, at);
+        const place = found ? await this.core.savePlace(tx, { tenantId: ctx.tenantId, latitude: req.latitude!, longitude: req.longitude!, accuracyM: req.accuracyM }, found) : null;
         const running = await this.repo.running(tx, ctx.personId);
         for (const item of fresh) {
           const { t } = await this.tickets.load(tx, ctx, item.ticketPublicId, 'view', true);
@@ -72,7 +77,7 @@ export class TicketTimeService {
           if (t.status === 'assigned') await this.tickets.markStarted(tx, ctx.personId, t, { by: 'ticket_punch' });
           else if (t.status !== 'in_progress') throw new AppError('TICKETS_WRONG_STATUS', 409, `Ticket ${t.number} is ${t.status}`, { status: t.status });
           await this.repo.insertTimelog(tx, { tenantId: t.tenantId, publicId: item.publicId, ticketId: t.id, employmentId: job.employmentId,
-            legalEntityId: t.legalEntityId, startedAt: at });
+            legalEntityId: t.legalEntityId, startedAt: at, placeId: place?.id ?? null });
           await this.tickets.event(tx, ctx.personId, t, 'time_started', { timelog: item.publicId, at: at.toISOString() });
         }
       });
@@ -80,7 +85,7 @@ export class TicketTimeService {
       if (violatedConstraint(err) === 'ticket_timelogs_public_id_unique') return this.punchIn(ctx, req); // the same request twice at once
       throw err;
     }
-    return { result: { started: fresh.length, stopped: 0, running: await this.running(ctx) }, created: true };
+    return { result: { started: fresh.length, stopped: 0, running: await this.running(ctx), confirmation: await this.confirmation(ids) }, created: true };
   }
 
   /** Stops the caller's timers on the tickets given (or all). */
@@ -314,6 +319,21 @@ export class TicketTimeService {
   }
 
   // ---- helpers ----
+
+  /** The punch-in confirmation: time, address (or coordinates) and each ticket's number, customer and description. */
+  private async confirmation(timelogIds: string[]): Promise<TicketPunchConfirmation> {
+    const logs = await this.repo.timelogsByPublicIds(this.db, timelogIds);
+    const placeId = logs.find((l) => l.placeId !== null)?.placeId ?? null;
+    const place = placeId === null ? undefined : (await this.core.getPlaces(this.db, [placeId])).get(placeId);
+    const at = logs.reduce((a, l) => (l.startedAt < a ? l.startedAt : a), logs[0].startedAt);
+    const base = punchConfirmation(`Ticket punch-in (${logs.length} ticket${logs.length === 1 ? '' : 's'})`, at,
+      { address: place?.address ?? null, latitude: place?.latitude ?? null, longitude: place?.longitude ?? null });
+    return { ...base, tickets: logs.map((l) => {
+      const key = (l.fields as TicketField[]).find((f) => f.type === 'customer')?.key;
+      const customer = key ? (l.details as Record<string, unknown>)[key] : undefined;
+      return { publicId: l.ticketPublicId, number: l.number, customer: typeof customer === 'string' ? customer : null, description: l.description };
+    }) };
+  }
 
   private async dayView(tenantId: number, personId: number, date: string): Promise<DayAllocation> {
     const [person] = [...(await this.ticketsRepo.personRefs(this.db, [personId])).values()];
