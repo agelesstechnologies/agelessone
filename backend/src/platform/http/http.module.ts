@@ -15,6 +15,11 @@ export class HttpModule {}
  * proxy, and the sign-in limit per IP address would lock everyone at once. Leave it unset when clients connect directly.
  */
 export function configureApp(app: INestApplication): INestApplication {
+  app.enableCors({
+    origin: process.env.WEB_ORIGIN ?? 'http://localhost:5173',
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
   const trust = process.env.TRUST_PROXY?.trim();
   if (trust) {
     const value = /^\d+$/.test(trust) ? Number(trust) : trust === 'true' ? true : trust;
