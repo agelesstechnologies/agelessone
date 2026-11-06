@@ -4,4 +4,6 @@ export interface HrmsFacadeContract {
   getAvailability(date: string, skillCode?: string): Promise<Availability[]>;
   isOnLeave(personPublicId: string, date: string): Promise<boolean>;
   getApprovedMinutes(personPublicId: string, from: string, to: string): Promise<number>;
+  /** absent days (absences + unpaid leave) per employment public id, for payroll */
+  absentDaysForPayroll(tenantId: number, company: string, from: string, to: string): Promise<Record<string, number>>;
 }

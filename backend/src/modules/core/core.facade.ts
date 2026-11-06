@@ -1,10 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { POLICIES, PolicyKey, PolicyValue } from '@ageless/shared';
 import { and, eq, isNull } from 'drizzle-orm';
-import { Tx } from '../../platform/db/db.module';
+import { Conn, Tx } from '../../platform/db/db.module';
 import { personContacts, persons } from './schema';
 import { PolicyService } from './policies/application/policy.service';
-import { ApprovalsService } from './approvals/approvals.service';
+import { ApprovalsService, JobApprovers } from './approvals/approvals.service';
+import { AuditEntry, AuditService } from './audit/audit.service';
 
 export interface NewPerson {
   tenantId: number;
@@ -20,11 +21,27 @@ export class CoreFacade {
   constructor(
     @Inject(PolicyService) private readonly policies: PolicyService,
     @Inject(ApprovalsService) private readonly approvals: ApprovalsService,
+    @Inject(AuditService) private readonly auditLog: AuditService,
   ) {}
 
+  /** Writes an audit entry inside the caller's transaction (append-only). */
+  audit(conn: Conn, entry: AuditEntry): Promise<void> {
+    return this.auditLog.write(conn, entry);
+  }
+
+  /**
+   * A person whose own requests need no approval: they hold one of the roles in the policy
+   * hrms.approvals.auto_approve_roles (default: ceo) for the company. Tied to the role, never to a named person.
+   */
+  async needsNoApproval(tenantId: number, personId: number, companyId: number, onDate: string): Promise<boolean> {
+    const roles = await this.getPolicy(tenantId, 'hrms.approvals.auto_approve_roles', companyId, onDate);
+    if (roles.length === 0) return false;
+    return (await this.approvals.rolesOf(tenantId, personId)).some((r) => roles.includes(r));
+  }
+
   /** Who decides a request: manager, then department head, then HR, then CEO — never one of notAllowed (person ids). */
-  approverFor(tenantId: number, notAllowed: number[], managerId: number | null): Promise<number | null> {
-    return this.approvals.approverFor(tenantId, notAllowed, managerId);
+  approverFor(tenantId: number, notAllowed: number[], job: JobApprovers): Promise<number | null> {
+    return this.approvals.approverFor(tenantId, notAllowed, job);
   }
 
   /**

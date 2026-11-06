@@ -47,6 +47,8 @@ ageless/
    through `CoreFacade.getPolicy(...)` with a default; nothing hard-codes them.
 7. Never log phone numbers, bank or ID numbers, or exact locations. Never put real staff data in seeds or tests.
 8. Keep it simple: no new frameworks, packages or layers without asking.
+9. Every company-owned table has legal_entity_id and a composite foreign key to its employment, so it can't link to
+   another company's records. Money columns have a currency column.
 
 ## Before finishing a task
 - `pnpm typecheck`, `pnpm test`, `pnpm boundaries` and `pnpm build` pass.

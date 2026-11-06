@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Instant, PersonRef, PublicId } from '../common';
 /** Login, the signed-in person, logins and roles. Shared by the API and the web app. */
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'Not a real date');
@@ -14,20 +15,22 @@ export const LoginRequest = z.object({
   password: z.string().min(1).max(72),
 });
 export type LoginRequest = z.infer<typeof LoginRequest>;
-export interface LoginResponse { token: string; expiresAt: string }
+export const LoginResponse = z.object({ token: z.string(), expiresAt: Instant });
+export type LoginResponse = z.infer<typeof LoginResponse>;
 
 /** POST /api/auth/password: changing the password ends every older token, and answers with a new one. */
 export const ChangePasswordRequest = z.object({ currentPassword: z.string().min(1).max(72), newPassword: password });
 export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequest>;
 
 /** GET /api/auth/me */
-export interface Me {
-  person: { publicId: string; displayName: string };
-  user: { publicId: string; loginPhone: string | null; loginEmail: string | null };
-  roles: { publicId: string; code: string; name: string; scope: RoleScope }[];
+export const Me = z.object({
+  person: PersonRef,
+  user: z.object({ publicId: PublicId, loginPhone: z.string().nullable(), loginEmail: z.string().nullable() }),
+  roles: z.array(z.object({ publicId: PublicId, code: z.string(), name: z.string(), scope: RoleScope })),
   /** permission code → widest scope the person holds it with */
-  permissions: Record<string, RoleScope>;
-}
+  permissions: z.record(z.string(), RoleScope),
+});
+export type Me = z.infer<typeof Me>;
 
 /** POST /api/core/users: a login for an existing person, with a phone, an email, or both. */
 export const CreateUserRequest = z.object({

@@ -5,8 +5,11 @@ import {
 } from '@ageless/shared';
 import { DB, Db, Tx } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
-import { RequestContext, requireAll } from '../../../../platform/http/request-context';
+import { decidedAs, RequestContext, requireAll } from '../../../../platform/http/request-context';
+import { todayIst } from '../../../../platform/time';
+import { CoreFacade } from '../../../core/core.facade';
 import { discardUpload, saveUpload } from '../../../../platform/storage';
+import { rupees, toCsv } from '../../../../platform/csv';
 import { ExpensesRepository } from '../infrastructure/expenses.repository';
 import { amountToApprove, ClaimAction, detectReceiptType, stepNotAllowed } from '../domain/claims';
 import { EXPENSES } from '../domain/permissions';
@@ -23,6 +26,7 @@ export class ExpensesService {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(ExpensesRepository) private readonly repo: ExpensesRepository,
+    @Inject(CoreFacade) private readonly core: CoreFacade,
   ) {}
 
   health() { return { module: 'hrms', sub: 'expenses', ok: true }; }
@@ -46,6 +50,7 @@ export class ExpensesService {
     const job = await this.repo.findEmployment(ctx.tenantId, req.employmentPublicId);
     if (!job) throw new AppError('HRMS_EMPLOYMENT_NOT_FOUND', 404, 'Employment not found');
     if (job.personId !== ctx.personId) throw new AppError('HRMS_NOT_YOUR_EMPLOYMENT', 403, 'You can only claim expenses on your own job');
+    if (job.status !== 'active') throw new AppError('HRMS_EMPLOYMENT_NOT_ACTIVE', 409, 'This job is not active');
     const category = await this.repo.findCategory(ctx.tenantId, req.categoryCode);
     if (!category) throw new AppError('HRMS_UNKNOWN_CATEGORY', 400, `Unknown expense category ${req.categoryCode}`);
 
@@ -57,11 +62,25 @@ export class ExpensesService {
       throw new AppError('HRMS_RECEIPT_REQUIRED', 400, `A receipt is required for ${req.categoryCode} expenses`);
     }
 
+    // POLICY hrms.approvals.auto_approve_roles (default: ceo): their own claim is approved on submit (the full amount,
+    // no decider) and then waits for payment like any other approved claim
+    const noApproval = await this.core.needsNoApproval(ctx.tenantId, ctx.personId, job.legalEntityId, todayIst());
     const receiptPath = receipt && ext ? await saveUpload('receipts', ext, receipt.buffer) : null;
     try {
-      const publicId = await this.repo.insertClaim({
-        tenantId: ctx.tenantId, publicId: req.publicId, personId: ctx.personId, employmentId: job.id, categoryId: category.id,
-        spentOn: req.spentOn, amountPaise: req.amountPaise, description: req.description, receiptPath,
+      const publicId = await this.db.transaction(async (tx) => {
+        const id = await this.repo.insertClaim(tx, {
+          tenantId: ctx.tenantId, publicId: req.publicId, personId: ctx.personId, employmentId: job.id, legalEntityId: job.legalEntityId, categoryId: category.id,
+          spentOn: req.spentOn, amountPaise: req.amountPaise, description: req.description, receiptPath,
+        });
+        if (noApproval) {
+          const claim = (await this.repo.lockClaim(tx, ctx.tenantId, id))!;
+          await this.repo.approve(tx, claim.id, null, 'no_approval_required', claim.amountPaise);
+          await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'expense.auto_approved', entity: 'expense_claim',
+            entityPublicId: id, subjectPersonId: ctx.personId, legalEntityId: job.legalEntityId,
+            summary: `Expense claim of ${claim.personName} for ${rupees(claim.amountPaise)} approved on submit: no approval required`,
+            details: { decidedAs: 'no_approval_required', amountPaise: claim.amountPaise } });
+        }
+        return id;
       });
       return { claim: (await this.repo.claim(ctx.tenantId, publicId))!, created: true };
     } catch (err) {
@@ -75,7 +94,7 @@ export class ExpensesService {
   }
 
   toApprove(ctx: RequestContext): Promise<ExpenseClaim[]> {
-    return this.repo.toApprove(ctx.tenantId, ctx.personId);
+    return this.repo.toApprove(ctx.tenantId, ctx.personId, ctx.permissions[EXPENSES.approve] === 'all');
   }
 
   async approve(ctx: RequestContext, publicId: string, req: ApproveExpenseRequest): Promise<ExpenseClaim> {
@@ -83,7 +102,11 @@ export class ExpensesService {
       const claim = await this.decidable(tx, ctx, publicId, 'approve');
       const amount = amountToApprove(claim.amountPaise, req.approvedAmountPaise);
       if (amount === null) throw new AppError('HRMS_APPROVED_TOO_HIGH', 400, 'The approved amount is more than the claimed amount');
-      await this.repo.approve(tx, claim.id, ctx.personId, amount);
+      const as = decidedAs(ctx, claim.managerPersonId === ctx.personId);
+      await this.repo.approve(tx, claim.id, ctx.personId, as, amount);
+      await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'expense.approved', entity: 'expense_claim',
+        entityPublicId: claim.publicId, subjectPersonId: claim.personId, legalEntityId: claim.legalEntityId,
+        summary: `Expense claim of ${claim.personName} approved for ${rupees(amount)} (${as})`, details: { decidedAs: as, amountPaise: amount } });
     });
     return (await this.repo.claim(ctx.tenantId, publicId))!;
   }
@@ -91,7 +114,11 @@ export class ExpensesService {
   async reject(ctx: RequestContext, publicId: string, req: RejectExpenseRequest): Promise<ExpenseClaim> {
     await this.db.transaction(async (tx) => {
       const claim = await this.decidable(tx, ctx, publicId, 'reject');
-      await this.repo.reject(tx, claim.id, ctx.personId, req.reason);
+      const as = decidedAs(ctx, claim.managerPersonId === ctx.personId);
+      await this.repo.reject(tx, claim.id, ctx.personId, as, req.reason);
+      await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'expense.rejected', entity: 'expense_claim',
+        entityPublicId: claim.publicId, subjectPersonId: claim.personId, legalEntityId: claim.legalEntityId,
+        summary: `Expense claim of ${claim.personName} for ${rupees(claim.amountPaise)} rejected (${as})` });
     });
     return (await this.repo.claim(ctx.tenantId, publicId))!;
   }
@@ -108,12 +135,25 @@ export class ExpensesService {
 
   async report(ctx: RequestContext, q: ExpenseReportQuery): Promise<ExpenseReport> {
     requireAll(ctx, EXPENSES.report);
-    const { byStatus, byCategory } = await this.repo.report(ctx.tenantId, q.from, q.to, q.company);
+    const { byStatus, byCategory, rows } = await this.repo.report(ctx.tenantId, q.from, q.to, q.company);
     const total = byCategory.reduce((t, c) => ({
       count: t.count + c.count, amountPaise: t.amountPaise + c.amountPaise,
       approvedPaise: t.approvedPaise + c.approvedPaise, paidPaise: t.paidPaise + c.paidPaise,
     }), { count: 0, amountPaise: 0, approvedPaise: 0, paidPaise: 0 });
-    return { company: q.company ?? null, from: q.from, to: q.to, byStatus, byCategory, total };
+    return { company: q.company ?? null, from: q.from, to: q.to, producedAt: new Date().toISOString(), rows, byStatus, byCategory, total };
+  }
+
+  /** The report as CSV: one line per person, category and status, amounts in rupees, and a TOTAL line. */
+  reportCsv(r: ExpenseReport): { name: string; body: string } {
+    const body = toCsv(
+      [['Report', 'Expenses'], ['Company', r.company ?? 'All companies'], ['Period', `${r.from} to ${r.to}`], ['Produced at', r.producedAt]],
+      ['Company', 'Employee code', 'Name', 'Category', 'Status', 'Claims', 'Currency', 'Claimed', 'Approved', 'Paid'],
+      [
+        ...r.rows.map((x) => [x.employment.company, x.employment.employeeCode, x.person.displayName, x.category.name, x.status, x.count, x.currency,
+          rupees(x.amountPaise), rupees(x.approvedPaise), rupees(x.paidPaise)]),
+        ['TOTAL', '', '', '', '', r.total.count, 'INR', rupees(r.total.amountPaise), rupees(r.total.approvedPaise), rupees(r.total.paidPaise)],
+      ]);
+    return { name: `expenses-${r.company ?? 'all'}-${r.from}-${r.to}.csv`, body };
   }
 
   /**

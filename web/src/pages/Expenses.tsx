@@ -1,13 +1,14 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, Check, Plus, X } from 'lucide-react';
 import {
   CreateExpenseRequest, type ExpenseCategory, type ExpenseClaim, type ExpenseClaimList, type ExpenseReport,
 } from '@ageless/shared';
 import { api, errText } from '../api';
 import { useAuth } from '../auth';
+import { VoiceInput } from '../VoiceInput';
 import { addDays, dayLabel, rupees, todayIst, useLoad, useMyEmployments, uuidv7, words } from '../hooks';
 import { EXPENSES } from '../permissions';
-import { Badge, EXPENSE_TONE, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs } from '../ui';
+import { Badge, EXPENSE_TONE, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs, CsvButton } from '../ui';
 
 type TabKey = 'mine' | 'approve' | 'report';
 
@@ -77,6 +78,43 @@ function NewClaim({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
   useEffect(() => { if (!category && cats.data?.[0]) setCategory(cats.data[0].code); }, [cats.data, category]);
   const needsReceipt = cats.data?.find((c) => c.code === category)?.receiptRequired ?? false;
 
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [cameraOn, setCameraOn] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const photoUrl = useMemo(() => (photo ? URL.createObjectURL(photo) : ''), [photo]);
+  useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
+  useEffect(() => () => streamRef.current?.getTracks().forEach((t) => t.stop()), []);
+  useEffect(() => {
+    if (cameraOn && videoRef.current && streamRef.current) { videoRef.current.srcObject = streamRef.current; void videoRef.current.play(); }
+  }, [cameraOn]);
+
+  async function startCamera() {
+    setCameraError('');
+    if (!navigator.mediaDevices?.getUserMedia) { setCameraError('Camera is not available here. It needs https or localhost; use Choose File instead.'); return; }
+    try {
+      streamRef.current = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      setCameraOn(true);
+    } catch { setCameraError('Camera access was blocked. Allow it in the browser address bar, or use Choose File.'); }
+  }
+  function stopCamera() {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null; setCameraOn(false);
+  }
+  function capture() {
+    const v = videoRef.current;
+    if (!v || !v.videoWidth) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = v.videoWidth; canvas.height = v.videoHeight;
+    canvas.getContext('2d')?.drawImage(v, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      setPhoto(new File([blob], `receipt-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+      stopCamera();
+    }, 'image/jpeg', 0.85);
+  }
+
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
@@ -89,7 +127,8 @@ function NewClaim({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
     const receipt = form.get('receipt');
     const body = new FormData();
     for (const [k, v] of Object.entries(parsed.data)) if (v !== undefined) body.append(k, String(v));
-    if (receipt instanceof File && receipt.size > 0) body.append('receipt', receipt);
+    if (photo) body.append('receipt', photo);
+    else if (receipt instanceof File && receipt.size > 0) body.append('receipt', receipt);
     setSaving(true); setError('');
     try { await api('/hrms/expenses', { method: 'POST', body }); onSaved(); }
     catch (err) { setError(errText(err)); }
@@ -108,9 +147,28 @@ function NewClaim({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
             {cats.data?.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select></label>
         <label>Date spent<input id="claim-date" name="spentOn" type="date" required max={todayIst()} defaultValue={todayIst()} /></label>
         <label>Amount (₹)<input id="claim-amount" name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" required placeholder="0.00" /></label>
-        <label>Receipt {needsReceipt ? <span className="optional">required</span> : <span className="optional">optional</span>}
-          <input id="claim-receipt" name="receipt" type="file" accept="image/jpeg,image/png,application/pdf" required={needsReceipt} /></label>
-        <label className="span-two">Description <span className="optional">optional</span><input id="claim-description" name="description" maxLength={500} placeholder="What was it for?" /></label>
+        <div>
+          <label htmlFor="claim-receipt">Receipt {needsReceipt ? <span className="optional">required</span> : <span className="optional">optional</span>}</label>
+          <div style={{ border: '1px solid #e3e7ee', borderRadius: 5, background: '#fff', padding: '6px 9px', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+            <input id="claim-receipt" name="receipt" type="file" accept="image/jpeg,image/png,application/pdf" required={needsReceipt && !photo}
+              style={{ border: 0, padding: 0, height: 'auto', background: 'transparent', width: '100%' }} />
+            <button type="button" onClick={startCamera}
+              style={{ font: 'inherit', fontSize: 13, padding: '1px 6px', border: '1px solid #767676', borderRadius: 3, background: '#efefef', color: '#000', cursor: 'pointer' }}>
+              {photo ? 'Retake photo' : 'Click a photo'}</button>
+          </div>
+        </div>
+        <div className="span-two">
+          {cameraError && <Notice>{cameraError}</Notice>}
+          {cameraOn && <div style={{ marginTop: 12 }}>
+            <video ref={videoRef} playsInline muted style={{ width: '100%', maxHeight: 320, borderRadius: 8, background: '#000' }} />
+            <div className="modal-foot" style={{ marginTop: 8 }}>
+              <button type="button" className="outline-btn" onClick={stopCamera}>Close camera</button>
+              <button type="button" className="primary-btn" onClick={capture}>Capture</button></div></div>}
+          {photo && !cameraOn && <div style={{ marginTop: 12 }}>
+            <img src={photoUrl} alt="Receipt preview" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8 }} />
+            <button type="button" className="outline-btn" style={{ marginLeft: 8 }} onClick={() => setPhoto(null)}>Remove photo</button></div>}
+        </div>
+        <label className="span-two">Description<VoiceInput id="claim-description" name="description" maxLength={500} placeholder="What was it for?" /></label>
       </div>
       <div className="modal-foot"><button type="button" className="outline-btn" onClick={onClose}>Cancel</button>
         <button className="primary-btn" disabled={saving || !jobId || !category}>{saving ? 'Submitting…' : 'Submit claim'}</button></div>
@@ -190,6 +248,7 @@ function Report() {
   const [to, setTo] = useState(todayIst());
   const [from, setFrom] = useState(addDays(todayIst(), -29));
   const [company, setCompany] = useState('');
+  const [csvError, setCsvError] = useState('');
   const q = useLoad(() => api<ExpenseReport>(`/hrms/expenses/report?from=${from}&to=${to}${company ? `&company=${company}` : ''}`), [from, to, company]);
   const r = q.data;
   return <Panel title="Expense report" note="Claims by the date they were spent.">
@@ -200,8 +259,9 @@ function Report() {
         <label className="inline-field">Company
           <select id="rep-company" className="input" value={company} onChange={(e) => setCompany(e.target.value)}>
             <option value="">All companies</option><option value="AE">Ageless Entertainments</option><option value="ATPL">Ageless Technologies</option></select></label>
+        <CsvButton path={`/hrms/expenses/report?from=${from}&to=${to}${company ? `&company=${company}` : ''}`} name="expense-report.csv" onError={setCsvError} />
       </div>
-      {q.error && <Notice>{q.error}</Notice>}
+      {(q.error || csvError) && <Notice onClose={() => setCsvError('')}>{q.error || csvError}</Notice>}
       {q.loading && !r ? <Loading /> : r && <>
         <div className="mini-stats">
           <div><small>CLAIMS</small><strong>{r.total.count}</strong></div>

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DateOnly, Instant, PersonRef, PublicId, DecidedAs } from '../common';
 /** Expense claims: requests and responses shared by the API and the web app. Money is always integer paise. */
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'Not a real date');
@@ -51,36 +52,52 @@ export const ExpenseReportQuery = z.object({
   company: emptyToUndefined(z.string().trim().max(12)),
   from: isoDate,
   to: isoDate,
+  format: z.enum(['json', 'csv']).default('json'), // csv: amounts in rupees, with a TOTAL line
 }).refine((q) => q.to >= q.from, { message: '`to` is before `from`', path: ['to'] });
 export type ExpenseReportQuery = z.infer<typeof ExpenseReportQuery>;
 
-export interface ExpenseCategory { code: string; name: string; receiptRequired: boolean }
+export const ExpenseCategory = z.object({ code: z.string(), name: z.string(), receiptRequired: z.boolean() });
+export type ExpenseCategory = z.infer<typeof ExpenseCategory>;
 
-export interface ExpenseClaim {
-  publicId: string;
-  person: { publicId: string; displayName: string };
-  employment: { publicId: string; company: string; employeeCode: string };
-  category: { code: string; name: string };
-  spentOn: string;
-  amountPaise: number;
-  description: string | null;
-  receiptPath: string | null;
-  status: ExpenseStatus;
-  approvedAmountPaise: number | null;
-  approvedBy: { publicId: string; displayName: string } | null;
-  approvedAt: string | null;
-  rejectedBy: { publicId: string; displayName: string } | null;
-  rejectedAt: string | null;
-  rejectionReason: string | null;
-  paidAt: string | null;
-  paymentRef: string | null;
-  createdAt: string;
-}
-export interface ExpenseClaimList { items: ExpenseClaim[]; page: number; pageSize: number; total: number }
+const Paise = z.number().int();
+const CodeName = z.object({ code: z.string(), name: z.string() });
 
-export interface ExpenseReport {
-  company: string | null; from: string; to: string;
-  byStatus: { status: ExpenseStatus; count: number; amountPaise: number }[];
-  byCategory: { code: string; name: string; count: number; amountPaise: number; approvedPaise: number; paidPaise: number }[];
-  total: { count: number; amountPaise: number; approvedPaise: number; paidPaise: number };
-}
+export const ExpenseClaim = z.object({
+  publicId: PublicId,
+  person: PersonRef,
+  employment: z.object({ publicId: PublicId, company: z.string(), employeeCode: z.string() }),
+  category: CodeName,
+  spentOn: DateOnly,
+  amountPaise: Paise,
+  currency: z.string(),   // of amountPaise and approvedAmountPaise
+  description: z.string().nullable(),
+  receiptPath: z.string().nullable(),
+  status: ExpenseStatus,
+  approvedAmountPaise: Paise.nullable(),
+  approvedBy: PersonRef.nullable(),
+  approvedAt: Instant.nullable(),
+  decidedAs: DecidedAs.nullable(),   // approvedBy is null when no_approval_required
+  rejectedBy: PersonRef.nullable(),
+  rejectedAt: Instant.nullable(),
+  rejectionReason: z.string().nullable(),
+  paidAt: Instant.nullable(),
+  paymentRef: z.string().nullable(),
+  createdAt: Instant,
+});
+export type ExpenseClaim = z.infer<typeof ExpenseClaim>;
+export const ExpenseClaimList = z.object({ items: z.array(ExpenseClaim), page: z.number().int(), pageSize: z.number().int(), total: z.number().int() });
+export type ExpenseClaimList = z.infer<typeof ExpenseClaimList>;
+
+const Totals = z.object({ count: z.number().int(), amountPaise: Paise, approvedPaise: Paise, paidPaise: Paise });
+export const ExpenseReport = z.object({
+  company: z.string().nullable(), from: DateOnly, to: DateOnly, producedAt: Instant,
+  /** per person, category and status (amounts in paise) */
+  rows: z.array(Totals.extend({
+    person: PersonRef, employment: z.object({ company: z.string(), employeeCode: z.string() }),
+    category: CodeName, status: ExpenseStatus, currency: z.string(),
+  })),
+  byStatus: z.array(z.object({ status: ExpenseStatus, count: z.number().int(), amountPaise: Paise })),
+  byCategory: z.array(Totals.merge(CodeName)),
+  total: Totals,
+});
+export type ExpenseReport = z.infer<typeof ExpenseReport>;

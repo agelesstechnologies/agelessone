@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { aliasedTable, and, asc, between, eq, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
+import { aliasedTable, and, asc, between, eq, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { Holiday, WeeklyOff, WeeklyOffRule, WeeklyOffsQuery } from '@ageless/shared';
 import { Conn, DB, Db, Tx } from '../../../../platform/db/db.module';
 import { legalEntities, persons } from '../../../core/schema';
@@ -11,8 +11,8 @@ import { HolidayDate, RulePeriod } from '../domain/work-calendar';
 /** The company of an override's job (a second join on core.legal_entities). */
 const jobCompany = aliasedTable(legalEntities, 'job_company');
 
-/** Whose rule: a company's default, or one job's override. */
-export type RuleTarget = { legalEntityId: number } | { employmentId: number };
+/** Whose rule: a company's default (no employmentId), or one job's override (the job's company and the job). */
+export type RuleTarget = { legalEntityId: number; employmentId?: number };
 
 /** Writes only hrms.holiday_calendars, hrms.holidays and hrms.weekly_off_rules; reads companies, jobs and leave. */
 @Injectable()
@@ -118,7 +118,7 @@ export class CalendarRepository {
 
   async insertWeeklyOff(tx: Tx, v: { tenantId: number; publicId: string; target: RuleTarget; validFrom: string; validTo?: string; rule: WeeklyOffRule; createdBy: number }) {
     const { target, ...rest } = v;
-    await tx.insert(weeklyOffRules).values({ ...rest, ...target });
+    await tx.insert(weeklyOffRules).values({ ...rest, legalEntityId: target.legalEntityId, employmentId: target.employmentId ?? null });
   }
 
   // ---- what the calendar is built from ----
@@ -143,8 +143,8 @@ export class CalendarRepository {
   }
 
   private targetIs(t: RuleTarget) {
-    return 'legalEntityId' in t ? and(eq(weeklyOffRules.legalEntityId, t.legalEntityId), isNotNull(weeklyOffRules.legalEntityId))
-      : eq(weeklyOffRules.employmentId, t.employmentId);
+    return t.employmentId !== undefined ? eq(weeklyOffRules.employmentId, t.employmentId)
+      : and(eq(weeklyOffRules.legalEntityId, t.legalEntityId), isNull(weeklyOffRules.employmentId));
   }
 
   private holidayView() {

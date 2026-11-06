@@ -1,13 +1,17 @@
 /** Permission codes the backend checks (same strings as the backend's domain/permissions files). */
 export const PEOPLE = {
   view: 'hrms.people.view', create: 'hrms.people.create', update: 'hrms.people.update', manageContacts: 'hrms.contacts.manage',
-  reviewContacts: 'hrms.contacts.review', manageEmployments: 'hrms.employments.manage', updateEmployments: 'hrms.employments.update',
+  reviewContacts: 'hrms.contacts.review', manageEmployments: 'hrms.employments.manage', updateEmployments: 'hrms.employments.update', managePositions: 'hrms.positions.manage',
 } as const;
-export const ATTENDANCE = { punch: 'hrms.attendance.punch', view: 'hrms.attendance.view', rebuild: 'hrms.attendance.rebuild', approve: 'hrms.attendance.approve' } as const;
+export const PRIVATE = { view: 'hrms.private.view', reveal: 'hrms.private.reveal', manage: 'hrms.private.manage' } as const;
+export const ATTENDANCE = { punch: 'hrms.attendance.punch', view: 'hrms.attendance.view', rebuild: 'hrms.attendance.rebuild', approve: 'hrms.attendance.approve', lockMonth: 'hrms.month.lock', unlockMonth: 'hrms.month.unlock' } as const;
+export const PAYROLL = { prepare: 'payroll.prepare', approve: 'payroll.approve', payslip: 'payroll.payslip.own' } as const;
+export const SKILLS = { manage: 'hrms.skills.manage', add: 'hrms.skills.add', verify: 'hrms.skills.verify', view: 'hrms.skills.view' } as const;
 export const EXPENSES = { submit: 'hrms.expenses.submit', approve: 'hrms.expenses.approve', pay: 'hrms.expenses.pay', report: 'hrms.expenses.report' } as const;
 export const LEAVE = { apply: 'hrms.leave.apply', approve: 'hrms.leave.approve', manage: 'hrms.leave.manage', report: 'hrms.leave.report' } as const;
 export const CALENDAR = { manage: 'hrms.calendar.manage', view: 'hrms.people.view' } as const;
 export const POLICIES = { manage: 'core.policies.manage' } as const;
+export const DASHBOARD = { view: 'hrms.dashboard.view' } as const;
 export const USERS = { manage: 'core.users.manage' } as const;
 
 /** Plain-language names for the "Roles & access" page. Unknown codes are shown as they are. */

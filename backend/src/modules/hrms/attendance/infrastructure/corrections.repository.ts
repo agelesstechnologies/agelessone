@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { aliasedTable, and, asc, desc, eq, gte, inArray, lt, ne, or } from 'drizzle-orm';
-import { Correction, CorrectionKind, CorrectionStatus } from '@ageless/shared';
+import { Correction, CorrectionKind, CorrectionStatus, DecidedAs } from '@ageless/shared';
 import { Conn, DB, Db, Tx } from '../../../../platform/db/db.module';
 import { legalEntities, persons } from '../../../core/schema';
 import { employments } from '../../people/schema';
@@ -43,16 +43,18 @@ export class CorrectionsRepository {
 
   async lock(tx: Tx, tenantId: number, publicId: string) {
     const [row] = await tx.select({
-      id: attendanceCorrections.id, personId: attendanceCorrections.personId, employmentId: attendanceCorrections.employmentId,
+      id: attendanceCorrections.id, personId: attendanceCorrections.personId, employmentId: attendanceCorrections.employmentId, legalEntityId: attendanceCorrections.legalEntityId,
       workDate: attendanceCorrections.workDate, requestedIn: attendanceCorrections.requestedIn, requestedOut: attendanceCorrections.requestedOut,
       punchIdsToExclude: attendanceCorrections.punchIdsToExclude, reason: attendanceCorrections.reason,
       status: attendanceCorrections.status, requestedBy: attendanceCorrections.requestedBy, approverPersonId: attendanceCorrections.approverPersonId,
-    }).from(attendanceCorrections).where(and(eq(attendanceCorrections.tenantId, tenantId), eq(attendanceCorrections.publicId, publicId))).for('update');
+      publicId: attendanceCorrections.publicId, personName: persons.displayName,
+    }).from(attendanceCorrections).innerJoin(persons, eq(persons.id, attendanceCorrections.personId)).where(and(eq(attendanceCorrections.tenantId, tenantId), eq(attendanceCorrections.publicId, publicId))).for('update');
     return row && { ...row, status: row.status as CorrectionStatus };
   }
 
-  async decide(tx: Tx, id: number, status: 'approved' | 'rejected', decidedBy: number, reason?: string): Promise<void> {
-    await tx.update(attendanceCorrections).set({ status, decidedBy, decidedAt: new Date(), decisionReason: reason ?? null }).where(eq(attendanceCorrections.id, id));
+  /** decidedBy null only with decidedAs 'no_approval_required' (the database checks it). */
+  async decide(tx: Tx, id: number, status: 'approved' | 'rejected', decidedBy: number | null, decidedAs: DecidedAs, reason?: string): Promise<void> {
+    await tx.update(attendanceCorrections).set({ status, decidedBy, decidedAs, decidedAt: new Date(), decisionReason: reason ?? null }).where(eq(attendanceCorrections.id, id));
   }
 
   async cancel(tx: Tx, id: number, cancelledBy: number): Promise<void> {
@@ -93,7 +95,7 @@ export class CorrectionsRepository {
       requesterPublicId: requester.publicId, requesterName: requester.displayName,
       approverPublicId: approver.publicId, approverName: approver.displayName,
       deciderPublicId: decider.publicId, deciderName: decider.displayName,
-      decidedAt: attendanceCorrections.decidedAt, decisionReason: attendanceCorrections.decisionReason,
+      decidedAs: attendanceCorrections.decidedAs, decidedAt: attendanceCorrections.decidedAt, decisionReason: attendanceCorrections.decisionReason,
       cancelledAt: attendanceCorrections.cancelledAt, createdAt: attendanceCorrections.createdAt,
     }).from(attendanceCorrections)
       .innerJoin(persons, eq(persons.id, attendanceCorrections.personId))
@@ -110,7 +112,7 @@ interface ViewRow {
   publicId: string; personPublicId: string; personName: string; employmentPublicId: string; company: string; workDate: string;
   kind: string; requestedIn: Date | null; requestedOut: Date | null; punchIdsToExclude: string[]; reason: string; status: string;
   requesterPublicId: string; requesterName: string; approverPublicId: string | null; approverName: string | null;
-  deciderPublicId: string | null; deciderName: string | null; decidedAt: Date | null; decisionReason: string | null;
+  deciderPublicId: string | null; deciderName: string | null; decidedAs: string | null; decidedAt: Date | null; decisionReason: string | null;
   cancelledAt: Date | null; createdAt: Date;
 }
 function toView(r: ViewRow): Correction {
@@ -122,6 +124,7 @@ function toView(r: ViewRow): Correction {
     requestedBy: { publicId: r.requesterPublicId, displayName: r.requesterName },
     approver: r.approverPublicId ? { publicId: r.approverPublicId, displayName: r.approverName! } : null,
     decidedBy: r.deciderPublicId ? { publicId: r.deciderPublicId, displayName: r.deciderName! } : null,
+    decidedAs: r.decidedAs as DecidedAs | null,
     decidedAt: r.decidedAt?.toISOString() ?? null, decisionReason: r.decisionReason,
     cancelledAt: r.cancelledAt?.toISOString() ?? null, createdAt: r.createdAt.toISOString(),
   };

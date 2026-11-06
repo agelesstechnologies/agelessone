@@ -203,7 +203,9 @@ describe('HRMS expenses API', () => {
       const c = await claimId(await techClaim(10000));
       await expect(db.query('UPDATE hrms.expense_claims SET approved_by = person_id WHERE id = $1', [c.id])).rejects.toThrow(/expense_claims_not_self_approved/);
       await expect(db.query('UPDATE hrms.expense_claims SET approved_amount_paise = 10001 WHERE id = $1', [c.id])).rejects.toThrow(/expense_claims_approved_within_claim/);
-      await expect(db.query(`UPDATE hrms.expense_claims SET status = 'paid' WHERE id = $1`, [c.id])).rejects.toThrow(/expense_claims_paid_has_details/);
+      // decided fields set (as a claim that needed no approval), so only the payment details are missing
+      await expect(db.query(`UPDATE hrms.expense_claims SET status = 'paid', approved_at = now(), approved_amount_paise = amount_paise, decided_as = 'no_approval_required' WHERE id = $1`, [c.id]))
+        .rejects.toThrow(/expense_claims_paid_has_details/);
     });
 
     it('freezes a paid claim', async () => {

@@ -1,19 +1,21 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, count, desc, eq, exists, ilike, inArray, isNull, ne, or, sql, SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, ilike, inArray, isNull, like, ne, or, sql, SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { ListPeopleQuery, PersonDetail, PersonList, SharedContacts } from '@ageless/shared';
 import { Conn, DB, Db, Tx, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
 import { legalEntities, personContacts, persons } from '../../../core/schema';
-import { employments } from '../schema';
+import { departments, employments } from '../schema';
 import { phoneSearchTerm } from '../domain/contacts';
 
 export interface NewEmployment {
-  tenantId: number; personId: number; legalEntityId: number; employeeCode: string; employmentType: string;
-  joinedOn: string; isPrimary: boolean; managerPersonId: number | null; department?: string; designation?: string;
+  tenantId: number; personId: number; legalEntityId: number; employeeCode: string; employmentType: string; status: 'active' | 'joining';
+  recruitedOn?: string; joinedOn: string; isPrimary: boolean; managerPersonId: number | null; departmentId: number | null; designation?: string;
 }
+export type EmploymentPatch = { managerPersonId?: number | null; departmentId?: number | null; designation?: string | null };
 
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, '\\$&');
+const dept = (code: string | null, name: string | null) => (code && name ? { code, name } : null);
 const manager = alias(persons, 'manager');
 
 /** Writes only hrms.* tables; reads core people and companies to answer questions about them. */
@@ -25,6 +27,21 @@ export class PeopleRepository {
     const [row] = await tx.select({ id: legalEntities.id }).from(legalEntities)
       .where(and(eq(legalEntities.tenantId, tenantId), eq(legalEntities.code, code)));
     return row?.id;
+  }
+
+  /** A company's department by its code prefix; lock it while generating an employee code (one code at a time). */
+  async findDepartment(tx: Tx, legalEntityId: number, codePrefix: string, lock = false) {
+    const q = tx.select({ id: departments.id, codePrefix: departments.codePrefix }).from(departments)
+      .where(and(eq(departments.legalEntityId, legalEntityId), eq(departments.codePrefix, codePrefix)));
+    const [row] = lock ? await q.for('update') : await q;
+    return row;
+  }
+
+  /** The company's employee codes starting with the prefix. */
+  async codesWithPrefix(tx: Tx, legalEntityId: number, prefix: string): Promise<string[]> {
+    const rows = await tx.select({ code: employments.employeeCode }).from(employments)
+      .where(and(eq(employments.legalEntityId, legalEntityId), like(employments.employeeCode, `${prefix}%`)));
+    return rows.map((r) => r.code);
   }
 
   async findPersonId(conn: Conn, tenantId: number, publicId: string): Promise<number | undefined> {
@@ -53,14 +70,23 @@ export class PeopleRepository {
   /** Locks the employment and person rows so two changes to the same person's jobs can't interleave. */
   async findEmployment(tx: Tx, tenantId: number, publicId: string) {
     const [row] = await tx.select({ id: employments.id, personId: employments.personId, personPublicId: persons.publicId,
-      status: employments.status, isPrimary: employments.isPrimary, joinedOn: employments.joinedOn })
+      legalEntityId: employments.legalEntityId, status: employments.status, isPrimary: employments.isPrimary, joinedOn: employments.joinedOn,
+      offerLetterPath: employments.offerLetterPath, offerLetterType: employments.offerLetterType })
       .from(employments).innerJoin(persons, eq(persons.id, employments.personId))
       .where(and(eq(employments.tenantId, tenantId), eq(employments.publicId, publicId))).for('update');
     return row;
   }
 
-  async updateEmployment(tx: Tx, id: number, patch: { managerPersonId?: number | null; department?: string | null; designation?: string | null }) {
+  async updateEmployment(tx: Tx, id: number, patch: EmploymentPatch) {
     if (Object.keys(patch).length) await tx.update(employments).set(patch).where(eq(employments.id, id));
+  }
+
+  async activate(tx: Tx, id: number): Promise<void> {
+    await tx.update(employments).set({ status: 'active' }).where(eq(employments.id, id));
+  }
+
+  async setOfferLetter(tx: Tx, id: number, path: string, type: string): Promise<void> {
+    await tx.update(employments).set({ offerLetterPath: path, offerLetterType: type }).where(eq(employments.id, id));
   }
 
   /** Clears the person's other primary first, then marks this one (the database allows one active primary per person). */
@@ -143,20 +169,22 @@ export class PeopleRepository {
 
     const primary = page.length === 0 ? [] : await this.db
       .select({ personId: employments.personId, company: legalEntities.code, employeeCode: employments.employeeCode,
-        department: employments.department, designation: employments.designation, status: employments.status })
+        departmentCode: departments.codePrefix, departmentName: departments.name, designation: employments.designation, status: employments.status })
       .from(employments).innerJoin(legalEntities, eq(legalEntities.id, employments.legalEntityId))
+      .leftJoin(departments, eq(departments.id, employments.departmentId))
       .where(and(inArray(employments.personId, page.map((p) => p.id)), eq(employments.isPrimary, true)));
 
     return {
       items: page.map(({ id, ...p }) => {
         const e = primary.find((x) => x.personId === id);
-        return { ...p, primaryEmployment: e ? { company: e.company, employeeCode: e.employeeCode, department: e.department, designation: e.designation, status: e.status } : null };
+        return { ...p, primaryEmployment: e ? { company: e.company, employeeCode: e.employeeCode, department: dept(e.departmentCode, e.departmentName),
+          designation: e.designation, status: e.status } : null };
       }),
       page: q.page, pageSize: q.pageSize, total,
     };
   }
 
-  async getDetail(tenantId: number, publicId: string): Promise<PersonDetail | undefined> {
+  async getDetail(tenantId: number, publicId: string): Promise<Omit<PersonDetail, 'private'> | undefined> {
     const [person] = await this.db.select({ id: persons.id, publicId: persons.publicId, displayName: persons.displayName, status: persons.status })
       .from(persons).where(and(eq(persons.tenantId, tenantId), eq(persons.publicId, publicId)));
     if (!person) return undefined;
@@ -169,11 +197,12 @@ export class PeopleRepository {
     const jobs = await this.db.select({
       publicId: employments.publicId, companyCode: legalEntities.code, companyName: legalEntities.name,
       employeeCode: employments.employeeCode, engagementType: employments.employmentType, status: employments.status,
-      isPrimary: employments.isPrimary, joinedOn: employments.joinedOn, exitOn: employments.exitOn, exitReason: employments.exitReason,
-      department: employments.department, designation: employments.designation,
-      managerPublicId: manager.publicId, managerName: manager.displayName,
+      isPrimary: employments.isPrimary, recruitedOn: employments.recruitedOn, joinedOn: employments.joinedOn, exitOn: employments.exitOn,
+      exitReason: employments.exitReason, departmentCode: departments.codePrefix, departmentName: departments.name, designation: employments.designation,
+      managerPublicId: manager.publicId, managerName: manager.displayName, offerLetterPath: employments.offerLetterPath,
     }).from(employments)
       .innerJoin(legalEntities, eq(legalEntities.id, employments.legalEntityId))
+      .leftJoin(departments, eq(departments.id, employments.departmentId))
       .leftJoin(manager, eq(manager.id, employments.managerPersonId))
       .where(eq(employments.personId, person.id))
       .orderBy(desc(employments.isPrimary), desc(employments.joinedOn));
@@ -181,8 +210,8 @@ export class PeopleRepository {
     return {
       publicId: person.publicId, displayName: person.displayName, status: person.status,
       contacts: contacts.map((c) => ({ ...c, endedAt: c.endedAt?.toISOString() ?? null })),
-      employments: jobs.map(({ companyCode, companyName, managerPublicId, managerName, ...j }) => ({
-        ...j, company: { code: companyCode, name: companyName },
+      employments: jobs.map(({ companyCode, companyName, managerPublicId, managerName, departmentCode, departmentName, offerLetterPath, ...j }) => ({
+        ...j, company: { code: companyCode, name: companyName }, department: dept(departmentCode, departmentName), hasOfferLetter: offerLetterPath !== null,
         manager: managerPublicId && managerName ? { publicId: managerPublicId, displayName: managerName } : null,
       })),
     };

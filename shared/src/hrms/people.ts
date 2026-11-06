@@ -1,9 +1,10 @@
 import { z } from 'zod';
+import { DateOnly, Instant, PersonRef, PublicId } from '../common';
 /** People requests and responses, shared by the API and the web app. */
 
 export const ContactKind = z.enum(['phone', 'email', 'other']);
 export const EngagementType = z.enum(['permanent', 'probation', 'contract', 'intern', 'external']);
-export const EmploymentStatus = z.enum(['active', 'notice', 'exited']);
+export const EmploymentStatus = z.enum(['joining', 'active', 'notice', 'exited']);
 export const PersonStatus = z.enum(['active', 'inactive', 'exited']);
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'Not a real date');
@@ -17,12 +18,19 @@ export const ContactInput = z.object({
 }).refine((c) => c.kind !== 'email' || z.string().email().safeParse(c.value).success, { message: 'Not a valid email', path: ['value'] });
 export type ContactInput = z.infer<typeof ContactInput>;
 
+/**
+ * A job in one company. With departmentCode and no employeeCode the next code for the department's prefix is generated
+ * (ATS001, ATS002 ...); HR types employeeCode when importing existing staff. One of the two is needed.
+ * status 'joining': offer accepted, not started yet (cannot punch, apply for leave or claim expenses until activated).
+ */
 export const EmploymentInput = z.object({
   legalEntityCode: z.string().trim().min(1).max(12),   // company: AE, ATPL ...
-  employeeCode: z.string().trim().min(1).max(20),
+  employeeCode: z.string().trim().min(1).max(20).optional(),
   engagementType: EngagementType,
+  status: z.enum(['active', 'joining']).default('active'),
+  recruitedOn: isoDate.optional(),
   joinedOn: isoDate,
-  department: z.string().trim().max(80).optional(),
+  departmentCode: z.string().trim().min(2).max(6).optional(), // the department's code prefix, e.g. ATS
   designation: z.string().trim().max(80).optional(),
   managerPublicId: z.string().uuid().optional(),
   isPrimary: z.boolean().optional(),
@@ -56,15 +64,22 @@ export type AddContactRequest = z.infer<typeof AddContactRequest>;
 /** GET /api/hrms/contacts/shared?value= : everyone currently using this phone/email, for HR review (never merged). */
 export const SharedContactsQuery = z.object({ value: z.string().trim().min(3).max(100) });
 export type SharedContactsQuery = z.infer<typeof SharedContactsQuery>;
-export interface SharedContacts {
-  value: string;
-  people: { publicId: string; displayName: string; status: string; contact: { publicId: string; kind: string; label: string | null; isPrimary: boolean } }[];
-}
+export const SharedContacts = z.object({
+  value: z.string(),
+  people: z.array(PersonRef.extend({
+    status: z.string(),
+    contact: z.object({ publicId: PublicId, kind: z.string(), label: z.string().nullable(), isPrimary: z.boolean() }),
+  })),
+});
+export type SharedContacts = z.infer<typeof SharedContacts>;
 
-/** PATCH /api/hrms/employments/:publicId. null clears manager/department/designation; isPrimary can only be set to true. */
+/**
+ * PATCH /api/hrms/employments/:publicId. null clears manager/department/designation; isPrimary can only be set to true.
+ * A department change (transfer) keeps the employee code.
+ */
 export const UpdateEmploymentRequest = z.object({
   managerPublicId: z.string().uuid().nullable().optional(),
-  department: z.string().trim().max(80).nullable().optional(),
+  departmentCode: z.string().trim().min(2).max(6).nullable().optional(),
   designation: z.string().trim().max(80).nullable().optional(),
   isPrimary: z.literal(true).optional(),
 }).refine((e) => Object.values(e).some((v) => v !== undefined), { message: 'Send at least one field to change' });
@@ -87,18 +102,55 @@ export const ListPeopleQuery = z.object({
 });
 export type ListPeopleQuery = z.infer<typeof ListPeopleQuery>;
 
-export interface PersonListItem {
-  publicId: string; displayName: string; status: string;
-  primaryEmployment: { company: string; employeeCode: string; department: string | null; designation: string | null; status: string } | null;
-}
-export interface PersonList { items: PersonListItem[]; page: number; pageSize: number; total: number }
+const DepartmentRef = z.object({ code: z.string(), name: z.string() });
 
-export interface PersonDetail {
-  publicId: string; displayName: string; status: string;
-  contacts: { publicId: string; kind: string; value: string; label: string | null; isPrimary: boolean; endedAt: string | null }[];
-  employments: {
-    publicId: string; company: { code: string; name: string }; employeeCode: string; engagementType: string;
-    status: string; isPrimary: boolean; joinedOn: string; exitOn: string | null; exitReason: string | null;
-    department: string | null; designation: string | null; manager: { publicId: string; displayName: string } | null;
-  }[];
-}
+export const PersonListItem = PersonRef.extend({
+  status: z.string(),
+  primaryEmployment: z.object({
+    company: z.string(), employeeCode: z.string(), department: DepartmentRef.nullable(), designation: z.string().nullable(), status: z.string(),
+  }).nullable(),
+});
+export type PersonListItem = z.infer<typeof PersonListItem>;
+export const PersonList = z.object({ items: z.array(PersonListItem), page: z.number().int(), pageSize: z.number().int(), total: z.number().int() });
+export type PersonList = z.infer<typeof PersonList>;
+
+/**
+ * Private details (Aadhaar, PAN, salary bank accounts). Person detail shows them masked to HR and Management
+ * (null to everyone else); POST /api/hrms/people/:publicId/private/reveal returns them in full and is audited.
+ */
+export const PrivateBankAccount = z.object({
+  publicId: PublicId, company: z.string(), employeeCode: z.string(), accountHolder: z.string(),
+  accountNumber: z.string(), ifsc: z.string(), effectiveFrom: DateOnly,
+});
+export type PrivateBankAccount = z.infer<typeof PrivateBankAccount>;
+export const PrivateDetails = z.object({
+  masked: z.boolean(),
+  aadhaar: z.string().nullable(),   // masked: XXXX XXXX 1234
+  pan: z.string().nullable(),       // masked: XXXXXX234F
+  bankAccounts: z.array(PrivateBankAccount), // newest first; account numbers masked unless revealed
+});
+export type PrivateDetails = z.infer<typeof PrivateDetails>;
+
+export const PersonDetail = PersonRef.extend({
+  status: z.string(),
+  contacts: z.array(z.object({
+    publicId: PublicId, kind: z.string(), value: z.string(), label: z.string().nullable(), isPrimary: z.boolean(), endedAt: Instant.nullable(),
+  })),
+  employments: z.array(z.object({
+    publicId: PublicId, company: z.object({ code: z.string(), name: z.string() }), employeeCode: z.string(), engagementType: z.string(),
+    status: z.string(), isPrimary: z.boolean(), recruitedOn: DateOnly.nullable(), joinedOn: DateOnly, exitOn: DateOnly.nullable(),
+    exitReason: z.string().nullable(), department: DepartmentRef.nullable(), designation: z.string().nullable(), manager: PersonRef.nullable(),
+    hasOfferLetter: z.boolean(),
+  })),
+  /** Masked Aadhaar, PAN and bank accounts for HR and Management; null for everyone else. */
+  private: PrivateDetails.nullable(),
+});
+export type PersonDetail = z.infer<typeof PersonDetail>;
+
+const compact = (v: unknown) => (typeof v === 'string' ? v.replace(/[\s-]/g, '').toUpperCase() : v);
+/** PUT /api/hrms/people/:publicId/private (HR) — a field left out stays as it is; null clears it. Spaces and dashes are ignored. */
+export const UpdatePrivateRequest = z.object({
+  aadhaar: z.preprocess(compact, z.string().regex(/^[0-9]{12}$/, 'Aadhaar is 12 digits').nullable()).optional(),
+  pan: z.preprocess(compact, z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, 'PAN looks like ABCDE1234F').nullable()).optional(),
+}).refine((r) => r.aadhaar !== undefined || r.pan !== undefined, 'Give aadhaar or pan');
+export type UpdatePrivateRequest = z.infer<typeof UpdatePrivateRequest>;

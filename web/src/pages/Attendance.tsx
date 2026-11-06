@@ -7,7 +7,7 @@ import { api, errText } from '../api';
 import { useAuth } from '../auth';
 import { addDays, dayLabel, hm, timeIst, todayIst, useLoad, useMyEmployments, uuidv7, words } from '../hooks';
 import { ATTENDANCE } from '../permissions';
-import { Badge, DAY_TONE, Empty, Loading, Notice, PageHead, Panel, Tabs } from '../ui';
+import { Badge, DAY_TONE, Empty, Loading, Notice, PageHead, Panel, Tabs, CsvButton } from '../ui';
 import { CorrectionModal, MyRequests, OvertimeModal, RequestApprovals } from './AttendanceRequests';
 
 type TabKey = 'today' | 'history' | 'requests' | 'approve' | 'register' | 'hours';
@@ -44,7 +44,7 @@ function position(): Promise<{ latitude?: number; longitude?: number; accuracyM?
   });
 }
 
-function MyDay() {
+export function MyDay() {
   const { jobs, error: jobsError } = useMyEmployments();
   const today = useLoad(() => api<TodayAttendance>('/hrms/attendance/today'));
   const [jobId, setJobId] = useState('');
@@ -177,7 +177,8 @@ function Hours() {
 
   return <Panel title="Work hours" note="Days and hours per person over a date range (up to 93 days).">
     <div className="panel-body">
-      <RangeFilter from={from} to={to} setFrom={setFrom} setTo={setTo}><CompanySelect value={company} onChange={setCompany} /></RangeFilter>
+      <RangeFilter from={from} to={to} setFrom={setFrom} setTo={setTo}><CompanySelect value={company} onChange={setCompany} />
+        <CsvButton path={`/hrms/attendance/work-hours?from=${from}&to=${to}${company ? `&company=${company}` : ''}`} name="work-hours.csv" onError={setError} /></RangeFilter>
       {(q.error || error) && <Notice onClose={() => setError('')}>{q.error || error}</Notice>}
       {ok && <Notice tone="ok" onClose={() => setOk('')}>{ok}</Notice>}
       {q.loading ? <Loading /> : !q.data?.rows.length ? <Empty title="No work hours" text="Nothing recorded in this range." /> :

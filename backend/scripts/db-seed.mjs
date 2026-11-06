@@ -29,17 +29,33 @@ const people = [
 const HR = ['hrms.people.view', 'hrms.people.create', 'hrms.people.update', 'hrms.contacts.manage', 'hrms.contacts.review', 'hrms.employments.manage', 'hrms.employments.update',
   'hrms.expenses.submit', 'hrms.expenses.approve', 'hrms.expenses.pay', 'hrms.expenses.report',
   'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.rebuild', 'hrms.attendance.approve', 'hrms.calendar.manage',
-  'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.manage', 'hrms.leave.report', 'core.policies.manage'];
+  'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.manage', 'hrms.leave.report', 'core.policies.manage', 'hrms.positions.manage',
+  'hrms.skills.manage', 'hrms.skills.add', 'hrms.skills.verify', 'hrms.skills.view', 'hrms.month.lock', 'payroll.payslip.own',
+  'hrms.dashboard.view', 'hrms.private.view', 'hrms.private.manage'];
 const roles = [
-  { code: 'employee', name: 'Employee', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.leave.apply'] },
+  { code: 'employee', name: 'Employee', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.leave.apply',
+    'hrms.skills.add', 'hrms.skills.view', 'payroll.payslip.own'] },
   { code: 'supervisor', name: 'Supervisor', permissions: ['hrms.people.view', 'hrms.employments.update', 'hrms.expenses.submit', 'hrms.expenses.approve',
-    'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report'] },
+    'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report',
+    'hrms.skills.add', 'hrms.skills.verify', 'hrms.skills.view', 'hrms.dashboard.view', 'payroll.payslip.own'] },
+  // Payroll: prepares runs, salaries and bank details. Payroll Approver: approves runs (never one they prepared).
+  { code: 'payroll', name: 'Payroll', permissions: ['payroll.prepare', 'payroll.payslip.own'] },
+  { code: 'payroll_approver', name: 'Payroll Approver', permissions: ['payroll.approve', 'payroll.payslip.own'] },
   { code: 'hr', name: 'HR', permissions: HR },
   { code: 'admin_user', name: 'Admin user', permissions: [] },
-  { code: 'system_admin', name: 'System admin', permissions: ['core.users.manage', 'core.policies.manage', 'hrms.people.view', 'hrms.attendance.rebuild'] },
-  // Last approver for leave (after the manager and HR); scope team: decides requests that name them.
-  { code: 'ceo', name: 'CEO', permissions: ['hrms.people.view', 'hrms.attendance.punch', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report'] },
+  { code: 'system_admin', name: 'System admin', permissions: ['core.users.manage', 'core.policies.manage', 'hrms.people.view', 'hrms.attendance.rebuild', 'hrms.month.unlock'] },
+  // Last approver (after the manager, department head and HR); scope team: decides requests that name them.
+  // Their own requests need no approval (policy hrms.approvals.auto_approve_roles).
+  { code: 'ceo', name: 'CEO', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report',
+    'payroll.payslip.own'] },
+  // Management (the CEO, scope all): reads every HRMS record and payroll, decides any pending request (never their own),
+  // sees private details masked and may reveal them (audited).
+  { code: 'management', name: 'Management', permissions: ['hrms.management', 'hrms.people.view', 'hrms.attendance.view', 'hrms.attendance.approve',
+    'hrms.leave.approve', 'hrms.leave.report', 'hrms.expenses.approve', 'hrms.expenses.report', 'hrms.skills.view', 'hrms.dashboard.view',
+    'hrms.private.view', 'hrms.private.reveal', 'payroll.payslip.own'] },
 ];
+// Second roles: Demo HR runs payroll, Demo CEO approves it and has Management access (granted by Demo Admin).
+const extraRoles = [{ n: 214, person: 4, role: 'payroll' }, { n: 216, person: 6, role: 'payroll_approver' }, { n: 226, person: 6, role: 'management' }];
 
 const client = new pg.Client({ connectionString: url.toString() });
 await client.connect();
@@ -56,6 +72,22 @@ try {
   // POLICY: until HR confirms the leave types — one paid type for now.
   await client.query(`INSERT INTO hrms.leave_types (tenant_id, code, name, policy_key, is_paid)
     VALUES (1, 'GL', 'General leave', 'hrms.leave.gl', true) ON CONFLICT (tenant_id, code) DO NOTHING`);
+
+  // Ageless Technologies: departments (code prefix starts the employee codes: ATS001 ...; heads are set later by HR)
+  // and the designations its positions use.
+  for (const [name, prefix] of [
+    ['Designing', 'ATD'], ['Software Development', 'ATS'], ['Hardware & IoT', 'ATH'], ['CGI Content Development', 'ATC'], ['HR & Accounts', 'ATHR'],
+  ]) {
+    await client.query(`INSERT INTO hrms.departments (tenant_id, legal_entity_id, name, code_prefix)
+      SELECT 1, id, $1, $2 FROM core.legal_entities WHERE tenant_id = 1 AND code = 'ATPL'
+      ON CONFLICT (legal_entity_id, code_prefix) DO NOTHING`, [name, prefix]);
+  }
+  for (const name of ['Designer', 'Senior Designer', '3D Designer', 'Senior Software Engineer', 'Developer', 'Intern', 'Engineer',
+    'Senior IoT Design Engineer', 'Senior CG Content Developer', 'CG Artist', '3D/VFX Artist', 'HR Executive', 'Accounts Executive']) {
+    await client.query(`INSERT INTO hrms.designations (tenant_id, legal_entity_id, name)
+      SELECT 1, id, $1 FROM core.legal_entities WHERE tenant_id = 1 AND code = 'ATPL'
+      ON CONFLICT (legal_entity_id, name) DO NOTHING`, [name]);
+  }
 
   // Expense categories for tenant 1 (receipt_required: whether a receipt file must be attached).
   for (const [code, name, receiptRequired] of [
@@ -136,6 +168,15 @@ try {
         WHERE person.public_id = $3 AND r.tenant_id = 1 AND r.code = $4 AND granter.public_id = $5
        ON CONFLICT (public_id) DO NOTHING`,
       [id(200 + p.n), p.scope, id(p.n), p.role, id(p.grantedBy ?? 5)]);
+  }
+  for (const x of extraRoles) {
+    await client.query(
+      `INSERT INTO core.role_assignments (tenant_id, public_id, person_id, role_id, scope, valid_from, granted_by)
+       SELECT 1, $1, person.id, r.id, 'all', DATE '2025-04-01', granter.id
+         FROM core.persons person, core.roles r, core.persons granter
+        WHERE person.public_id = $2 AND r.tenant_id = 1 AND r.code = $3 AND granter.public_id = $4
+       ON CONFLICT (public_id) DO NOTHING`,
+      [id(x.n), id(x.person), x.role, id(5)]);
   }
 
   await client.query('COMMIT');

@@ -134,3 +134,25 @@ export const policies = core.table('policies', {
   index('idx_policies_key').on(t.tenantId, t.policyKey, t.effectiveFrom),
   check('policies_version_positive', sql`version >= 1`),
 ]);
+
+/**
+ * What happened, by whom, to which record: decisions, approvals that needed none, private details revealed, months
+ * locked. Never updated or deleted (trigger, migration 0021). `summary` is readable and never holds private values
+ * (no Aadhaar, PAN, bank or phone numbers).
+ */
+export const auditLog = core.table('audit_log', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
+  publicId: uuid('public_id').notNull().defaultRandom().unique(),
+  at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
+  actorPersonId: bigint('actor_person_id', { mode: 'number' }).references(() => persons.id),  // null: the system
+  action: text('action').notNull(),                                                            // e.g. leave.approved
+  entity: text('entity').notNull(),                                                            // e.g. leave_request
+  entityPublicId: uuid('entity_public_id'),
+  subjectPersonId: bigint('subject_person_id', { mode: 'number' }).references(() => persons.id), // whose record
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).references(() => legalEntities.id),
+  summary: text('summary').notNull(),
+  details: jsonb('details'),
+}, (t) => [
+  index('idx_audit_log_tenant_at').on(t.tenantId, t.at),
+]);

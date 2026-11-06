@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { bigint, text, date, numeric, uuid, boolean, integer, timestamp, unique, check, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { bigint, text, date, numeric, uuid, boolean, integer, timestamp, unique, check, index, uniqueIndex, foreignKey } from 'drizzle-orm/pg-core';
 import { hrms } from '../schema';
 import { legalEntities, persons } from '../../core/schema';
 import { employments } from '../people/schema';
@@ -24,7 +24,7 @@ export const leaveRequests = hrms.table('leave_requests', {
   tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
   publicId: uuid('public_id').notNull().defaultRandom().unique(),
   personId: bigint('person_id', { mode: 'number' }).notNull().references(() => persons.id),
-  employmentId: bigint('employment_id', { mode: 'number' }).notNull().references(() => employments.id),
+  employmentId: bigint('employment_id', { mode: 'number' }).notNull(),
   legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
   leaveTypeId: bigint('leave_type_id', { mode: 'number' }).notNull().references(() => leaveTypes.id),
   fromDate: date('from_date').notNull(),
@@ -37,11 +37,13 @@ export const leaveRequests = hrms.table('leave_requests', {
   approverPersonId: bigint('approver_person_id', { mode: 'number' }).references(() => persons.id),
   decidedBy: bigint('decided_by', { mode: 'number' }).references(() => persons.id),
   decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decidedAs: text('decided_as'), // approver | hr | management | no_approval_required (see migration 0021)
   decisionReason: text('decision_reason'),
   cancelledBy: bigint('cancelled_by', { mode: 'number' }).references(() => persons.id),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  foreignKey({ name: 'leave_requests_employment_company_fk', columns: [t.employmentId, t.legalEntityId], foreignColumns: [employments.id, employments.legalEntityId] }),
   index('idx_leave_requests_employment').on(t.employmentId, t.fromDate),
   index('idx_leave_requests_approver').on(t.approverPersonId, t.status),
   check('leave_requests_status_check', sql`status IN ('draft','submitted','approved','rejected','cancelled')`),
@@ -50,7 +52,10 @@ export const leaveRequests = hrms.table('leave_requests', {
   check('leave_requests_days_check', sql`days > 0`),
   check('leave_requests_not_own_decision', sql`decided_by IS NULL OR decided_by <> person_id`),
   check('leave_requests_not_own_approver', sql`approver_person_id IS NULL OR approver_person_id <> person_id`),
-  check('leave_requests_decided_fields', sql`(status IN ('approved','rejected')) = (decided_by IS NOT NULL AND decided_at IS NOT NULL) OR status = 'cancelled'`),
+  check('leave_requests_decided_fields', sql`status = 'cancelled' OR (status IN ('approved','rejected')) = (decided_at IS NOT NULL AND decided_as IS NOT NULL)`),
+  check('leave_requests_decided_as_check', sql`decided_as IS NULL OR decided_as IN ('approver','hr','management','no_approval_required')`),
+  // a decision always has a decider, except a request that needed no approval (and that one never has one)
+  check('leave_requests_decider_required', sql`decided_as IS NULL OR (decided_as = 'no_approval_required') = (decided_by IS NULL)`),
   check('leave_requests_rejected_has_reason', sql`status <> 'rejected' OR decision_reason IS NOT NULL`),
 ]);
 
@@ -62,7 +67,8 @@ export const leaveLedger = hrms.table('leave_ledger', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
   publicId: uuid('public_id').notNull().defaultRandom().unique(),
-  employmentId: bigint('employment_id', { mode: 'number' }).notNull().references(() => employments.id),
+  employmentId: bigint('employment_id', { mode: 'number' }).notNull(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
   leaveTypeId: bigint('leave_type_id', { mode: 'number' }).notNull().references(() => leaveTypes.id),
   year: integer('year').notNull(),
   entry: text('entry').notNull(),
@@ -72,6 +78,7 @@ export const leaveLedger = hrms.table('leave_ledger', {
   postedBy: bigint('posted_by', { mode: 'number' }).notNull().references(() => persons.id),
   postedAt: timestamp('posted_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  foreignKey({ name: 'leave_ledger_employment_company_fk', columns: [t.employmentId, t.legalEntityId], foreignColumns: [employments.id, employments.legalEntityId] }),
   index('idx_leave_ledger_balance').on(t.employmentId, t.leaveTypeId, t.year),
   uniqueIndex('uq_leave_ledger_one_opening').on(t.employmentId, t.leaveTypeId, t.year).where(sql`entry = 'opening'`),
   uniqueIndex('uq_leave_ledger_request_entry').on(t.leaveRequestId, t.entry, t.year).where(sql`leave_request_id IS NOT NULL`),

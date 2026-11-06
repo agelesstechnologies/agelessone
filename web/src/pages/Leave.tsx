@@ -5,9 +5,10 @@ import {
 } from '@ageless/shared';
 import { api, errText } from '../api';
 import { useAuth } from '../auth';
+import { VoiceInput } from '../VoiceInput';
 import { addDays, dayLabel, todayIst, useLoad, useMyEmployments, uuidv7, words } from '../hooks';
 import { LEAVE } from '../permissions';
-import { Badge, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs, type Tone } from '../ui';
+import { Badge, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs, CsvButton, type Tone } from '../ui';
 
 type TabKey = 'mine' | 'approve' | 'report';
 const LEAVE_TONE: Record<string, Tone> = { draft: 'gray', submitted: 'amber', approved: 'green', rejected: 'red', cancelled: 'gray' };
@@ -121,7 +122,7 @@ function Apply({ onClose, onSaved }: { onClose: () => void; onSaved: () => void 
         <label>Starts<select id="leave-from-half" name="fromHalf" defaultValue="full"><option value="full">Full day</option><option value="second_half">Second half only</option></select></label>
         <label>To<input id="leave-to" name="toDate" type="date" required defaultValue={todayIst()} /></label>
         <label>Ends<select id="leave-to-half" name="toHalf" defaultValue="full"><option value="full">Full day</option><option value="first_half">First half only</option></select></label>
-        <label className="span-two">Reason <span className="optional">optional</span><input id="leave-reason" name="reason" maxLength={500} placeholder="At least 3 characters" /></label>
+        <label className="span-two">Reason<VoiceInput id="leave-reason" name="reason" maxLength={500} placeholder="At least 3 characters" /></label>
       </div>
       <div className="modal-foot"><button type="button" className="outline-btn" onClick={onClose}>Close</button>
         <button className="primary-btn" disabled={saving || !jobId || !type}>{saving ? 'Sending…' : 'Send request'}</button></div>
@@ -210,6 +211,7 @@ function Report() {
   const [to, setTo] = useState(addDays(todayIst(), 30));
   const [from, setFrom] = useState(addDays(todayIst(), -30));
   const [company, setCompany] = useState('');
+  const [csvError, setCsvError] = useState('');
   const q = useLoad(() => api<LeaveReport>(`/hrms/leave/report?from=${from}&to=${to}${company ? `&company=${company}` : ''}`), [from, to, company]);
   const r = q.data;
   return <Panel title="Leave report" note="Submitted and approved leave that touches these dates.">
@@ -220,8 +222,9 @@ function Report() {
         <label className="inline-field">Company
           <select id="lrep-company" className="input" value={company} onChange={(e) => setCompany(e.target.value)}>
             <option value="">All companies</option><option value="AE">Ageless Entertainments</option><option value="ATPL">Ageless Technologies</option></select></label>
+        <CsvButton path={`/hrms/leave/report?from=${from}&to=${to}${company ? `&company=${company}` : ''}`} name="leave-report.csv" onError={setCsvError} />
       </div>
-      {q.error && <Notice>{q.error}</Notice>}
+      {(q.error || csvError) && <Notice onClose={() => setCsvError('')}>{q.error || csvError}</Notice>}
       {q.loading && !r ? <Loading /> : r && <>
         {!!r.approvedDaysByType.length && <div className="mini-stats">{r.approvedDaysByType.map((t) => <div key={t.code}><small>{t.code.toUpperCase()} APPROVED</small><strong>{t.days}</strong></div>)}</div>}
         {!r.rows.length ? <Empty title="No leave in this range" /> :

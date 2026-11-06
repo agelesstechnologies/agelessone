@@ -9,7 +9,8 @@ const WHERE: Record<string, string> = { body: 'request body', query: 'query stri
  * Use: @Body(new ZodValidationPipe(MySchema)) or @Query(new ZodValidationPipe(MyQuery)).
  */
 export class ZodValidationPipe<T> implements PipeTransform<unknown, T> {
-  constructor(private readonly schema: ZodType<T, ZodTypeDef, unknown>) {}
+  /** Public so the OpenAPI document can show what each route accepts. */
+  constructor(readonly schema: ZodType<T, ZodTypeDef, unknown>) {}
 
   transform(value: unknown, meta: ArgumentMetadata): T {
     const result = this.schema.safeParse(value);

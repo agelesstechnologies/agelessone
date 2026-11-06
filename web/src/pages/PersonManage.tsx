@@ -3,10 +3,11 @@ import {
   AddContactRequest, AddEmploymentRequest, ExitEmploymentRequest, UpdateEmploymentRequest, UpdatePersonRequest,
   type PersonDetail, type SharedContacts,
 } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, downloadFile, errText } from '../api';
 import { useAuth } from '../auth';
 import { todayIst, useLoad } from '../hooks';
-import { PEOPLE } from '../permissions';
+import { PEOPLE, PRIVATE } from '../permissions';
+import PersonPrivate from './PersonPrivate';
 import { Loading, Modal, Notice } from '../ui';
 
 type Job = PersonDetail['employments'][number];
@@ -34,9 +35,27 @@ export default function PersonManage({ person, onChange }: { person: PersonDetai
     catch (e) { setError(errText(e)); }
   }
 
+  async function activate(j: Job) {
+    setError('');
+    try { onChange(await api<PersonDetail>(`/hrms/employments/${j.publicId}/activate`, { method: 'POST', json: {} })); }
+    catch (e) { setError(errText(e)); }
+  }
+  async function uploadOffer(j: Job, file: File | undefined) {
+    if (!file) return;
+    setError('');
+    const body = new FormData(); body.append('file', file);
+    try { onChange(await api<PersonDetail>(`/hrms/employments/${j.publicId}/offer-letter`, { method: 'POST', body })); }
+    catch (e) { setError(errText(e)); }
+  }
+  async function openOffer(j: Job) {
+    setError('');
+    try { await downloadFile(`/hrms/employments/${j.publicId}/offer-letter`, `offer-letter-${j.employeeCode}`); } catch (e) { setError(errText(e)); }
+  }
+
   const anything = can(PEOPLE.update) || can(PEOPLE.manageContacts) || can(PEOPLE.manageEmployments) || can(PEOPLE.updateEmployments) || can(PEOPLE.reviewContacts);
-  if (!anything) return null;
-  return <div className="detail-section">
+  if (!anything && !person.private && !can(PRIVATE.manage)) return null;
+  return <>
+  {anything && <div className="detail-section">
     <h3>Manage</h3>
     {error && <Notice onClose={() => setError('')}>{error}</Notice>}
     <div className="chip-row">
@@ -53,6 +72,11 @@ export default function PersonManage({ person, onChange }: { person: PersonDetai
       <span>{j.company.code} · {j.employeeCode}</span>
       <span className="chip-row">
         {can(PEOPLE.updateEmployments) && <button className="text-btn" onClick={() => setDialog({ kind: 'edit', job: j })}>Edit</button>}
+        {can(PEOPLE.manageEmployments) && j.status === 'joining' && <button className="text-btn" onClick={() => void activate(j)}>Mark as started</button>}
+        {j.hasOfferLetter && <button className="text-btn" onClick={() => void openOffer(j)}>Offer letter</button>}
+        {can(PEOPLE.manageEmployments) && <label className="text-btn" style={{ cursor: 'pointer' }}>{j.hasOfferLetter ? 'Replace offer letter' : 'Upload offer letter'}
+          <input type="file" accept="application/pdf,image/jpeg,image/png" hidden
+            onChange={(e) => { const input = e.currentTarget; void uploadOffer(j, input.files?.[0]).then(() => { input.value = ''; }); }} /></label>}
         {can(PEOPLE.manageEmployments) && <button className="text-btn" onClick={() => setDialog({ kind: 'exit', job: j })}>Record exit</button>}</span></li>)}</ul>}
 
     {dialog?.kind === 'person' && <EditPerson person={person} onClose={() => setDialog(null)} onDone={done} />}
@@ -61,7 +85,9 @@ export default function PersonManage({ person, onChange }: { person: PersonDetai
     {dialog?.kind === 'edit' && <EditJob job={dialog.job} onClose={() => setDialog(null)} onDone={done} />}
     {dialog?.kind === 'exit' && <ExitJob job={dialog.job} onClose={() => setDialog(null)} onDone={done} />}
     {dialog?.kind === 'shared' && <Shared contact={dialog.contact} onClose={() => setDialog(null)} />}
-  </div>;
+  </div>}
+  <PersonPrivate key={person.publicId} person={person} onChange={onChange} />
+  </>;
 }
 
 /** Shared shell for the small forms: validate, send, hand back the updated person. */
@@ -117,14 +143,14 @@ function AddJob({ person, onClose, onDone }: Step & { person: PersonDetail }) {
   return <Form title="Add an employment" subtitle="Another job for this person, for example in a second company." submitLabel="Add employment" onClose={onClose} run={(d) => {
     const parsed = AddEmploymentRequest.safeParse({
       legalEntityCode: text(d, 'company'), employeeCode: text(d, 'code'), engagementType: text(d, 'type'), joinedOn: text(d, 'joined'),
-      department: orUndef(text(d, 'department')), designation: orUndef(text(d, 'designation')), managerPublicId: orUndef(text(d, 'manager')),
+      departmentCode: orUndef(text(d, 'department')), designation: orUndef(text(d, 'designation')), managerPublicId: orUndef(text(d, 'manager')),
     });
     return parsed.success ? send('POST', `/hrms/people/${person.publicId}/employments`, parsed.data, onDone) : parsed.error.issues[0]?.message ?? 'Check the form';
   }}>
     <label>Company<select id="aj-company" name="company">{COMPANIES}</select></label>
     <label>Employee ID<input id="aj-code" name="code" required maxLength={20} /></label>
     <label>Designation <span className="optional">optional</span><input id="aj-designation" name="designation" maxLength={80} /></label>
-    <label>Department <span className="optional">optional</span><input id="aj-department" name="department" maxLength={80} /></label>
+    <label>Department code <span className="optional">optional</span><input id="aj-department" name="department" maxLength={6} /></label>
     <label>Engagement<select id="aj-type" name="type"><option value="permanent">Permanent</option><option value="probation">Probation</option><option value="contract">Contract</option><option value="intern">Intern</option><option value="external">External</option></select></label>
     <label>Joined<input id="aj-joined" name="joined" type="date" required defaultValue={todayIst()} /></label>
     <label className="span-two">Manager public ID <span className="optional">optional</span><input id="aj-manager" name="manager" placeholder="Supervisor UUID" /></label>
@@ -136,14 +162,14 @@ function EditJob({ job, onClose, onDone }: Step & { job: Job }) {
     const body: Record<string, unknown> = {};
     const designation = text(d, 'designation'), department = text(d, 'department'), manager = text(d, 'manager');
     if (designation !== (job.designation ?? '')) body.designation = designation || null;
-    if (department !== (job.department ?? '')) body.department = department || null;
+    if (department !== (job.department?.code ?? '')) body.departmentCode = department || null;
     if (manager !== (job.manager?.publicId ?? '')) body.managerPublicId = manager || null;
     if (d.get('primary') === 'on') body.isPrimary = true;
     const parsed = UpdateEmploymentRequest.safeParse(body);
     return parsed.success ? send('PATCH', `/hrms/employments/${job.publicId}`, parsed.data, onDone) : parsed.error.issues[0]?.message ?? 'Check the form';
   }}>
     <label>Designation<input id="ej-designation" name="designation" maxLength={80} defaultValue={job.designation ?? ''} /></label>
-    <label>Department<input id="ej-department" name="department" maxLength={80} defaultValue={job.department ?? ''} /></label>
+    <label>Department code<input id="ej-department" name="department" maxLength={6} defaultValue={job.department?.code ?? ''} /></label>
     <label className="span-two">Manager public ID<input id="ej-manager" name="manager" defaultValue={job.manager?.publicId ?? ''} placeholder="Supervisor UUID" /></label>
     {!job.isPrimary && <label className="span-two check-row"><input name="primary" type="checkbox" /> Make this the primary employment</label>}
   </Form>;

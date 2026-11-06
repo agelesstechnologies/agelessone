@@ -150,6 +150,13 @@ describe('HRMS attendance API', () => {
   });
 
   describe('database rules', () => {
+    it('a row whose company differs from its employment\'s company is refused', async () => {
+      const s = await staff(); // an AE job
+      await expect(db.query(`INSERT INTO hrms.work_days (tenant_id, person_id, employment_id, legal_entity_id, work_date, day_status)
+        SELECT 1, e.person_id, e.id, (SELECT id FROM core.legal_entities WHERE code = 'ATPL'), DATE '2026-10-26', 'absent'
+          FROM hrms.employments e WHERE e.public_id = $1`, [s.jobs.AE])).rejects.toThrow(/work_days_employment_company_fk/);
+    });
+
     it('punches can never be updated or deleted', async () => {
       const s = await staff();
       const id = randomUUID();

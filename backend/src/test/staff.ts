@@ -3,7 +3,7 @@ import request from 'supertest';
 import { signIn } from './create-app';
 import { peopleApi, tag } from './people';
 
-export interface Staff { personId: string; auth: Record<string, string>; jobs: Record<string, string> }
+export interface Staff { personId: string; login: string; auth: Record<string, string>; jobs: Record<string, string> }
 
 /**
  * A brand-new fictional employee with a login (Employee role, scope own) and one job per company given,
@@ -25,5 +25,5 @@ export async function newStaff(app: INestApplication, hr: Record<string, string>
   if (role.status !== 201) throw new Error(`assign role failed: ${role.status} ${JSON.stringify(role.body)}`);
   const jobs: Record<string, string> = {};
   for (const company of companies) jobs[company] = await people.employmentIn(personId, company);
-  return { personId, auth: await signIn(app, login, 'first-pass-1'), jobs };
+  return { personId, login, auth: await signIn(app, login, 'first-pass-1'), jobs };
 }

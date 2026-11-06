@@ -5,7 +5,7 @@ import {
 } from '@ageless/shared';
 import { Conn, DB, Db, Tx, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
-import { RequestContext, requireAll } from '../../../../platform/http/request-context';
+import { RequestContext, requireAll, requireReadAll } from '../../../../platform/http/request-context';
 import { addDays, datesBetween, todayIst } from '../../../../platform/time';
 import { CalendarRepository, RuleTarget } from '../infrastructure/calendar.repository';
 import { calendarDays, DayKind } from '../domain/work-calendar';
@@ -43,7 +43,7 @@ export class CalendarService {
     const holidays = await this.repo.holidaysFor(conn, companies, from, to);
     const dates = datesBetween(from, to);
     return new Map(jobs.map((j) => [j.id, calendarDays(dates,
-      rules.filter((r) => r.legalEntityId === j.legalEntityId), rules.filter((r) => r.employmentId === j.id),
+      rules.filter((r) => r.legalEntityId === j.legalEntityId && r.employmentId === null), rules.filter((r) => r.employmentId === j.id),
       holidays.filter((h) => h.legalEntityId === j.legalEntityId))]));
   }
 
@@ -116,7 +116,7 @@ export class CalendarService {
   }
 
   weeklyOffs(ctx: RequestContext, q: WeeklyOffsQuery): Promise<WeeklyOff[]> {
-    requireAll(ctx, CALENDAR.manage);
+    requireReadAll(ctx, CALENDAR.manage);
     return this.repo.weeklyOffs(ctx.tenantId, q);
   }
 
@@ -139,7 +139,7 @@ export class CalendarService {
     } else {
       const job = await this.repo.findEmployment(ctx.tenantId, req.employmentPublicId!);
       if (!job) throw new AppError('HRMS_EMPLOYMENT_NOT_FOUND', 404, 'Employment not found');
-      target = { employmentId: job.id };
+      target = { legalEntityId: job.legalEntityId, employmentId: job.id }; // the company comes from the job, never the request
     }
     const publicId = req.publicId ?? randomUUID();
     try {

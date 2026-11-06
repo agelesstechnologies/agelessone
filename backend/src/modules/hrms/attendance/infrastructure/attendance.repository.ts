@@ -3,7 +3,7 @@ import { and, AnyColumn, asc, between, desc, eq, gte, inArray, isNull, lt, lte, 
 import { Punch } from '@ageless/shared';
 import { Conn, DB, Db, Tx } from '../../../../platform/db/db.module';
 import { legalEntities, persons } from '../../../core/schema';
-import { employments } from '../../people/schema';
+import { departments, employments } from '../../people/schema';
 import { leaveRequests } from '../../leave/schema';
 import { attendanceCorrections, attendanceEvents, attendanceExclusions, overtimeRequests, workDays } from '../schema';
 
@@ -14,11 +14,11 @@ const notExcluded = sql`NOT EXISTS (SELECT 1 FROM ${attendanceExclusions} x WHER
 export type Visibility = { scope: 'all' } | { scope: 'team' | 'own'; personId: number };
 
 export interface NewPunch {
-  tenantId: number; publicId: string; personId: number; employmentId: number; kind: 'in' | 'out'; source: 'web' | 'correction' | 'auto';
+  tenantId: number; publicId: string; personId: number; employmentId: number; legalEntityId: number; kind: 'in' | 'out'; source: 'web' | 'correction' | 'auto';
   occurredAt: Date; latitude?: string; longitude?: string; accuracyM?: number; locationStatus: string | null; correctionId?: number;
 }
 export interface WorkDayValues {
-  tenantId: number; personId: number; employmentId: number; workDate: string; firstIn: Date | null; lastOut: Date | null;
+  tenantId: number; personId: number; employmentId: number; legalEntityId: number; workDate: string; firstIn: Date | null; lastOut: Date | null;
   workedMinutes: number; extraMinutes: number; approvedOvertimeMinutes: number; dayStatus: string; leaveDays: number; absentDays: number; workedOnLeave: boolean;
 }
 
@@ -30,9 +30,10 @@ export class AttendanceRepository {
   async findEmployment(tenantId: number, publicId: string) {
     const [row] = await this.db.select({
       id: employments.id, personId: employments.personId, status: employments.status,
-      managerPersonId: employments.managerPersonId, legalEntityId: employments.legalEntityId,
+      managerPersonId: employments.managerPersonId, legalEntityId: employments.legalEntityId, departmentHeadId: departments.headPersonId,
     })
-      .from(employments).where(and(eq(employments.tenantId, tenantId), eq(employments.publicId, publicId)));
+      .from(employments).leftJoin(departments, eq(departments.id, employments.departmentId))
+      .where(and(eq(employments.tenantId, tenantId), eq(employments.publicId, publicId)));
     return row;
   }
 
@@ -189,7 +190,7 @@ export class AttendanceRepository {
 
   async upsertWorkDay(tx: Tx, w: WorkDayValues): Promise<void> {
     const v = { ...w, leaveDays: String(w.leaveDays), absentDays: String(w.absentDays) };
-    const { tenantId: _t, personId: _p, employmentId: _e, workDate: _d, ...changes } = v;
+    const { tenantId: _t, personId: _p, employmentId: _e, legalEntityId: _l, workDate: _d, ...changes } = v;
     await tx.insert(workDays).values(v)
       .onConflictDoUpdate({ target: [workDays.employmentId, workDays.workDate], set: { ...changes, updatedAt: new Date() } });
   }

@@ -39,3 +39,20 @@ export async function api<T>(path: string, { json, headers, ...options }: Option
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
+
+/** Download a file the API sends (CSV, PDF) with the sign-in token, then save it in the browser. */
+export async function downloadFile(path: string, fallbackName: string): Promise<void> {
+  const token = getToken();
+  const response = await fetch(`${API}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!response.ok) {
+    let e: ApiError = {};
+    try { e = await response.json() as ApiError; } catch { /* no JSON response */ }
+    throw new Error(e.message || `Download failed (${response.status})`);
+  }
+  const match = /filename="?([^";]+)"?/.exec(response.headers.get('Content-Disposition') ?? '');
+  const url = URL.createObjectURL(await response.blob());
+  const a = document.createElement('a');
+  a.href = url; a.download = match?.[1] ?? fallbackName;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}

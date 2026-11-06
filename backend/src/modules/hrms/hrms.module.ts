@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { PeopleModule } from './people/people.module';
 import { SkillsModule } from './skills/skills.module';
 import { AttendanceModule } from './attendance/attendance.module';
@@ -8,7 +8,8 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { ReportsModule } from './reports/reports.module';
 import { HrmsFacade } from './hrms.facade';
 
-/** HRMS: seven sub-modules, one public facade. */
+/** HRMS: six sub-modules, one public facade. */
+@Global()
 @Module({
   imports: [PeopleModule, SkillsModule, CalendarModule, AttendanceModule, LeaveModule, ExpensesModule, ReportsModule],
   providers: [HrmsFacade],

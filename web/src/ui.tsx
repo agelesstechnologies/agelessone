@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
-import { LoaderCircle, X } from 'lucide-react';
+import { useState } from 'react';
+import { Download, LoaderCircle, X } from 'lucide-react';
+import { downloadFile, errText } from './api';
 
 export type Tone = 'green' | 'amber' | 'red' | 'blue' | 'gray';
 
@@ -50,4 +52,14 @@ export function Modal({ title, subtitle, onClose, children }: { title: string; s
       {children}
     </div>
   </div>;
+}
+
+/** Downloads a report as CSV: the same request with `format=csv` added. */
+export function CsvButton({ path, name, onError }: { path: string; name: string; onError: (message: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  async function go() {
+    setBusy(true);
+    try { await downloadFile(`${path}${path.includes('?') ? '&' : '?'}format=csv`, name); } catch (e) { onError(errText(e)); } finally { setBusy(false); }
+  }
+  return <button type="button" className="outline-btn" disabled={busy} onClick={() => void go()}><Download size={13} /> {busy ? 'Preparing…' : 'CSV'}</button>;
 }
