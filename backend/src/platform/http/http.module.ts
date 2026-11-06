@@ -13,7 +13,7 @@ export function configureApp(app: INestApplication): INestApplication {
   app.enableCors({
     origin: process.env.WEB_ORIGIN ?? 'http://localhost:5173',
     allowedHeaders: ['Content-Type', 'Authorization'],
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
   return app.setGlobalPrefix('api');
 }

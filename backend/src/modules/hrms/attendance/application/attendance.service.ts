@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  AttendanceHistoryQuery, AttendanceRegister, AttendanceRegisterQuery, DayStatus, HistoryRow, Punch, PunchRequest,
+  AttendanceHistoryQuery, AttendanceRegister, AttendanceRegisterQuery, DayStatus, HistoryRow, Punch, PunchNotice, PunchRequest,
   RebuildResult, RebuildWorkDaysRequest, TodayAttendance, WorkDayRow, WorkHours, WorkHoursQuery,
 } from '@ageless/shared';
 import { Conn, databaseMessage, DB, Db, Tx, violatedConstraint } from '../../../../platform/db/db.module';
@@ -13,8 +13,16 @@ import { CalendarChange, CalendarService } from '../../calendar/application/cale
 import { MonthLocksService } from './month-locks.service';
 import { AttendanceRepository, Visibility } from '../infrastructure/attendance.repository';
 import { approvedOvertime, DayPolicy, DaySummary, LeavePart, leavePartOn, summarizeDay } from '../domain/day-summary';
+import { calculateWorkDay } from '../domain/work-day-calculator';
 import { ATTENDANCE } from '../domain/permissions';
 import { toCsv } from '../../../../platform/csv';
+
+/** A job's work day was recalculated (punch, correction, leave, calendar, rebuild) - inside that transaction. */
+export interface DayChange { tenantId: number; personId: number; employmentId: number; date: string }
+export type DayListener = (tx: Tx, change: DayChange) => Promise<void>;
+/** A new punch was stored (after its day was rebuilt), inside that transaction; may answer notices for the app. */
+export interface PunchStored { tenantId: number; personId: number; kind: 'in' | 'out'; at: Date }
+export type PunchListener = (tx: Tx, punch: PunchStored) => Promise<PunchNotice[]>;
 
 /** A device clock may run a little fast; anything later than this is refused. */
 const FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
@@ -38,6 +46,40 @@ export class AttendanceService {
     calendar.onChange((tx, change) => this.calendarChanged(tx, change));
   }
 
+  private readonly dayListeners: DayListener[] = [];
+  private readonly punchListeners: PunchListener[] = [];
+
+  /** Other modules (through HrmsFacade) follow work-day changes, e.g. tickets stop running timers and recalculate ticket time. */
+  onDayChanged(listener: DayListener): void { this.dayListeners.push(listener); }
+  /** Other modules (through HrmsFacade) add notices to the answer of a new punch. */
+  onPunchStored(listener: PunchListener): void { this.punchListeners.push(listener); }
+
+  /** The person's latest punch that counts (any job), or undefined. auto: added by the system for a forgotten punch-out. */
+  latestPunchOf(conn: Conn, personId: number): Promise<{ kind: 'in' | 'out'; at: Date; auto: boolean; legalEntityId: number } | undefined> {
+    return this.repo.latestPunchOf(conn, personId);
+  }
+
+  /**
+   * The person's attended periods on an IST date (complete in/out pairs of each job, as the work day counts them) and the
+   * minutes they add up to. An open punch-in adds nothing.
+   */
+  async attendedPeriods(conn: Conn, personId: number, date: string): Promise<{ periods: { start: Date; end: Date }[]; workedMinutes: number }> {
+    const jobs = await this.repo.jobsOfPerson(personId);
+    const punches = await this.repo.punchesOf(conn, jobs.map((j) => j.id), istDayStart(date), istDayStart(addDays(date, 1)));
+    const periods: { start: Date; end: Date }[] = [];
+    let workedMinutes = 0;
+    for (const job of jobs) {
+      const own = punches.filter((p) => p.employmentId === job.id);
+      workedMinutes += calculateWorkDay(own, { fullDayMinutes: 1, halfDayMinutes: 1 }).workedMinutes;
+      let openIn: Date | null = null;
+      for (const p of own) {
+        if (p.kind === 'in') openIn = p.at;
+        else if (openIn) { periods.push({ start: openIn, end: p.at }); openIn = null; }
+      }
+    }
+    return { periods, workedMinutes };
+  }
+
   health() { return { module: 'hrms', sub: 'attendance', ok: true }; }
 
   /**
@@ -56,17 +98,22 @@ export class AttendanceService {
     const occurredAt = new Date(req.occurredAt);
     if (occurredAt.getTime() > Date.now() + FUTURE_TOLERANCE_MS) throw new AppError('HRMS_PUNCH_IN_FUTURE', 400, 'The punch time is in the future');
     await this.months.assertOpen(this.db, job.legalEntityId, todayIst(occurredAt));
+    // the address is looked up before the transaction (a slow provider never holds a lock); no answer: coordinates only
+    const found = req.latitude === undefined ? null : await this.core.lookUpAddress(req.latitude, req.longitude!);
 
+    const notices: PunchNotice[] = [];
     try {
       await this.db.transaction(async (tx) => {
         if (req.kind === 'in') await this.autoPunchOut(tx, ctx.tenantId, ctx.personId, occurredAt);
-        await this.repo.insertPunch(tx, {
+        const place = found ? await this.core.savePlace(tx, { tenantId: ctx.tenantId, latitude: req.latitude!, longitude: req.longitude!, accuracyM: req.accuracyM }, found) : null;
+        await this.repo.insertPunch(tx, { placeId: place?.id ?? null,
           tenantId: ctx.tenantId, publicId: req.publicId, personId: ctx.personId, employmentId: job.id, legalEntityId: job.legalEntityId, kind: req.kind, source: 'web',
           occurredAt, latitude: req.latitude?.toString(), longitude: req.longitude?.toString(), accuracyM: req.accuracyM,
           // geofencing needs work locations (not built yet): record whether a position was sent
           locationStatus: req.latitude === undefined ? 'not_taken' : 'not_configured',
         });
         await this.rebuildDay(tx, ctx.tenantId, ctx.personId, job.id, todayIst(occurredAt));
+        for (const l of this.punchListeners) notices.push(...await l(tx, { tenantId: ctx.tenantId, personId: ctx.personId, kind: req.kind, at: occurredAt }));
       });
     } catch (err) {
       const message = databaseMessage(err) ?? '';
@@ -78,7 +125,7 @@ export class AttendanceService {
       }
       throw err;
     }
-    return { punch: (await this.repo.punch(req.publicId))!, created: true };
+    return { punch: { ...(await this.repo.punch(req.publicId))!, ...(notices.length ? { notices } : {}) }, created: true };
   }
 
   /**
@@ -277,6 +324,12 @@ export class AttendanceService {
    * with no punches and no leave has no row (shown from the calendar instead): an old row is removed.
    */
   private async rebuildDay(tx: Tx, tenantId: number, personId: number, employmentId: number, date: string): Promise<'rebuilt' | 'locked' | 'empty'> {
+    const outcome = await this.storeDay(tx, tenantId, personId, employmentId, date);
+    if (outcome !== 'locked') for (const l of this.dayListeners) await l(tx, { tenantId, personId, employmentId, date });
+    return outcome;
+  }
+
+  private async storeDay(tx: Tx, tenantId: number, personId: number, employmentId: number, date: string): Promise<'rebuilt' | 'locked' | 'empty'> {
     const existing = await this.repo.lockWorkDay(tx, employmentId, date);
     if (existing?.locked) return 'locked';
     const punches = await this.repo.punchesOf(tx, [employmentId], istDayStart(date), istDayStart(addDays(date, 1)));

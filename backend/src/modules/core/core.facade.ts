@@ -6,6 +6,8 @@ import { personContacts, persons } from './schema';
 import { PolicyService } from './policies/application/policy.service';
 import { ApprovalsService, JobApprovers } from './approvals/approvals.service';
 import { AuditEntry, AuditService } from './audit/audit.service';
+import { Place, PlacesService } from './places/places.service';
+import { GeocodeResult } from '../../platform/geocoding';
 
 export interface NewPerson {
   tenantId: number;
@@ -22,7 +24,31 @@ export class CoreFacade {
     @Inject(PolicyService) private readonly policies: PolicyService,
     @Inject(ApprovalsService) private readonly approvals: ApprovalsService,
     @Inject(AuditService) private readonly auditLog: AuditService,
+    @Inject(PlacesService) private readonly places: PlacesService,
   ) {}
+
+  /**
+   * The address of a punch location, from the reverse-geocoding provider in settings. Call it BEFORE opening the
+   * transaction; it never throws (no provider / failure: no address, and the addresses:retry job tries later).
+   */
+  lookUpAddress(latitude: number, longitude: number): Promise<GeocodeResult> {
+    return this.places.lookUp(latitude, longitude);
+  }
+
+  /** Stores a punch location with what lookUpAddress found, inside the caller's transaction; its id goes on the punch. */
+  savePlace(tx: Tx, p: { tenantId: number; latitude: number; longitude: number; accuracyM?: number | null }, found: GeocodeResult): Promise<Place> {
+    return this.places.save(tx, p, found);
+  }
+
+  /** The background retry of pending addresses (the addresses:retry job). */
+  retryAddresses(limit?: number) {
+    return this.places.retryPending(limit);
+  }
+
+  /** Stored places by id (address null while pending). */
+  getPlaces(conn: Conn, ids: number[]): Promise<Map<number, Place>> {
+    return this.places.get(conn, ids);
+  }
 
   /** Writes an audit entry inside the caller's transaction (append-only). */
   audit(conn: Conn, entry: AuditEntry): Promise<void> {

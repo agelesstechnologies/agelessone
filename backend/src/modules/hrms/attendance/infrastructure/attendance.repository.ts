@@ -2,7 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, AnyColumn, asc, between, desc, eq, gte, inArray, isNull, lt, lte, or, sql, SQL } from 'drizzle-orm';
 import { Punch } from '@ageless/shared';
 import { Conn, DB, Db, Tx } from '../../../../platform/db/db.module';
-import { legalEntities, persons } from '../../../core/schema';
+import { punchConfirmation } from '../../../../platform/confirmation';
+import { legalEntities, persons, places } from '../../../core/schema';
 import { departments, employments } from '../../people/schema';
 import { leaveRequests } from '../../leave/schema';
 import { attendanceCorrections, attendanceEvents, attendanceExclusions, overtimeRequests, workDays } from '../schema';
@@ -15,7 +16,7 @@ export type Visibility = { scope: 'all' } | { scope: 'team' | 'own'; personId: n
 
 export interface NewPunch {
   tenantId: number; publicId: string; personId: number; employmentId: number; legalEntityId: number; kind: 'in' | 'out'; source: 'web' | 'correction' | 'auto';
-  occurredAt: Date; latitude?: string; longitude?: string; accuracyM?: number; locationStatus: string | null; correctionId?: number;
+  occurredAt: Date; latitude?: string; longitude?: string; accuracyM?: number; locationStatus: string | null; correctionId?: number; placeId?: number | null;
 }
 export interface WorkDayValues {
   tenantId: number; personId: number; employmentId: number; legalEntityId: number; workDate: string; firstIn: Date | null; lastOut: Date | null;
@@ -61,13 +62,17 @@ export class AttendanceRepository {
     const [r] = await this.db.select({
       publicId: attendanceEvents.publicId, kind: attendanceEvents.kind, occurredAt: attendanceEvents.occurredAt,
       receivedAt: attendanceEvents.receivedAt, employmentPublicId: employments.publicId, company: legalEntities.code,
-      locationStatus: attendanceEvents.locationStatus,
+      locationStatus: attendanceEvents.locationStatus, latitude: attendanceEvents.latitude, longitude: attendanceEvents.longitude, address: places.address,
     }).from(attendanceEvents).innerJoin(employments, eq(employments.id, attendanceEvents.employmentId))
-      .innerJoin(legalEntities, eq(legalEntities.id, employments.legalEntityId)).where(eq(attendanceEvents.publicId, publicId));
+      .innerJoin(legalEntities, eq(legalEntities.id, employments.legalEntityId))
+      .leftJoin(places, eq(places.id, attendanceEvents.placeId))
+      .where(eq(attendanceEvents.publicId, publicId));
     if (!r) return undefined;
     return {
       publicId: r.publicId, kind: r.kind as Punch['kind'], occurredAt: r.occurredAt.toISOString(), receivedAt: r.receivedAt.toISOString(),
       employment: { publicId: r.employmentPublicId, company: r.company }, locationStatus: r.locationStatus,
+      confirmation: punchConfirmation(r.kind === 'in' ? 'Punched in' : 'Punched out', r.occurredAt,
+        { address: r.address, latitude: r.latitude === null ? null : Number(r.latitude), longitude: r.longitude === null ? null : Number(r.longitude) }),
     };
   }
 
@@ -117,6 +122,15 @@ export class AttendanceRepository {
     }).from(attendanceEvents).innerJoin(employments, eq(employments.id, attendanceEvents.employmentId))
       .where(and(eq(attendanceEvents.personId, personId), notExcluded)).orderBy(desc(attendanceEvents.occurredAt), desc(attendanceEvents.id)).limit(1);
     return row;
+  }
+
+  /** The person's latest punch that counts (any job), readable inside or outside a transaction. */
+  async latestPunchOf(conn: Conn, personId: number) {
+    const [row] = await conn.select({
+      kind: attendanceEvents.kind, at: attendanceEvents.occurredAt, auto: sql<boolean>`${attendanceEvents.source} = 'auto'`, legalEntityId: employments.legalEntityId,
+    }).from(attendanceEvents).innerJoin(employments, eq(employments.id, attendanceEvents.employmentId))
+      .where(and(eq(attendanceEvents.personId, personId), notExcluded)).orderBy(desc(attendanceEvents.occurredAt), desc(attendanceEvents.id)).limit(1);
+    return row as { kind: 'in' | 'out'; at: Date; auto: boolean; legalEntityId: number } | undefined;
   }
 
   /** Automatic punch-outs of the job in [from, to) that still count. */

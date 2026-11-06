@@ -31,28 +31,29 @@ const HR = ['hrms.people.view', 'hrms.people.create', 'hrms.people.update', 'hrm
   'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.rebuild', 'hrms.attendance.approve', 'hrms.calendar.manage',
   'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.manage', 'hrms.leave.report', 'core.policies.manage', 'hrms.positions.manage',
   'hrms.skills.manage', 'hrms.skills.add', 'hrms.skills.verify', 'hrms.skills.view', 'hrms.month.lock', 'payroll.payslip.own',
-  'hrms.dashboard.view', 'hrms.private.view', 'hrms.private.manage'];
+  'hrms.dashboard.view', 'hrms.private.view', 'hrms.private.manage', 'tickets.types.view', 'tickets.view', 'tickets.numbering.manage'];
 const roles = [
   { code: 'employee', name: 'Employee', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.leave.apply',
-    'hrms.skills.add', 'hrms.skills.view', 'payroll.payslip.own'] },
+    'hrms.skills.add', 'hrms.skills.view', 'payroll.payslip.own', 'tickets.types.view', 'tickets.view', 'tickets.work'] },
   { code: 'supervisor', name: 'Supervisor', permissions: ['hrms.people.view', 'hrms.employments.update', 'hrms.expenses.submit', 'hrms.expenses.approve',
     'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report',
-    'hrms.skills.add', 'hrms.skills.verify', 'hrms.skills.view', 'hrms.dashboard.view', 'payroll.payslip.own'] },
+    'hrms.skills.add', 'hrms.skills.verify', 'hrms.skills.view', 'hrms.dashboard.view', 'payroll.payslip.own',
+    'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.work', 'tickets.manage', 'tickets.time.adjust'] },
   // Payroll: prepares runs, salaries and bank details. Payroll Approver: approves runs (never one they prepared).
   { code: 'payroll', name: 'Payroll', permissions: ['payroll.prepare', 'payroll.payslip.own'] },
   { code: 'payroll_approver', name: 'Payroll Approver', permissions: ['payroll.approve', 'payroll.payslip.own'] },
   { code: 'hr', name: 'HR', permissions: HR },
-  { code: 'admin_user', name: 'Admin user', permissions: [] },
+  { code: 'admin_user', name: 'Admin user', permissions: ['tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage'] },
   { code: 'system_admin', name: 'System admin', permissions: ['core.users.manage', 'core.policies.manage', 'hrms.people.view', 'hrms.attendance.rebuild', 'hrms.month.unlock'] },
   // Last approver (after the manager, department head and HR); scope team: decides requests that name them.
   // Their own requests need no approval (policy hrms.approvals.auto_approve_roles).
   { code: 'ceo', name: 'CEO', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report',
-    'payroll.payslip.own'] },
+    'payroll.payslip.own', 'tickets.types.view'] },
   // Management (the CEO, scope all): reads every HRMS record and payroll, decides any pending request (never their own),
   // sees private details masked and may reveal them (audited).
   { code: 'management', name: 'Management', permissions: ['hrms.management', 'hrms.people.view', 'hrms.attendance.view', 'hrms.attendance.approve',
     'hrms.leave.approve', 'hrms.leave.report', 'hrms.expenses.approve', 'hrms.expenses.report', 'hrms.skills.view', 'hrms.dashboard.view',
-    'hrms.private.view', 'hrms.private.reveal', 'payroll.payslip.own'] },
+    'hrms.private.view', 'hrms.private.reveal', 'payroll.payslip.own', 'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage', 'tickets.time.adjust'] },
 ];
 // Second roles: Demo HR runs payroll, Demo CEO approves it and has Management access (granted by Demo Admin).
 const extraRoles = [{ n: 214, person: 4, role: 'payroll' }, { n: 216, person: 6, role: 'payroll_approver' }, { n: 226, person: 6, role: 'management' }];
@@ -124,6 +125,43 @@ try {
        SELECT 1, $1, id, $2, $3, $4 FROM core.persons WHERE public_id = $5
        ON CONFLICT (person_id) DO NOTHING`,
       [id(300 + p.n), p.phone, p.email, passwordHash, id(p.n)]);
+  }
+
+  // The 13 standard ticket types, for every company (is_standard: only admin user and Management may change them).
+  // Written by Demo Admin; safe to run again (a type that exists is left alone).
+  const F = (key, label, type, required = false) => ({ key, label, type, required });
+  const rules = (...on) => Object.fromEntries(['photo_required', 'file_required', 'checklist_required', 'customer_signoff_required',
+    'head_approval_required', 'daily_update_required'].map((k) => [k, on.includes(k)]));
+  const standardTypes = [
+    ['sales_visit', 'Sales visit', [F('customer', 'Customer', 'customer', true), F('purpose', 'Purpose', 'text'), F('outcome', 'Outcome', 'text')], rules('daily_update_required'), []],
+    ['survey', 'Survey', [F('site_address', 'Site address', 'text', true), F('measurements', 'Measurements', 'text')], rules('photo_required', 'file_required'), []],
+    ['design', 'Design', [F('drawing_version', 'Drawing version', 'text'), F('design_file', 'Design file', 'file')], rules('file_required'), []],
+    ['budgeting', 'Budgeting', [F('budget_amount', 'Budget amount', 'money', true)], rules('head_approval_required'), []],
+    ['purchase', 'Purchase', [F('vendor', 'Vendor', 'text', true), F('items', 'Items', 'text', true), F('amount', 'Amount', 'money', true)], rules('head_approval_required', 'file_required'), []],
+    ['production', 'Production', [F('item', 'Item', 'text', true), F('quantity', 'Quantity', 'number'), F('drawing_ref', 'Drawing reference', 'text')], rules('daily_update_required'), []],
+    ['workshop', 'Workshop', [F('job_details', 'Job details', 'text'), F('materials_used', 'Materials used', 'text')], rules('photo_required'), []],
+    ['qc', 'QC', [F('checked_item', 'Checked item', 'text', true)], rules('checklist_required'),
+      ['Dimensions as per drawing', 'Finish quality', 'Fixings and safety', 'Function test']],
+    // Completion: every required field filled (always checked), so no extra rule.
+    ['packing_transport', 'Packing and transportation', [F('items', 'Items', 'text', true), F('vehicle_number', 'Vehicle number', 'text', true), F('driver', 'Driver', 'text'),
+      F('dispatch_date', 'Dispatch date', 'date', true), F('eway_bill_number', 'E-way bill number', 'text')], rules(), []],
+    ['site_work', 'Site work', [F('site', 'Site', 'text', true), F('crew', 'Crew', 'text')], rules('photo_required'), []],
+    ['installation', 'Installation', [F('site', 'Site', 'text', true), F('machines_installed', 'Machines installed', 'text')], rules('checklist_required', 'photo_required'),
+      ['Positioned as per layout', 'Power and wiring checked', 'Safety checks done', 'Test run passed']],
+    ['training_handover', 'Training and handover', [F('customer_contact', 'Customer contact', 'text', true), F('people_trained', 'People trained', 'text')], rules('customer_signoff_required'), []],
+    // "service report, or a daily update": a type has one set of rules, so the report is what is required.
+    ['service', 'Service', [F('customer', 'Customer', 'customer', true), F('machine', 'Machine', 'text'), F('fault', 'Fault', 'text', true),
+      F('coverage', 'Coverage (warranty, amc or paid)', 'text')], rules('file_required'), []],
+  ];
+  const { rows: companies } = await client.query('SELECT id FROM core.legal_entities WHERE tenant_id = 1 ORDER BY id');
+  for (const company of companies) {
+    for (const [i, [code, name, fields, completion, checklist]] of standardTypes.entries()) {
+      await client.query(
+        `INSERT INTO tickets.ticket_types (tenant_id, legal_entity_id, code, name, is_standard, sort_order, fields, completion_rules, checklist_items, created_by)
+         SELECT 1, $1, $2, $3, true, $4, $5::jsonb, $6::jsonb, $7::jsonb, p.id FROM core.persons p WHERE p.public_id = $8
+         ON CONFLICT DO NOTHING`,
+        [company.id, code, name, (i + 1) * 10, JSON.stringify(fields), JSON.stringify(completion), JSON.stringify(checklist), id(5)]);
+    }
   }
 
   // Team: Demo Technician reports to Demo Supervisor (only filled in when no manager is set yet).

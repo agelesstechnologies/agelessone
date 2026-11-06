@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Activity, Award, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, CircleHelp, ClipboardCheck, LayoutDashboard, LoaderCircle, Lock, LogOut, Menu, SlidersHorizontal, Users, Wallet, X } from 'lucide-react';
+import { Activity, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, CircleHelp, ClipboardCheck, LayoutDashboard, LoaderCircle, Lock, LogOut, Menu, SlidersHorizontal, Users, Wallet, X } from 'lucide-react';
 import { AuthProvider, useAuth } from './auth';
-import { ATTENDANCE, EXPENSES, LEAVE, PAYROLL, PEOPLE, POLICIES, SKILLS } from './permissions';
+import { ATTENDANCE, EXPENSES, LEAVE, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
 import Approvals from './pages/Approvals';
 import Attendance from './pages/Attendance';
 import Calendar from './pages/Calendar';
@@ -15,9 +15,10 @@ import Payroll from './pages/Payroll';
 import People from './pages/People';
 import Policies from './pages/Policies';
 import Skills from './pages/Skills';
+import Tickets from './pages/Tickets';
 import { Modal } from './ui';
 
-type PageKey = 'overview' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'skills' | 'organisation' | 'locks' | 'policies';
+type PageKey = 'overview' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies';
 interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | 'manage'; show: (can: (p: string) => boolean, others: boolean) => boolean }
 
 /** Every menu item lists the permission that shows it; the backend still checks each request. */
@@ -31,6 +32,7 @@ const NAV: NavItem[] = [
   { key: 'approvals', label: 'Approvals', icon: <ClipboardCheck size={18} />, section: 'workspace', show: (can) => can(LEAVE.approve) || can(EXPENSES.approve) || can(ATTENDANCE.approve) },
   { key: 'payroll', label: 'Payroll', icon: <Wallet size={18} />, section: 'workspace', show: (can) => can(PAYROLL.payslip) || can(PAYROLL.prepare) || can(PAYROLL.approve) },
   { key: 'skills', label: 'Skills', icon: <Award size={18} />, section: 'workspace', show: (can) => can(SKILLS.view) || can(SKILLS.manage) },
+  { key: 'tickets', label: 'Tickets', icon: <Ticket size={18} />, section: 'workspace', show: (can) => can(TICKETS.view) || can(TICKETS.work) || can(TICKETS.manage) || can(TICKET_TYPES.view) || can(TICKETS.numbering) },
   { key: 'organisation', label: 'Organisation', icon: <Network size={18} />, section: 'workspace', show: (can, others) => others && (can(PEOPLE.manageEmployments) || can(PEOPLE.managePositions) || can(PEOPLE.view)) },
   { key: 'locks', label: 'Month locks', icon: <Lock size={18} />, section: 'manage', show: (can) => can(ATTENDANCE.lockMonth) || can(ATTENDANCE.unlockMonth) },
   { key: 'policies', label: 'Policies', icon: <SlidersHorizontal size={18} />, section: 'manage', show: (can) => can(POLICIES.manage) },
@@ -90,6 +92,7 @@ function Shell() {
         {current.key === 'payroll' && <Payroll />}
         {current.key === 'skills' && <Skills />}
         {current.key === 'organisation' && <Organisation />}
+        {current.key === 'tickets' && <Tickets />}
         {current.key === 'locks' && <MonthLocks />}
         {current.key === 'policies' && <Policies />}
         <footer className="footer"><span>© 2026 Ageless Universe</span><span>Built for the people who make it happen <span className="heart">♥</span></span><span>v0.1.0</span></footer>

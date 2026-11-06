@@ -19,7 +19,7 @@
 /* tabs, panels, filters */
 .tabs{display:flex;gap:4px;border-bottom:1px solid #ededef;margin-bottom:18px;overflow-x:auto}
 .tab{border:0;background:none;padding:10px 14px;font-size:12px;font-weight:600;color:#737580;border-bottom:2px solid transparent;white-space:nowrap}
-.tab.on{color:#a86a00;}
+.tab.on{color:#c2410c;}
 .tab:focus-visible,.area-card:focus-visible,.text-btn:focus-visible{outline:2px solid #ffb01e;outline-offset:2px}
 .panel{margin-bottom:18px}
 .panel-body{padding:4px 19px 19px;display:flex;flex-direction:column;gap:14px}
@@ -51,7 +51,7 @@
 
 /* punch card */
 .punch-card{display:flex;flex-wrap:wrap;align-items:center;gap:18px 28px;padding:18px;border:1px solid #ededef;border-radius:9px;background:#fffdf8}
-.punch-state{display:flex;align-items:center;gap:12px;color:#a86a00;min-width:200px}
+.punch-state{display:flex;align-items:center;gap:12px;color:#c2410c;min-width:200px}
 .punch-state b{display:block;font-size:15px;color:#14171a}
 .punch-state small{display:block;color:#737580;font-size:11px;margin-top:2px}
 .punch-worked small{display:block;font-size:9px;letter-spacing:1.2px;font-weight:700;color:#ffb121}
@@ -70,7 +70,7 @@
 .area-card>span:nth-child(2){flex:1}
 .area-card b{display:block;font-size:13px}
 .area-card small{display:block;color:#737580;font-size:11px;margin-top:3px}
-.area-icon{width:38px;height:38px;border-radius:9px;background:#fff9ed;color:#a86a00;display:grid;place-items:center}
+.area-icon{width:38px;height:38px;border-radius:9px;background:#fff9ed;color:#c2410c;display:grid;place-items:center}
 .two-col{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;align-items:start}
 .plain-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
 .plain-list li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #eff2f6;font-size:12px}

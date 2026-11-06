@@ -12,7 +12,9 @@
     "db:migrate": "drizzle-kit migrate",
     "db:reset": "node scripts/db-reset.mjs && drizzle-kit migrate",
     "db:seed": "node scripts/db-seed.mjs",
-    "hrms:daily": "node -r dotenv/config dist/jobs/hrms-daily.js"
+    "hrms:daily": "node -r dotenv/config dist/jobs/hrms-daily.js",
+    "tickets:daily": "node -r dotenv/config dist/jobs/tickets-daily.js",
+    "addresses:retry": "node -r dotenv/config dist/jobs/addresses-retry.js"
   },
   "dependencies": {
     "@ageless/shared": "workspace:*",
