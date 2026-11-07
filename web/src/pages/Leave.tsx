@@ -22,7 +22,9 @@ export default function Leave() {
   ];
   const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'mine');
   return <>
-    <PageHead eyebrow="HRMS • LEAVE" title="Leave" subtitle="Apply for leave, check balances, and approve your team's requests." />
+    <PageHead eyebrow="HRMS • LEAVE" title="Leave" subtitle={can(LEAVE.apply)
+      ? (can(LEAVE.approve) ? 'Apply for leave, check balances, and approve your team\'s requests.' : 'Apply for leave and check your balances.')
+      : 'Approve leave requests and see who is on leave.'} />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'mine' && <MyLeave />}
     {tab === 'approve' && <Approvals />}

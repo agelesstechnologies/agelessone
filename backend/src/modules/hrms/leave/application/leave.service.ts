@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  ApplyLeaveRequest, CancelLeaveRequest, LeaveAdjustmentRequest, LeaveBalance, LeaveLedgerEntry, LeaveReport, LeaveReportQuery,
+  ApplyLeaveRequest, CancelLeaveRequest, ForwardRequest, LeaveAdjustmentRequest, LeaveBalance, LeaveLedgerEntry, LeaveReport, LeaveReportQuery,
   LeaveRequestView, LeaveType, MyLeaveQuery, RejectLeaveRequest,
 } from '@ageless/shared';
 import { Conn, DB, Db, Tx, violatedConstraint } from '../../../../platform/db/db.module';
@@ -127,6 +127,26 @@ export class LeaveService {
     });
     return (await this.repo.request(ctx.tenantId, publicId))!;
   }
+
+  /**
+   * Send to the CEO: whoever may decide it now, while it still waits for a decision; never your own. It stays decidable
+   * by the approver too (the first decision wins). Sent twice: stored once, the same answer.
+   */
+  async forward(ctx: RequestContext, publicId: string, req: ForwardRequest): Promise<LeaveRequestView> {
+    await this.db.transaction(async (tx) => {
+      const r = await this.decidable(tx, ctx, publicId, 'approve');
+      if (r.escalatedAt) return;
+      await this.repo.escalate(tx, r.id, ctx.personId, req.reason);
+      await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'leave.forwarded', entity: 'leave_request',
+        entityPublicId: r.publicId, subjectPersonId: r.personId, legalEntityId: r.legalEntityId,
+        summary: `Leave of ${r.personName} ${r.fromDate} to ${r.toDate} forwarded to the CEO` });
+    });
+    return (await this.repo.request(ctx.tenantId, publicId))!;
+  }
+
+  /** For the daily job: requests waiting since before the instant, not yet sent to the CEO; send one automatically. */
+  waiting(createdBefore: Date) { return this.repo.waiting(createdBefore); }
+  escalateAutomatically(id: number, reason: string) { return this.repo.escalate(this.db, id, null, reason); }
 
   /**
    * The effects of an approval, whoever (or nothing) approved it: the balance check, 'taken' ledger rows, status

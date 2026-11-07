@@ -55,6 +55,7 @@ describe('Ticket time API', () => {
     await grant(otherHead.personId, 'supervisor', 'team');
     const a = await newStaff(app, hr, admin, ['AE']);
     await grant(a.personId, 'admin_user', 'all');
+    await grant(a.personId, 'supervisor', 'team');   // admin user no longer creates tickets: a supervisor of the company does
     adminUser = a.auth;
     dept = (await http().post('/api/hrms/departments').set(hr).send({ company: 'AE', name: `Time ${tag()}`, codePrefix: letters() }).expect(201)).body.publicId;
     await http().patch(`/api/hrms/departments/${dept}`).set(hr).send({ headPublicId: head.personId }).expect(200);

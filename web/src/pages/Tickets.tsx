@@ -6,7 +6,7 @@ import {
 } from '@ageless/shared';
 import { api, errText } from '../api';
 import { useAuth } from '../auth';
-import { dayLabel, uuidv7, useLoad } from '../hooks';
+import { dayLabel, uuidv7, useLoad, useMyEmployments } from '../hooks';
 import JobPicker, { PersonPicker } from '../JobPicker';
 import { TICKET_TYPES, TICKETS } from '../permissions';
 import { Badge, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs } from '../ui';
@@ -20,11 +20,19 @@ const COMPANIES = [{ code: 'AE', name: 'Ageless Entertainments' }, { code: 'ATPL
 const STATUSES = ['open', 'assigned', 'in_progress', 'on_hold', 'completed', 'cancelled'];
 
 export default function Tickets() {
-  const { can } = useAuth();
+  const { can, scopeOf } = useAuth();
+  // a supervisor (tickets.create) or a department head (tickets.manage, team) creates tickets; the CEO and admin user do not
+  const createsTickets = can(TICKETS.create) || scopeOf(TICKETS.manage) === 'team';
   const sees = can(TICKETS.view) || can(TICKETS.work) || can(TICKETS.manage);
+  // employees (their own tickets only) see neither reports nor ticket types: reports are for heads, HR, admin user and
+  // Management (as the backend allows); types for those who manage them, and HR who sees every ticket
+  const seesAll = scopeOf(TICKETS.view) === 'all';
+  const reports = can(TICKETS.manage) || seesAll;
+  const types = can(TICKET_TYPES.manage) || seesAll;
   const tabs: { key: TabKey; label: string }[] = [
-    ...(sees ? [{ key: 'mine' as const, label: 'My tickets' }, { key: 'all' as const, label: 'All tickets' }, { key: 'time' as const, label: 'Time' }, { key: 'reassign' as const, label: 'Reassignments' }, { key: 'reports' as const, label: 'Reports' }] : []),
-    ...(can(TICKET_TYPES.view) || can(TICKET_TYPES.manage) ? [{ key: 'types' as const, label: 'Ticket types' }] : []),
+    ...(sees ? [{ key: 'mine' as const, label: 'My tickets' }, { key: 'all' as const, label: 'All tickets' }, { key: 'time' as const, label: 'Time' }, { key: 'reassign' as const, label: 'Reassignments' }] : []),
+    ...(reports ? [{ key: 'reports' as const, label: 'Reports' }] : []),
+    ...(types ? [{ key: 'types' as const, label: 'Ticket types' }] : []),
     ...(can(TICKETS.numbering) ? [{ key: 'numbers' as const, label: 'Numbering' }] : []),
   ];
   const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'types');
@@ -32,7 +40,7 @@ export default function Tickets() {
   const [version, setVersion] = useState(0);
   return <>
     <PageHead eyebrow="TICKETS" title="Tickets" subtitle="Service work: who does what, for how long, and what is left."
-      action={can(TICKETS.manage) ? <button className="primary-btn" onClick={() => setCreating(true)}><Plus size={16} /> New ticket</button> : undefined} />
+      action={createsTickets ? <button className="primary-btn" onClick={() => setCreating(true)}><Plus size={16} /> New ticket</button> : undefined} />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'mine' && <TicketList key={`m${version}`} mine />}
     {tab === 'all' && <TicketList key={`a${version}`} />}
@@ -78,7 +86,12 @@ function TicketList({ mine }: { mine?: boolean }) {
 /** Fields of the type are asked as the type defines them. File fields are filled after uploading, on the ticket. */
 function NewTicket({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [id] = useState(uuidv7);
-  const [company, setCompany] = useState(COMPANIES[0]!.code);
+  // tickets are created in a company you work in (a supervisor's rule); start with your main job's company
+  const mine = useMyEmployments();
+  const myCodes = new Set(mine.jobs.map((j) => j.company.code));
+  const companies = myCodes.size ? COMPANIES.filter((c) => myCodes.has(c.code)) : COMPANIES;
+  const [picked, setCompany] = useState('');
+  const company = picked || mine.primary?.company.code || companies[0]!.code;
   const [typeId, setTypeId] = useState('');
   const [job, setJob] = useState('');
   const [supervisor, setSupervisor] = useState('');
@@ -87,6 +100,8 @@ function NewTicket({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
   const types = useLoad(() => api<TicketType[]>(`/tickets/types?active=true&company=${company}`), [company]);
   const depts = useLoad(() => api<Department[]>(`/hrms/departments?company=${company}`), [company]);
   const type = types.data?.find((t) => t.publicId === typeId);
+  const noDepts = !depts.loading && !depts.error && (depts.data?.length ?? 0) === 0;
+  const companyName = COMPANIES.find((c) => c.code === company)?.name ?? company;
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -115,14 +130,15 @@ function NewTicket({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
   return <Modal title="New ticket" subtitle="The ticket number is made for you." onClose={onClose}>
     <form onSubmit={submit}>
       {error && <Notice>{error}</Notice>}
+      {noDepts && <Notice tone="error">{companyName} has no departments yet, so a ticket can't be created there. HR adds departments under Organisation.</Notice>}
       <div className="form-grid">
-        <label>Company<select id="nt-company" value={company} onChange={(e) => { setCompany(e.target.value); setTypeId(''); }}>{COMPANIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select></label>
+        <label>Company<select id="nt-company" value={company} onChange={(e) => { setCompany(e.target.value); setTypeId(''); }}>{companies.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select></label>
         <label>Type<select id="nt-type" value={typeId} onChange={(e) => setTypeId(e.target.value)} required>
           <option value="" disabled>{types.loading ? 'Loading…' : 'Choose a type'}</option>{types.data?.map((t) => <option key={t.publicId} value={t.publicId}>{t.name}</option>)}</select></label>
         <label className="span-two">Title<input id="nt-title" name="title" required minLength={3} maxLength={150} /></label>
         <label className="span-two">Description <span className="optional">optional</span><input id="nt-desc" name="description" maxLength={1000} /></label>
         <label>Department<select id="nt-dept" name="department" required key={`d${company}${depts.data?.length ?? 0}`} defaultValue="">
-          <option value="" disabled>{depts.loading ? 'Loading…' : 'Choose'}</option>{depts.data?.map((d) => <option key={d.publicId} value={d.publicId}>{d.name}</option>)}</select></label>
+          <option value="" disabled>{depts.loading ? 'Loading…' : noDepts ? 'No departments yet' : 'Choose'}</option>{depts.data?.map((d) => <option key={d.publicId} value={d.publicId}>{d.name}</option>)}</select></label>
         <label>Priority<select id="nt-priority" name="priority" defaultValue="3">{[1, 2, 3, 4, 5].map((p) => <option key={p} value={p}>{p}{p === 1 ? ' (highest)' : p === 5 ? ' (lowest)' : ''}</option>)}</select></label>
         <label>Scheduled for<input id="nt-sched" name="scheduled" type="datetime-local" required /></label>
         <label>Due date <span className="optional">optional</span><input id="nt-due" name="due" type="date" /></label>
@@ -132,13 +148,13 @@ function NewTicket({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
           : <label key={fld.key} className="span-two">{fld.label}{fld.required ? '' : ' '}{!fld.required && <span className="optional">optional</span>}
             <input id={`nt-d-${fld.key}`} name={`d_${fld.key}`} required={fld.required} type={fld.type === 'number' || fld.type === 'money' ? 'number' : fld.type === 'date' ? 'date' : 'text'}
               step={fld.type === 'money' ? '0.01' : undefined} placeholder={fld.type === 'money' ? 'Amount in ₹' : fld.type === 'person' ? "Person's ID" : undefined} /></label>)}
-        <p className="span-two muted-text">Supervisor: the department head by default. Choose one only if the department has no head.</p>
+        <p className="form-section">Supervisor <span className="optional">the department head by default, or you if the department has no head; choose someone only to change that</span></p>
         <PersonPicker idPrefix="nt-sup" label="Supervisor" onChange={setSupervisor} />
-        <p className="span-two muted-text">Assign now (optional)</p>
+        <p className="form-section">Assign now <span className="optional">optional</span></p>
         <JobPicker idPrefix="nt-asg" onChange={setJob} />
       </div>
       <div className="modal-foot"><button type="button" className="outline-btn" onClick={onClose}>Cancel</button>
-        <button className="primary-btn" disabled={saving}>{saving ? 'Creating…' : 'Create ticket'}</button></div>
+        <button className="primary-btn" disabled={saving || noDepts}>{saving ? 'Creating…' : 'Create ticket'}</button></div>
     </form>
   </Modal>;
 }

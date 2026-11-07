@@ -34,8 +34,6 @@ describe('HRMS management access, approvals inbox and dashboard', () => {
   const claim = (auth: Auth, employmentPublicId: string, amountPaise: number) =>
     http().post('/api/hrms/expenses').set(auth).field('employmentPublicId', employmentPublicId).field('categoryCode', 'food')
       .field('amountPaise', String(amountPaise)).field('spentOn', '2026-02-10');
-  const glBalance = async (auth: Auth) => (await http().get('/api/hrms/leave/balances/mine').set(auth)).body
-    .find((b: { employment: { company: string }; leaveType: { code: string } }) => b.employment.company === 'AE' && b.leaveType.code === 'GL')?.balance ?? 0;
   const audit = async (action: string, entityPublicId: string) =>
     (await db.query('SELECT * FROM core.audit_log WHERE action = $1 AND entity_public_id = $2', [action, entityPublicId])).rows;
 
@@ -48,16 +46,10 @@ describe('HRMS management access, approvals inbox and dashboard', () => {
   afterAll(async () => { await db?.end(); await app?.close(); });
 
   describe('requests by the CEO need no approval', () => {
-    it("the CEO's own leave is approved on submit with no decider, the balance changes and the day becomes leave", async () => {
-      const before = await glBalance(ceo);
+    it('the CEO does not apply for leave (the CEO role has no hrms.leave.apply)', async () => {
       const res = await applyLeave(ceo, CEO_JOB, DAY);
-      expect(res.status).toBe(201);
-      expect(res.body).toMatchObject({ status: 'approved', approver: null, decidedBy: null, decidedAs: 'no_approval_required', days: 1 });
-      expect(await glBalance(ceo)).toBe(before - 1);
-      const history = (await http().get('/api/hrms/attendance/history').query({ from: DAY, to: DAY }).set(ceo)).body;
-      expect(history.find((r: { employment: { company: string } }) => r.employment.company === 'AE')).toMatchObject({ status: 'leave', leaveDays: 1 });
-      const [entry] = await audit('leave.auto_approved', res.body.publicId);
-      expect(entry).toMatchObject({ actor_person_id: expect.anything(), summary: expect.stringContaining('no approval required') });
+      expect(res.status).toBe(403);
+      expect((await http().get('/api/auth/me').set(ceo)).body.permissions['hrms.leave.apply']).toBeUndefined();
     });
 
     it("the CEO's own expense is approved on submit for the full amount and still waits for payment", async () => {

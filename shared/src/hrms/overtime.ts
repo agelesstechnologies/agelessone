@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DateOnly, DecidedAs, Instant, PersonRef, PublicId } from '../common';
+import { DateOnly, DecidedAs, Escalation, Instant, PersonRef, PublicId } from '../common';
 /** Overtime requests: extra time is paid as overtime only when approved. Shared by the API and the web app. */
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'Not a real date');
@@ -44,6 +44,7 @@ export const OvertimeRequestView = z.object({
   decidedBy: PersonRef.nullable(),   // null when decidedAs is no_approval_required
   decidedAs: DecidedAs.nullable(),
   decidedAt: Instant.nullable(), decisionReason: z.string().nullable(),
+  escalation: Escalation.nullable(),  // sent to the CEO (forwarded or waited too long)
   cancelledAt: Instant.nullable(), createdAt: Instant,
 });
 export type OvertimeRequestView = z.infer<typeof OvertimeRequestView>;

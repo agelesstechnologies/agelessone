@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Res } from '@nestjs/common';
 import { z } from 'zod';
-import { ApplyLeaveRequest, CancelLeaveRequest, LeaveAdjustmentRequest, LeaveBalance, LeaveLedgerEntry, LeaveReport, LeaveReportQuery, LeaveRequestView, LeaveType, MyLeaveQuery, RejectLeaveRequest } from '@ageless/shared';
+import { ApplyLeaveRequest, ForwardRequest, CancelLeaveRequest, LeaveAdjustmentRequest, LeaveBalance, LeaveLedgerEntry, LeaveReport, LeaveReportQuery, LeaveRequestView, LeaveType, MyLeaveQuery, RejectLeaveRequest } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
 import { respond } from '../../../../platform/csv';
 import { Ctx, Permission, Public, RequestContext, SignedIn } from '../../../../platform/http/request-context';
@@ -60,6 +60,12 @@ export class LeaveController {
   @Permission(LEAVE.approve) @Post('requests/:publicId/reject') @HttpCode(200)
   reject(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string, @Body(new ZodValidationPipe(RejectLeaveRequest)) body: RejectLeaveRequest) {
     return this.service.reject(ctx, publicId, body);
+  }
+
+  @Doc({ summary: 'Forward to the CEO with a reason (whoever may decide it; it stays decidable by them too)', response: LeaveRequestView })
+  @Permission(LEAVE.approve) @Post('requests/:publicId/forward') @HttpCode(200)
+  forward(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string, @Body(new ZodValidationPipe(ForwardRequest)) body: ForwardRequest) {
+    return this.service.forward(ctx, publicId, body);
   }
 
   /** The person themselves, or HR (checked by the service). */

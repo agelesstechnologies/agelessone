@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, between, count, desc, eq, ne, sql, SQL } from 'drizzle-orm';
+import { and, asc, between, count, desc, eq, isNull, lt, ne, sql, SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { DecidedAs, ExpenseCategory, ExpenseClaim, ExpenseReport, ExpenseStatus } from '@ageless/shared';
 import { Conn, DB, Db, Tx } from '../../../../platform/db/db.module';
+import { escalationFields, toEscalation } from '../../../../platform/escalation';
 import { legalEntities, persons } from '../../../core/schema';
 import { employments } from '../../people/schema';
 import { expenseCategories, expenseClaims } from '../schema';
@@ -57,6 +58,7 @@ export class ExpensesRepository {
       id: expenseClaims.id, personId: expenseClaims.personId, status: expenseClaims.status,
       amountPaise: expenseClaims.amountPaise, managerPersonId: employments.managerPersonId,
       publicId: expenseClaims.publicId, legalEntityId: expenseClaims.legalEntityId, personName: claimant.displayName,
+      escalatedAt: expenseClaims.escalatedAt,
     }).from(expenseClaims).innerJoin(employments, eq(employments.id, expenseClaims.employmentId))
       .innerJoin(claimant, eq(claimant.id, expenseClaims.personId))
       .where(and(eq(expenseClaims.tenantId, tenantId), eq(expenseClaims.publicId, publicId))).for('update');
@@ -70,6 +72,19 @@ export class ExpensesRepository {
 
   async reject(tx: Tx, id: number, by: number, decidedAs: DecidedAs, reason: string): Promise<void> {
     await tx.update(expenseClaims).set({ status: 'rejected', rejectedBy: by, decidedAs, rejectedAt: new Date(), rejectionReason: reason }).where(eq(expenseClaims.id, id));
+  }
+
+  /** Send to the CEO: by the approver who forwarded it, or null when it waited too long. */
+  async escalate(conn: Conn, id: number, by: number | null, reason: string): Promise<void> {
+    await conn.update(expenseClaims).set({ escalatedAt: new Date(), escalatedBy: by, escalationReason: reason })
+      .where(and(eq(expenseClaims.id, id), isNull(expenseClaims.escalatedAt)));
+  }
+
+  /** Claims still waiting for a decision and not yet sent to the CEO, created before the instant (every tenant). */
+  async waiting(createdBefore: Date) {
+    return this.db.select({ id: expenseClaims.id, tenantId: expenseClaims.tenantId, legalEntityId: expenseClaims.legalEntityId, createdAt: expenseClaims.createdAt })
+      .from(expenseClaims)
+      .where(and(eq(expenseClaims.status, 'submitted'), isNull(expenseClaims.escalatedAt), lt(expenseClaims.createdAt, createdBefore)));
   }
 
   async markPaid(tx: Tx, id: number, paidAt: Date, paymentRef: string): Promise<void> {
@@ -149,6 +164,7 @@ export class ExpensesRepository {
       rejecterPublicId: rejecter.publicId, rejecterName: rejecter.displayName, rejectedAt: expenseClaims.rejectedAt,
       rejectionReason: expenseClaims.rejectionReason, paidAt: expenseClaims.paidAt, paymentRef: expenseClaims.paymentRef,
       createdAt: expenseClaims.createdAt,
+      ...escalationFields(expenseClaims),
     }).from(expenseClaims)
       .innerJoin(claimant, eq(claimant.id, expenseClaims.personId))
       .innerJoin(employments, eq(employments.id, expenseClaims.employmentId))
@@ -174,6 +190,6 @@ function toClaim(r: ViewRow): ExpenseClaim {
     status: r.status as ExpenseStatus, approvedAmountPaise: r.approvedAmountPaise,
     approvedBy: who(r.approverPublicId, r.approverName), approvedAt: iso(r.approvedAt), decidedAs: r.decidedAs as DecidedAs | null,
     rejectedBy: who(r.rejecterPublicId, r.rejecterName), rejectedAt: iso(r.rejectedAt), rejectionReason: r.rejectionReason,
-    paidAt: iso(r.paidAt), paymentRef: r.paymentRef, createdAt: r.createdAt.toISOString(),
+    paidAt: iso(r.paidAt), paymentRef: r.paymentRef, escalation: toEscalation(r), createdAt: r.createdAt.toISOString(),
   };
 }

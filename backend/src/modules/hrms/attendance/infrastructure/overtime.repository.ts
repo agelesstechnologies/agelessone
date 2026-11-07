@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { aliasedTable, and, asc, desc, eq, ne, or } from 'drizzle-orm';
+import { aliasedTable, and, asc, desc, eq, isNull, lt, ne, or } from 'drizzle-orm';
 import { DecidedAs, OvertimeRequestView, OvertimeStatus } from '@ageless/shared';
-import { DB, Db, Tx } from '../../../../platform/db/db.module';
+import { Conn, DB, Db, Tx } from '../../../../platform/db/db.module';
+import { escalationFields, EscalationRow, toEscalation } from '../../../../platform/escalation';
 import { legalEntities, persons } from '../../../core/schema';
 import { employments } from '../../people/schema';
 import { tickets } from '../../../tickets/schema';
@@ -42,7 +43,7 @@ export class OvertimeRepository {
       id: overtimeRequests.id, personId: overtimeRequests.personId, employmentId: overtimeRequests.employmentId, legalEntityId: overtimeRequests.legalEntityId,
       workDate: overtimeRequests.workDate, status: overtimeRequests.status, requestedBy: overtimeRequests.requestedBy,
       approverPersonId: overtimeRequests.approverPersonId, publicId: overtimeRequests.publicId, personName: persons.displayName,
-      minutes: overtimeRequests.minutes,
+      minutes: overtimeRequests.minutes, escalatedAt: overtimeRequests.escalatedAt,
     }).from(overtimeRequests).innerJoin(persons, eq(persons.id, overtimeRequests.personId)).where(and(eq(overtimeRequests.tenantId, tenantId), eq(overtimeRequests.publicId, publicId))).for('update');
     return row && { ...row, status: row.status as OvertimeStatus };
   }
@@ -50,6 +51,19 @@ export class OvertimeRepository {
   /** decidedBy null only with decidedAs 'no_approval_required' (the database checks it). */
   async decide(tx: Tx, id: number, status: 'approved' | 'rejected', decidedBy: number | null, decidedAs: DecidedAs, reason?: string): Promise<void> {
     await tx.update(overtimeRequests).set({ status, decidedBy, decidedAs, decidedAt: new Date(), decisionReason: reason ?? null }).where(eq(overtimeRequests.id, id));
+  }
+
+  /** Send to the CEO: by the approver who forwarded it, or null when it waited too long. */
+  async escalate(conn: Conn, id: number, by: number | null, reason: string): Promise<void> {
+    await conn.update(overtimeRequests).set({ escalatedAt: new Date(), escalatedBy: by, escalationReason: reason })
+      .where(and(eq(overtimeRequests.id, id), isNull(overtimeRequests.escalatedAt)));
+  }
+
+  /** Overtime still waiting for a decision and not yet sent to the CEO, created before the instant (every tenant). */
+  async waiting(createdBefore: Date) {
+    return this.db.select({ id: overtimeRequests.id, tenantId: overtimeRequests.tenantId, legalEntityId: overtimeRequests.legalEntityId,
+      createdAt: overtimeRequests.createdAt }).from(overtimeRequests)
+      .where(and(eq(overtimeRequests.status, 'submitted'), isNull(overtimeRequests.escalatedAt), lt(overtimeRequests.createdAt, createdBefore)));
   }
 
   async cancel(tx: Tx, id: number, cancelledBy: number): Promise<void> {
@@ -87,6 +101,7 @@ export class OvertimeRepository {
       deciderPublicId: decider.publicId, deciderName: decider.displayName,
       decidedAs: overtimeRequests.decidedAs, decidedAt: overtimeRequests.decidedAt, decisionReason: overtimeRequests.decisionReason,
       cancelledAt: overtimeRequests.cancelledAt, createdAt: overtimeRequests.createdAt,
+      ...escalationFields(overtimeRequests),
     }).from(overtimeRequests)
       .innerJoin(persons, eq(persons.id, overtimeRequests.personId))
       .innerJoin(employments, eq(employments.id, overtimeRequests.employmentId))
@@ -106,7 +121,7 @@ interface ViewRow {
   deciderPublicId: string | null; deciderName: string | null; decidedAs: string | null; decidedAt: Date | null; decisionReason: string | null;
   cancelledAt: Date | null; createdAt: Date;
 }
-function toView(r: ViewRow): OvertimeRequestView {
+function toView(r: ViewRow & EscalationRow): OvertimeRequestView {
   return {
     publicId: r.publicId, person: { publicId: r.personPublicId, displayName: r.personName },
     employment: { publicId: r.employmentPublicId, company: r.company }, workDate: r.workDate, minutes: r.minutes, reason: r.reason,
@@ -116,6 +131,6 @@ function toView(r: ViewRow): OvertimeRequestView {
     decidedBy: r.deciderPublicId ? { publicId: r.deciderPublicId, displayName: r.deciderName! } : null,
     decidedAs: r.decidedAs as DecidedAs | null,
     decidedAt: r.decidedAt?.toISOString() ?? null, decisionReason: r.decisionReason,
-    cancelledAt: r.cancelledAt?.toISOString() ?? null, createdAt: r.createdAt.toISOString(),
+    cancelledAt: r.cancelledAt?.toISOString() ?? null, escalation: toEscalation(r), createdAt: r.createdAt.toISOString(),
   };
 }

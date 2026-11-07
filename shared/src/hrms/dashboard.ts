@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DateOnly, Instant, PersonRef, PublicId } from '../common';
+import { DateOnly, Escalation, Instant, PersonRef, PublicId } from '../common';
 /** The approvals inbox and the HRMS dashboard: answers shared by the API and the web app. */
 
 const Count = z.number().int();
@@ -23,6 +23,7 @@ export const ApprovalItem = z.object({
   summary: z.string(),            // e.g. "Casual leave, 2 days" or "Overtime 90 min"
   submittedAt: Instant,
   ageDays: Count,                 // whole days waiting (IST)
+  escalation: Escalation.nullable(), // sent to the CEO (forwarded or waited too long)
 });
 export type ApprovalItem = z.infer<typeof ApprovalItem>;
 
@@ -33,6 +34,13 @@ export const ApprovalCounts = z.object({
   total: Count,
 });
 export type ApprovalCounts = z.infer<typeof ApprovalCounts>;
+
+/** GET /api/hrms/approvals/mine filters: only requests sent to the CEO; only one company (code). */
+export const ApprovalsQuery = z.object({
+  escalated: z.preprocess((v) => (v === '' ? undefined : v === 'true' ? true : v === 'false' ? false : v), z.boolean().optional()),
+  company: z.preprocess((v) => (v === '' ? undefined : v), z.string().trim().min(1).max(12).optional()),
+});
+export type ApprovalsQuery = z.infer<typeof ApprovalsQuery>;
 
 export const ApprovalsInbox = z.object({ asOf: Instant, counts: ApprovalCounts, items: z.array(ApprovalItem) });
 export type ApprovalsInbox = z.infer<typeof ApprovalsInbox>;

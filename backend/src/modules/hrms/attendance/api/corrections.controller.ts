@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Res } from '@nestjs/common';
 import { z } from 'zod';
-import { Correction, CreateCorrectionRequest, MyCorrectionsQuery, RejectCorrectionRequest } from '@ageless/shared';
+import { Correction, ForwardRequest, CreateCorrectionRequest, MyCorrectionsQuery, RejectCorrectionRequest } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
 import { Ctx, Permission, RequestContext } from '../../../../platform/http/request-context';
 import { Doc } from '../../../../platform/http/doc';
@@ -47,6 +47,12 @@ export class CorrectionsController {
   reject(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string,
     @Body(new ZodValidationPipe(RejectCorrectionRequest)) body: RejectCorrectionRequest) {
     return this.service.reject(ctx, publicId, body);
+  }
+
+  @Doc({ summary: 'Forward to the CEO with a reason (whoever may decide it; it stays decidable by them too)', response: Correction })
+  @Permission(ATTENDANCE.approve) @Post(':publicId/forward') @HttpCode(200)
+  forward(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string, @Body(new ZodValidationPipe(ForwardRequest)) body: ForwardRequest) {
+    return this.service.forward(ctx, publicId, body);
   }
 
   /** The person or whoever filed it (checked by the service). */

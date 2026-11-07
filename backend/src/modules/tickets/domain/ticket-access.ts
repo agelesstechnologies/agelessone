@@ -3,6 +3,8 @@ export type Scope = 'own' | 'team' | 'all' | undefined;
 
 export interface Caller {
   view: Scope; work: Scope; manage: Scope;
+  /** tickets.create (Supervisor): create tickets for any department of a company you work in */
+  create?: Scope;
   /** role Management (CEO): everything, every company */
   management: boolean;
 }
@@ -21,6 +23,16 @@ export interface Relation {
 export function canManage(c: Caller, r: Relation): boolean {
   if (c.management || c.manage === 'all') return true;
   return c.manage !== undefined && (r.headsDepartment || r.supervises);
+}
+
+/**
+ * Who creates a ticket: the head of its department (holding tickets.manage or tickets.create), or a holder of
+ * tickets.create (Supervisor) with an active job in the ticket's company, for any of its departments. Management (CEO)
+ * and Admin user run tickets but do not create them, unless they head that department.
+ */
+export function canCreate(c: Caller, f: { headsDepartment: boolean; worksInCompany: boolean }): boolean {
+  if (f.headsDepartment && (c.manage !== undefined || c.create !== undefined)) return true;
+  return c.create !== undefined && f.worksInCompany;
 }
 
 /** HR and scope all see everything; heads and supervisors their tickets; staff the tickets they are assigned to. */

@@ -90,9 +90,18 @@ export const MissingUpdatesReport = z.object({
 export type MissingUpdatesReport = z.infer<typeof MissingUpdatesReport>;
 
 /** GET /api/tickets/dashboard?company= — numbers for the CEO dashboard (IST months). */
-export const TicketDashboardQuery = z.object({ company: emptyToUndefined(company) });
+/** company: one company code (default: all the caller may see); month: YYYY-MM (default: this month, IST). */
+export const TicketDashboardQuery = z.object({
+  company: emptyToUndefined(company),
+  month: emptyToUndefined(z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM')),
+});
 export type TicketDashboardQuery = z.infer<typeof TicketDashboardQuery>;
 const Count = z.number().int();
+/** Time to complete: hours from created to completed (calendar time), and allocated minutes worked. null when none completed. */
+const CompletionFigures = {
+  completed: Count,
+  avgHours: z.number().nullable(), medianHours: z.number().nullable(), avgWorkedMinutes: z.number().int().nullable(),
+};
 export const TicketDashboard = z.object({
   company: z.string().nullable(), producedAt: Instant, month: z.string(), lastMonth: z.string(),
   open: Count,
@@ -100,5 +109,15 @@ export const TicketDashboard = z.object({
   openByPriority: z.array(z.object({ priority: z.number().int(), count: Count })),
   openByTypeAndPriority: z.array(z.object({ type: z.object({ code: z.string(), name: z.string() }), priority: z.number().int(), count: Count })),
   overdue: Count, completedThisMonth: Count, completedLastMonth: Count,
+  /** Tickets completed in the month (IST): how long they took, overall and per type. */
+  completion: z.object({
+    ...CompletionFigures,
+    byType: z.array(z.object({ type: z.object({ code: z.string(), name: z.string() }), ...CompletionFigures })),
+  }),
+  /** The oldest unfinished tickets (up to 10), oldest first. */
+  oldestOpen: z.array(z.object({
+    ticket: TicketRef, type: z.object({ code: z.string(), name: z.string() }), status: TicketStatus, priority: z.number().int(),
+    dueDate: DateOnly.nullable(), ageDays: Count, overdue: z.boolean(),
+  })),
 });
 export type TicketDashboard = z.infer<typeof TicketDashboard>;

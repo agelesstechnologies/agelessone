@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Activity, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, CircleHelp, ClipboardCheck, LayoutDashboard, LoaderCircle, Lock, LogOut, Menu, SlidersHorizontal, Users, Wallet, X } from 'lucide-react';
+import { Activity, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, CircleHelp, ClipboardCheck, Crown, LayoutDashboard, LoaderCircle, Lock, LogOut, Menu, SlidersHorizontal, Users, Wallet, X } from 'lucide-react';
 import { AuthProvider, useAuth } from './auth';
-import { ATTENDANCE, EXPENSES, LEAVE, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
+import { ATTENDANCE, EXPENSES, LEAVE, MANAGEMENT, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
 import Approvals from './pages/Approvals';
 import Attendance from './pages/Attendance';
+import CeoDashboard from './pages/CeoDashboard';
 import Calendar from './pages/Calendar';
 import Expenses from './pages/Expenses';
 import Leave from './pages/Leave';
@@ -18,12 +19,13 @@ import Skills from './pages/Skills';
 import Tickets from './pages/Tickets';
 import { Modal } from './ui';
 
-type PageKey = 'overview' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies';
-interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | 'manage'; show: (can: (p: string) => boolean, others: boolean) => boolean }
+type PageKey = 'overview' | 'ceo' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies';
+interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | 'manage'; show: (can: (p: string) => boolean, others: boolean, scopeOf: (p: string) => string | null) => boolean }
 
 /** Every menu item lists the permission that shows it; the backend still checks each request. */
 const NAV: NavItem[] = [
   { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={18} />, section: 'workspace', show: () => true },
+  { key: 'ceo', label: 'CEO dashboard', icon: <Crown size={18} />, section: 'workspace', show: (_can, _others, scopeOf) => scopeOf(MANAGEMENT) === 'all' },
   { key: 'people', label: 'People', icon: <Users size={18} />, section: 'workspace', show: (_can, others) => others },
   { key: 'attendance', label: 'Attendance', icon: <Activity size={18} />, section: 'workspace', show: (can) => can(ATTENDANCE.punch) || can(ATTENDANCE.view) || can(ATTENDANCE.approve) },
   { key: 'expenses', label: 'Expenses', icon: <BriefcaseBusiness size={18} />, section: 'workspace', show: (can) => can(EXPENSES.submit) || can(EXPENSES.approve) || can(EXPENSES.report) },
@@ -44,7 +46,7 @@ const pageFromHash = (): PageKey => {
 };
 
 function Shell() {
-  const { me, can, logout, seesOthers } = useAuth();
+  const { me, can, scopeOf, logout, seesOthers } = useAuth();
   const [page, setPage] = useState<PageKey>(pageFromHash);
   const [mobileNav, setMobileNav] = useState(false);
   const [confirmOut, setConfirmOut] = useState(false);
@@ -56,7 +58,7 @@ function Shell() {
   }, []);
   if (!me) return null;
 
-  const items = NAV.filter((n) => n.show(can, seesOthers));
+  const items = NAV.filter((n) => n.show(can, seesOthers, scopeOf));
   // A page the person may not open (typed in the address bar) falls back to the overview.
   const current = items.find((n) => n.key === page) ?? items[0]!;
   const role = me.roles[0]?.name ?? 'No role';
@@ -70,7 +72,7 @@ function Shell() {
       <div className="brand"><div className="brand-mark">a<span>.</span></div><div><b>ageless</b><small>PEOPLE PLATFORM</small></div><button className="icon-button mobile-close" onClick={() => setMobileNav(false)} aria-label="Close menu"><X size={18} /></button></div>
       <div className="workspace"><div className="workspace-icon"><Building2 size={18} /></div><div><b>Ageless Group</b><small>Organization</small></div><ChevronDown size={15} /></div>
       <div className="nav-label">WORKSPACE</div><nav>{items.filter((n) => n.section === 'workspace').map(link)}</nav>
-      <div className="nav-label manage-label">MANAGE</div><nav>{items.filter((n) => n.section === 'manage').map(link)}</nav>
+      {items.some((n) => n.section === 'manage') && <><div className="nav-label manage-label">MANAGE</div><nav>{items.filter((n) => n.section === 'manage').map(link)}</nav></>}
       <div className="sidebar-bottom">
         <div className="help-card"><div className="help-icon"><CircleHelp size={18} /></div><div><b>Need a hand?</b><small>Visit the help center</small></div></div>
         <div className="profile"><div className="avatar avatar-blue">{initials}</div><div><b>{me.person.displayName}</b><small>{role}</small></div>
@@ -83,6 +85,7 @@ function Shell() {
         <div className="top-actions"><span className="env"><i />Development</span><div className="avatar avatar-blue top-avatar">{initials}</div></div></header>
       <div className="content">
         {current.key === 'overview' && <Overview go={go} />}
+        {current.key === 'ceo' && <CeoDashboard />}
         {current.key === 'people' && <People />}
         {current.key === 'attendance' && <Attendance />}
         {current.key === 'expenses' && <Expenses />}

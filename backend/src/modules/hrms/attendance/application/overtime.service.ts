@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { CreateOvertimeRequest, MyOvertimeQuery, OvertimeRequestView, RejectOvertimeRequest } from '@ageless/shared';
+import { CreateOvertimeRequest, ForwardRequest, MyOvertimeQuery, OvertimeRequestView, RejectOvertimeRequest } from '@ageless/shared';
 import { DB, Db, Tx, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
 import { decidedAs, DecidedAs, RequestContext } from '../../../../platform/http/request-context';
@@ -104,6 +104,26 @@ export class OvertimeService {
     });
     return (await this.repo.request(ctx.tenantId, publicId))!;
   }
+
+  /**
+   * Send to the CEO: whoever may decide it now, while it still waits for a decision; never about or filed by you. It
+   * stays decidable by the approver too (the first decision wins). Sent twice: stored once, the same answer.
+   */
+  async forward(ctx: RequestContext, publicId: string, req: ForwardRequest): Promise<OvertimeRequestView> {
+    await this.db.transaction(async (tx) => {
+      const r = await this.decidable(tx, ctx, publicId, 'approve');
+      if (r.escalatedAt) return;
+      await this.repo.escalate(tx, r.id, ctx.personId, req.reason);
+      await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'overtime.forwarded', entity: 'overtime_request',
+        entityPublicId: r.publicId, subjectPersonId: r.personId, legalEntityId: r.legalEntityId,
+        summary: `Overtime of ${r.minutes} min for ${r.personName} on ${r.workDate} forwarded to the CEO` });
+    });
+    return (await this.repo.request(ctx.tenantId, publicId))!;
+  }
+
+  /** For the daily job: overtime waiting since before the instant, not yet sent to the CEO; send one automatically. */
+  waiting(createdBefore: Date) { return this.repo.waiting(createdBefore); }
+  escalateAutomatically(id: number, reason: string) { return this.repo.escalate(this.db, id, null, reason); }
 
   /** The person or whoever filed it. An approved request too (its day is rebuilt), unless the day is locked. */
   async cancel(ctx: RequestContext, publicId: string): Promise<OvertimeRequestView> {

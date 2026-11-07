@@ -7,6 +7,7 @@ import { AppError } from '../../../platform/http/app-error';
 import { RequestContext } from '../../../platform/http/request-context';
 import { addDays, istDayStart, todayIst } from '../../../platform/time';
 import { toCsv } from '../../../platform/csv';
+import { completionFigures } from '../domain/completion-time';
 import { TicketsRepository } from '../infrastructure/tickets.repository';
 import { ReportScope, TicketReportsRepository } from '../infrastructure/ticket-reports.repository';
 import { TicketsService } from './tickets.service';
@@ -174,11 +175,14 @@ export class TicketReportsService {
 
   // ---- dashboard ----
 
-  /** Open tickets by type and priority, overdue, completed this month vs last month (IST). */
+  /**
+   * Open tickets by type and priority, overdue and the oldest open (as of now); completed in the month vs the month
+   * before, and how long the month's completed tickets took (IST months).
+   */
   async dashboard(ctx: RequestContext, q: TicketDashboardQuery): Promise<TicketDashboard> {
     const { scope, companyId } = await this.access(ctx, q.company);
     const today = todayIst();
-    const month = today.slice(0, 7);
+    const month = q.month ?? today.slice(0, 7);
     const monthStart = `${month}-01`;
     const lastStart = addMonths(monthStart, -1);
     const nextStart = addMonths(monthStart, 1);
@@ -191,6 +195,24 @@ export class TicketReportsService {
       byType.set(o.code, t);
       byPriority.set(o.priority, (byPriority.get(o.priority) ?? 0) + o.n);
     }
+
+    // how long the month's completed tickets took, overall and per type
+    const done = await this.repo.completedBetween(ctx.tenantId, istDayStart(monthStart), istDayStart(nextStart), companyId, scope);
+    const worked = await this.repo.workedMinutes(done.map((d) => d.id));
+    const rows = done.map((d) => ({ code: d.code, name: d.name, createdAt: d.createdAt, completedAt: d.completedAt!, workedMinutes: worked.get(d.id) ?? 0 }));
+    const types = new Map<string, typeof rows>();
+    for (const r of rows) types.set(r.code, [...(types.get(r.code) ?? []), r]);
+    const completion = {
+      ...completionFigures(rows),
+      byType: [...types.values()].map((list) => ({ type: { code: list[0].code, name: list[0].name }, ...completionFigures(list) }))
+        .sort((a, b) => b.completed - a.completed || a.type.code.localeCompare(b.type.code)),
+    };
+    const oldestOpen = (await this.repo.oldestOpen(ctx.tenantId, companyId, scope, 10)).map((t) => ({
+      ticket: { publicId: t.publicId, number: t.number, title: t.title }, type: { code: t.code, name: t.name },
+      status: t.status as TicketStatus, priority: t.priority, dueDate: t.dueDate, ageDays: daysBetween(t.createdDate, today),
+      overdue: t.dueDate !== null && t.dueDate < today,
+    }));
+
     return {
       company: q.company ?? null, producedAt: new Date().toISOString(), month, lastMonth: lastStart.slice(0, 7),
       open: total(open.map((o) => o.n)),
@@ -201,6 +223,8 @@ export class TicketReportsService {
       overdue: await this.repo.countOverdue(ctx.tenantId, today, companyId, scope),
       completedThisMonth: await this.repo.countCompleted(ctx.tenantId, istDayStart(monthStart), istDayStart(nextStart), companyId, scope),
       completedLastMonth: await this.repo.countCompleted(ctx.tenantId, istDayStart(lastStart), istDayStart(monthStart), companyId, scope),
+      completion,
+      oldestOpen,
     };
   }
 

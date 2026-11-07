@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { aliasedTable, and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql, SQL } from 'drizzle-orm';
+import { aliasedTable, and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql, SQL } from 'drizzle-orm';
 import { DecidedAs, LeaveLedgerEntry, LeaveRequestView, LeaveStatus, LeaveType } from '@ageless/shared';
 import { Conn, DB, Db, Tx } from '../../../../platform/db/db.module';
+import { escalationFields, EscalationRow, toEscalation } from '../../../../platform/escalation';
 import { legalEntities, persons } from '../../../core/schema';
 import { departments, employments } from '../../people/schema';
 import { leaveLedger, leaveRequests, leaveTypes } from '../schema';
@@ -129,6 +130,7 @@ export class LeaveRepository {
       leaveTypeId: leaveRequests.leaveTypeId, legalEntityId: leaveRequests.legalEntityId, fromDate: leaveRequests.fromDate, toDate: leaveRequests.toDate,
       fromHalf: leaveRequests.fromHalf, toHalf: leaveRequests.toHalf, days: leaveRequests.days,
       status: leaveRequests.status, approverPersonId: leaveRequests.approverPersonId, publicId: leaveRequests.publicId, personName: persons.displayName,
+      escalatedAt: leaveRequests.escalatedAt,
     }).from(leaveRequests).innerJoin(persons, eq(persons.id, leaveRequests.personId))
       .where(and(eq(leaveRequests.tenantId, tenantId), eq(leaveRequests.publicId, publicId))).for('update');
     return row && { ...row, days: Number(row.days), status: row.status as LeaveStatus };
@@ -137,6 +139,19 @@ export class LeaveRepository {
   /** decidedBy null only with decidedAs 'no_approval_required' (the database checks it). */
   async decide(tx: Tx, id: number, status: 'approved' | 'rejected', decidedBy: number | null, decidedAs: DecidedAs, reason?: string): Promise<void> {
     await tx.update(leaveRequests).set({ status, decidedBy, decidedAs, decidedAt: new Date(), decisionReason: reason ?? null }).where(eq(leaveRequests.id, id));
+  }
+
+  /** Send to the CEO: by the approver who forwarded it, or null when it waited too long. */
+  async escalate(conn: Conn, id: number, by: number | null, reason: string): Promise<void> {
+    await conn.update(leaveRequests).set({ escalatedAt: new Date(), escalatedBy: by, escalationReason: reason })
+      .where(and(eq(leaveRequests.id, id), isNull(leaveRequests.escalatedAt)));
+  }
+
+  /** Requests still waiting for a decision and not yet sent to the CEO, created before the instant (every tenant). */
+  async waiting(createdBefore: Date) {
+    return this.db.select({ id: leaveRequests.id, tenantId: leaveRequests.tenantId, legalEntityId: leaveRequests.legalEntityId, createdAt: leaveRequests.createdAt })
+      .from(leaveRequests)
+      .where(and(eq(leaveRequests.status, 'submitted'), isNull(leaveRequests.escalatedAt), lt(leaveRequests.createdAt, createdBefore)));
   }
 
   async cancel(tx: Tx, id: number, cancelledBy: number): Promise<void> {
@@ -214,6 +229,7 @@ export class LeaveRepository {
       deciderPublicId: decider.publicId, deciderName: decider.displayName,
       decidedAs: leaveRequests.decidedAs, decidedAt: leaveRequests.decidedAt, decisionReason: leaveRequests.decisionReason,
       cancelledAt: leaveRequests.cancelledAt, createdAt: leaveRequests.createdAt,
+      ...escalationFields(leaveRequests),
     }).from(leaveRequests)
       .innerJoin(persons, eq(persons.id, leaveRequests.personId))
       .innerJoin(employments, eq(employments.id, leaveRequests.employmentId))
@@ -232,7 +248,7 @@ interface ViewRow {
   deciderPublicId: string | null; deciderName: string | null; decidedAs: string | null; decidedAt: Date | null; decisionReason: string | null;
   cancelledAt: Date | null; createdAt: Date;
 }
-function toView(r: ViewRow): LeaveRequestView {
+function toView(r: ViewRow & EscalationRow): LeaveRequestView {
   return {
     publicId: r.publicId, person: { publicId: r.personPublicId, displayName: r.personName },
     employment: { publicId: r.employmentPublicId, company: r.company, employeeCode: r.employeeCode },
@@ -244,6 +260,6 @@ function toView(r: ViewRow): LeaveRequestView {
     decidedBy: r.deciderPublicId ? { publicId: r.deciderPublicId, displayName: r.deciderName! } : null,
     decidedAs: r.decidedAs as DecidedAs | null,
     decidedAt: r.decidedAt?.toISOString() ?? null, decisionReason: r.decisionReason,
-    cancelledAt: r.cancelledAt?.toISOString() ?? null, createdAt: r.createdAt.toISOString(),
+    cancelledAt: r.cancelledAt?.toISOString() ?? null, escalation: toEscalation(r), createdAt: r.createdAt.toISOString(),
   };
 }

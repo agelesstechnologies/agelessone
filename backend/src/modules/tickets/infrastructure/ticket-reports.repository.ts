@@ -165,6 +165,37 @@ export class TicketReportsRepository {
     return row.n;
   }
 
+  /** Tickets completed between the instants, with their type, created and completed times. */
+  async completedBetween(tenantId: number, from: Date, to: Date, companyId: number | null, scope: ReportScope) {
+    return this.db.select({
+      id: tickets.id, code: ticketTypes.code, name: ticketTypes.name, createdAt: tickets.createdAt, completedAt: tickets.completedAt,
+    }).from(tickets).innerJoin(ticketTypes, eq(ticketTypes.id, tickets.typeId))
+      .where(and(eq(tickets.tenantId, tenantId), this.inScope(companyId, scope), eq(tickets.status, 'completed'),
+        gte(tickets.completedAt, from), lt(tickets.completedAt, to)));
+  }
+
+  /** Allocated minutes (calculated + adjustments) per ticket, over all work dates. */
+  async workedMinutes(ticketIds: number[]): Promise<Map<number, number>> {
+    const out = new Map<number, number>();
+    if (ticketIds.length === 0) return out;
+    for (const table of [ticketTimeAllocations, ticketTimeAdjustments]) {
+      const rows = await this.db.select({ ticketId: table.ticketId, minutes: sum(table.minutes) }).from(table)
+        .where(inArray(table.ticketId, ticketIds)).groupBy(table.ticketId);
+      for (const r of rows) out.set(r.ticketId, (out.get(r.ticketId) ?? 0) + Number(r.minutes ?? 0));
+    }
+    return out;
+  }
+
+  /** The oldest unfinished tickets, oldest first. */
+  async oldestOpen(tenantId: number, companyId: number | null, scope: ReportScope, limit: number) {
+    return this.db.select({
+      publicId: tickets.publicId, number: tickets.number, title: tickets.title, status: tickets.status, priority: tickets.priority,
+      dueDate: tickets.dueDate, createdDate: istDate(tickets.createdAt), code: ticketTypes.code, name: ticketTypes.name,
+    }).from(tickets).innerJoin(ticketTypes, eq(ticketTypes.id, tickets.typeId))
+      .where(and(eq(tickets.tenantId, tenantId), this.inScope(companyId, scope), inArray(tickets.status, UNFINISHED)))
+      .orderBy(tickets.createdAt, tickets.number).limit(limit);
+  }
+
   async countCompleted(tenantId: number, from: Date, to: Date, companyId: number | null, scope: ReportScope): Promise<number> {
     const [row] = await this.db.select({ n: count() }).from(tickets)
       .where(and(eq(tickets.tenantId, tenantId), this.inScope(companyId, scope), eq(tickets.status, 'completed'),

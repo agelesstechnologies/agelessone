@@ -93,8 +93,13 @@ export const attendanceCorrections = hrms.table('attendance_corrections', {
   decisionReason: text('decision_reason'),
   cancelledBy: bigint('cancelled_by', { mode: 'number' }).references(() => persons.id),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  // sent to the CEO: forwarded by an approver (escalated_by) or automatically after the waiting days (escalated_by null)
+  escalatedAt: timestamp('escalated_at', { withTimezone: true }),
+  escalatedBy: bigint('escalated_by', { mode: 'number' }).references(() => persons.id),
+  escalationReason: text('escalation_reason'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  check('attendance_corrections_escalation_fields', sql`(escalated_at IS NULL) = (escalation_reason IS NULL) AND (escalated_by IS NULL OR escalated_at IS NOT NULL)`),
   foreignKey({ name: 'attendance_corrections_employment_company_fk', columns: [t.employmentId, t.legalEntityId], foreignColumns: [employments.id, employments.legalEntityId] }),
   uniqueIndex('uq_correction_open_per_day').on(t.employmentId, t.workDate).where(sql`status = 'submitted'`),
   index('idx_corrections_approver').on(t.approverPersonId, t.status),
@@ -143,8 +148,13 @@ export const overtimeRequests = hrms.table('overtime_requests', {
   decisionReason: text('decision_reason'),
   cancelledBy: bigint('cancelled_by', { mode: 'number' }).references(() => persons.id),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  // sent to the CEO: forwarded by an approver (escalated_by) or automatically after the waiting days (escalated_by null)
+  escalatedAt: timestamp('escalated_at', { withTimezone: true }),
+  escalatedBy: bigint('escalated_by', { mode: 'number' }).references(() => persons.id),
+  escalationReason: text('escalation_reason'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  check('overtime_requests_escalation_fields', sql`(escalated_at IS NULL) = (escalation_reason IS NULL) AND (escalated_by IS NULL OR escalated_at IS NOT NULL)`),
   foreignKey({ name: 'overtime_requests_employment_company_fk', columns: [t.employmentId, t.legalEntityId], foreignColumns: [employments.id, employments.legalEntityId] }),
   index('idx_overtime_employment_date').on(t.employmentId, t.workDate),
   index('idx_overtime_approver').on(t.approverPersonId, t.status),

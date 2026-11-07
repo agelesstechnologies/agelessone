@@ -51,6 +51,8 @@ describe('Punch confirmations and addresses', () => {
     await http().post('/api/core/role-assignments').set(admin).send({ personPublicId: head.personId, roleCode: 'supervisor', scope: 'team' }).expect(201);
     const a = await newStaff(app, hr, admin, ['AE']);
     await http().post('/api/core/role-assignments').set(admin).send({ personPublicId: a.personId, roleCode: 'admin_user', scope: 'all' }).expect(201);
+    // admin user no longer creates tickets: a supervisor of the company does
+    await http().post('/api/core/role-assignments').set(admin).send({ personPublicId: a.personId, roleCode: 'supervisor', scope: 'team' }).expect(201);
     adminUser = a.auth;
     const prefix = Array.from({ length: 5 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
     dept = (await http().post('/api/hrms/departments').set(hr).send({ company: 'AE', name: `Confirm ${tag()}`, codePrefix: prefix }).expect(201)).body.publicId;

@@ -39,8 +39,13 @@ export const expenseClaims = hrms.table('expense_claims', {
   rejectionReason: text('rejection_reason'),
   paidAt: timestamp('paid_at', { withTimezone: true }),
   paymentRef: text('payment_ref'),
+  // sent to the CEO: forwarded by an approver (escalated_by) or automatically after the waiting days (escalated_by null)
+  escalatedAt: timestamp('escalated_at', { withTimezone: true }),
+  escalatedBy: bigint('escalated_by', { mode: 'number' }).references(() => persons.id),
+  escalationReason: text('escalation_reason'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  check('expense_claims_escalation_fields', sql`(escalated_at IS NULL) = (escalation_reason IS NULL) AND (escalated_by IS NULL OR escalated_at IS NOT NULL)`),
   foreignKey({ name: 'expense_claims_employment_company_fk', columns: [t.employmentId, t.legalEntityId], foreignColumns: [employments.id, employments.legalEntityId] }),
   index('idx_expense_claims_person').on(sql`person_id`),
   index('idx_expense_claims_employment').on(sql`employment_id`),

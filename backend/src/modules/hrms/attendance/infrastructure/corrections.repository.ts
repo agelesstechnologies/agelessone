@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { aliasedTable, and, asc, desc, eq, gte, inArray, lt, ne, or } from 'drizzle-orm';
+import { aliasedTable, and, asc, desc, eq, gte, inArray, isNull, lt, ne, or } from 'drizzle-orm';
 import { Correction, CorrectionKind, CorrectionStatus, DecidedAs } from '@ageless/shared';
 import { Conn, DB, Db, Tx } from '../../../../platform/db/db.module';
+import { escalationFields, EscalationRow, toEscalation } from '../../../../platform/escalation';
 import { legalEntities, persons } from '../../../core/schema';
 import { employments } from '../../people/schema';
 import { attendanceCorrections, attendanceEvents, attendanceExclusions } from '../schema';
@@ -47,7 +48,7 @@ export class CorrectionsRepository {
       workDate: attendanceCorrections.workDate, requestedIn: attendanceCorrections.requestedIn, requestedOut: attendanceCorrections.requestedOut,
       punchIdsToExclude: attendanceCorrections.punchIdsToExclude, reason: attendanceCorrections.reason,
       status: attendanceCorrections.status, requestedBy: attendanceCorrections.requestedBy, approverPersonId: attendanceCorrections.approverPersonId,
-      publicId: attendanceCorrections.publicId, personName: persons.displayName,
+      publicId: attendanceCorrections.publicId, personName: persons.displayName, escalatedAt: attendanceCorrections.escalatedAt,
     }).from(attendanceCorrections).innerJoin(persons, eq(persons.id, attendanceCorrections.personId)).where(and(eq(attendanceCorrections.tenantId, tenantId), eq(attendanceCorrections.publicId, publicId))).for('update');
     return row && { ...row, status: row.status as CorrectionStatus };
   }
@@ -55,6 +56,19 @@ export class CorrectionsRepository {
   /** decidedBy null only with decidedAs 'no_approval_required' (the database checks it). */
   async decide(tx: Tx, id: number, status: 'approved' | 'rejected', decidedBy: number | null, decidedAs: DecidedAs, reason?: string): Promise<void> {
     await tx.update(attendanceCorrections).set({ status, decidedBy, decidedAs, decidedAt: new Date(), decisionReason: reason ?? null }).where(eq(attendanceCorrections.id, id));
+  }
+
+  /** Send to the CEO: by the approver who forwarded it, or null when it waited too long. */
+  async escalate(conn: Conn, id: number, by: number | null, reason: string): Promise<void> {
+    await conn.update(attendanceCorrections).set({ escalatedAt: new Date(), escalatedBy: by, escalationReason: reason })
+      .where(and(eq(attendanceCorrections.id, id), isNull(attendanceCorrections.escalatedAt)));
+  }
+
+  /** Corrections still waiting for a decision and not yet sent to the CEO, created before the instant (every tenant). */
+  async waiting(createdBefore: Date) {
+    return this.db.select({ id: attendanceCorrections.id, tenantId: attendanceCorrections.tenantId, legalEntityId: attendanceCorrections.legalEntityId,
+      createdAt: attendanceCorrections.createdAt }).from(attendanceCorrections)
+      .where(and(eq(attendanceCorrections.status, 'submitted'), isNull(attendanceCorrections.escalatedAt), lt(attendanceCorrections.createdAt, createdBefore)));
   }
 
   async cancel(tx: Tx, id: number, cancelledBy: number): Promise<void> {
@@ -97,6 +111,7 @@ export class CorrectionsRepository {
       deciderPublicId: decider.publicId, deciderName: decider.displayName,
       decidedAs: attendanceCorrections.decidedAs, decidedAt: attendanceCorrections.decidedAt, decisionReason: attendanceCorrections.decisionReason,
       cancelledAt: attendanceCorrections.cancelledAt, createdAt: attendanceCorrections.createdAt,
+      ...escalationFields(attendanceCorrections),
     }).from(attendanceCorrections)
       .innerJoin(persons, eq(persons.id, attendanceCorrections.personId))
       .innerJoin(employments, eq(employments.id, attendanceCorrections.employmentId))
@@ -115,7 +130,7 @@ interface ViewRow {
   deciderPublicId: string | null; deciderName: string | null; decidedAs: string | null; decidedAt: Date | null; decisionReason: string | null;
   cancelledAt: Date | null; createdAt: Date;
 }
-function toView(r: ViewRow): Correction {
+function toView(r: ViewRow & EscalationRow): Correction {
   return {
     publicId: r.publicId, person: { publicId: r.personPublicId, displayName: r.personName },
     employment: { publicId: r.employmentPublicId, company: r.company }, workDate: r.workDate, kind: r.kind as CorrectionKind,
@@ -126,6 +141,6 @@ function toView(r: ViewRow): Correction {
     decidedBy: r.deciderPublicId ? { publicId: r.deciderPublicId, displayName: r.deciderName! } : null,
     decidedAs: r.decidedAs as DecidedAs | null,
     decidedAt: r.decidedAt?.toISOString() ?? null, decisionReason: r.decisionReason,
-    cancelledAt: r.cancelledAt?.toISOString() ?? null, createdAt: r.createdAt.toISOString(),
+    cancelledAt: r.cancelledAt?.toISOString() ?? null, escalation: toEscalation(r), createdAt: r.createdAt.toISOString(),
   };
 }

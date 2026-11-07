@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { Correction, CreateCorrectionRequest, MyCorrectionsQuery, RejectCorrectionRequest } from '@ageless/shared';
+import { Correction, CreateCorrectionRequest, ForwardRequest, MyCorrectionsQuery, RejectCorrectionRequest } from '@ageless/shared';
 import { DB, Db, Tx, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
 import { decidedAs, DecidedAs, RequestContext } from '../../../../platform/http/request-context';
@@ -117,6 +117,26 @@ export class CorrectionsService {
     });
     return (await this.repo.correction(ctx.tenantId, publicId))!;
   }
+
+  /**
+   * Send to the CEO: whoever may decide it now, while it still waits for a decision; never about or filed by you. It
+   * stays decidable by the approver too (the first decision wins). Sent twice: stored once, the same answer.
+   */
+  async forward(ctx: RequestContext, publicId: string, req: ForwardRequest): Promise<Correction> {
+    await this.db.transaction(async (tx) => {
+      const c = await this.decidable(tx, ctx, publicId, 'approve');
+      if (c.escalatedAt) return;
+      await this.repo.escalate(tx, c.id, ctx.personId, req.reason);
+      await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'correction.forwarded', entity: 'attendance_correction',
+        entityPublicId: c.publicId, subjectPersonId: c.personId, legalEntityId: c.legalEntityId,
+        summary: `Correction for ${c.personName} on ${c.workDate} forwarded to the CEO` });
+    });
+    return (await this.repo.correction(ctx.tenantId, publicId))!;
+  }
+
+  /** For the daily job: corrections waiting since before the instant, not yet sent to the CEO; send one automatically. */
+  waiting(createdBefore: Date) { return this.repo.waiting(createdBefore); }
+  escalateAutomatically(id: number, reason: string) { return this.repo.escalate(this.db, id, null, reason); }
 
   /** The person or whoever filed it, while it waits for a decision. */
   async cancel(ctx: RequestContext, publicId: string): Promise<Correction> {

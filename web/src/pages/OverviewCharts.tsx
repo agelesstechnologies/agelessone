@@ -9,7 +9,7 @@ const C = { present: '#2f9e6e', half: '#8bd0b0', leave: '#b47200', absent: '#d95
 
 const pct = (n: number | null | undefined) => (n == null ? '—' : `${Math.round(n)}%`);
 
-function Kpi({ label, value, hint }: { label: string; value: string; hint?: ReactNode }) {
+export function Kpi({ label, value, hint }: { label: string; value: string; hint?: ReactNode }) {
   return <div className="kpi"><small>{label}</small><strong>{value}</strong>{hint && <span>{hint}</span>}</div>;
 }
 
@@ -24,21 +24,19 @@ function DailyBars({ daily }: { daily: Dashboard['attendance']['daily'] }) {
   const rows = daily.filter((d) => d.present + d.halfDay + d.leave + d.absent + d.missedPunch > 0);
   if (!rows.length) return <Empty title="No attendance yet this month" />;
   const max = Math.max(...rows.map((d) => d.present + d.halfDay + d.leave + d.absent + d.missedPunch), 1);
-  const W = 560, H = 170, pad = 22, bw = Math.max(4, Math.min(22, (W - pad * 2) / rows.length - 3));
-  const step = (W - pad * 2) / rows.length;
-  return <svg viewBox={`0 0 ${W} ${H + 18}`} className="chart-svg" role="img" aria-label="Daily attendance for the month">
-    <line x1={pad} x2={W - pad} y1={H} y2={H} stroke="#fff0d1" />
-    {rows.map((d, i) => {
+  const every = rows.length <= 16 ? 1 : Math.ceil(rows.length / 12);
+  return <div role="img" aria-label="Daily attendance for the month">
+    <div className="daybars">{rows.map((d) => {
       const parts: [number, string][] = [[d.present, C.present], [d.halfDay, C.half], [d.leave, C.leave], [d.missedPunch, C.missed], [d.absent, C.absent]];
-      let y = H;
-      const x = pad + i * step + (step - bw) / 2;
-      return <g key={d.date}>
-        <title>{`${d.date}: ${d.present} present, ${d.halfDay} half day, ${d.leave} leave, ${d.missedPunch} missed punch, ${d.absent} absent`}</title>
-        {parts.map(([v, color], k) => { if (!v) return null; const h = (v / max) * (H - 8); y -= h; return <rect key={k} x={x} y={y} width={bw} height={h} fill={color} rx={1} />; })}
-        {(rows.length <= 16 || i % Math.ceil(rows.length / 12) === 0) && <text x={x + bw / 2} y={H + 13} textAnchor="middle" className="chart-tick">{d.date.slice(8)}</text>}
-      </g>;
-    })}
-  </svg>;
+      const total = parts.reduce((s, [v]) => s + v, 0);
+      return <div key={d.date} className="daybar" title={`${d.date}: ${d.present} present, ${d.halfDay} half day, ${d.leave} leave, ${d.missedPunch} missed punch, ${d.absent} absent`}>
+        <div className="daybar-stack" style={{ height: `${(total / max) * 100}%` }}>
+          {parts.map(([v, color], k) => v ? <i key={k} style={{ height: `${(v / total) * 100}%`, background: color }} /> : null)}
+        </div>
+      </div>;
+    })}</div>
+    <div className="daybar-days">{rows.map((d, i) => <span key={d.date}>{i % every === 0 ? Number(d.date.slice(8)) : ''}</span>)}</div>
+  </div>;
 }
 
 function Legend({ items }: { items: [string, string][] }) {
@@ -72,7 +70,7 @@ function Donut({ split }: { split: Dashboard['attendance']['split'] }) {
 }
 
 /** Horizontal bars with a label and value each. */
-function HBars({ rows, unit = '', max }: { rows: { label: string; value: number; text?: string }[]; unit?: string; max?: number }) {
+export function HBars({ rows, unit = '', max }: { rows: { label: string; value: number; text?: string }[]; unit?: string; max?: number }) {
   if (!rows.length) return <Empty title="Nothing to show yet" />;
   const top = max ?? Math.max(...rows.map((r) => r.value), 1);
   return <div className="hbars">{rows.map((r) => <div key={r.label} className="hbar">
@@ -83,8 +81,9 @@ function HBars({ rows, unit = '', max }: { rows: { label: string; value: number;
 }
 
 /** Dashboard graphs for people who may see the HRMS dashboard (supervisor: own team; HR / Management: everyone). */
-export function OverviewCharts() {
-  const d = useLoad(() => api<Dashboard>('/hrms/dashboard'));
+export function OverviewCharts({ company, month }: { company?: string; month?: string } = {}) {
+  const query = new URLSearchParams({ ...(company ? { company } : {}), ...(month ? { month } : {}) }).toString();
+  const d = useLoad(() => api<Dashboard>(`/hrms/dashboard${query ? `?${query}` : ''}`), [query]);
   if (d.loading && !d.data) return <Loading />;
   if (d.error) return <Notice>{d.error}</Notice>;
   const data = d.data;
@@ -110,7 +109,9 @@ export function OverviewCharts() {
       </Panel>
       <Panel title="Departments" note="Attendance % this month">
         <div className="panel-body"><HBars max={100} rows={data.departments.filter((x) => x.attendancePercent != null).map((x) => ({
-          label: `${x.name} (${x.headcount})`, value: x.attendancePercent ?? 0, text: pct(x.attendancePercent) }))} /></div>
+          // with several companies, say which one ("No department · AE" twice would look like a mistake)
+          label: `${x.name}${new Set(data.departments.map((y) => y.company)).size > 1 ? ` · ${x.company}` : ''} (${x.headcount})`,
+          value: x.attendancePercent ?? 0, text: pct(x.attendancePercent) }))} /></div>
       </Panel>
     </div>
   </>;

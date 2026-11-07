@@ -77,8 +77,8 @@ export class TicketsController {
     return this.service.list(ctx, q);
   }
 
-  @Doc({ summary: 'Create a ticket (optionally with its assignees)', response: TicketDetail, resend: true, description: MANAGE })
-  @Permission(TICKETS.manage) @Post()
+  @Doc({ summary: 'Create a ticket (optionally with its assignees)', response: TicketDetail, resend: true, description: 'A supervisor (tickets.create): any department of a company they work in. A department head: their departments. Management (CEO) and Admin user do not create tickets.' })
+  @Permission(TICKETS.create, TICKETS.manage) @Post()
   async create(@Ctx() ctx: RequestContext, @Body(new ZodValidationPipe(CreateTicketRequest)) body: CreateTicketRequest, @Res({ passthrough: true }) res: Created) {
     const { ticket, created } = await this.service.create(ctx, body);
     if (!created) res.status(200);

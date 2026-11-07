@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Res, Uploa
 import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import {
-  ApproveExpenseRequest, CreateExpenseRequest, ExpenseCategory, ExpenseClaim, ExpenseClaimList, ExpenseReport, ExpenseReportQuery, MarkExpensePaidRequest, MyExpensesQuery, RejectExpenseRequest,
+  ApproveExpenseRequest, CreateExpenseRequest, ExpenseCategory, ExpenseClaim, ExpenseClaimList, ExpenseReport, ExpenseReportQuery, ForwardRequest, MarkExpensePaidRequest, MyExpensesQuery, RejectExpenseRequest,
 } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
 import { respond } from '../../../../platform/csv';
@@ -69,6 +69,12 @@ export class ExpensesController {
   reject(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string,
     @Body(new ZodValidationPipe(RejectExpenseRequest)) body: RejectExpenseRequest) {
     return this.service.reject(ctx, publicId, body);
+  }
+
+  @Doc({ summary: 'Forward to the CEO with a reason (whoever may decide it; it stays decidable by them too)', response: ExpenseClaim })
+  @Permission(EXPENSES.approve) @Post(':publicId/forward') @HttpCode(200)
+  forward(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string, @Body(new ZodValidationPipe(ForwardRequest)) body: ForwardRequest) {
+    return this.service.forward(ctx, publicId, body);
   }
 
   @Doc({ summary: 'Mark an approved claim paid (it can never change after)', response: ExpenseClaim })

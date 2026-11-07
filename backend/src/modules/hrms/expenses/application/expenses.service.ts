@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   ApproveExpenseRequest, CreateExpenseRequest, ExpenseCategory, ExpenseClaim, ExpenseClaimList, ExpenseReport,
-  ExpenseReportQuery, MarkExpensePaidRequest, MyExpensesQuery, RejectExpenseRequest,
+  ExpenseReportQuery, ForwardRequest, MarkExpensePaidRequest, MyExpensesQuery, RejectExpenseRequest,
 } from '@ageless/shared';
 import { DB, Db, Tx } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
@@ -122,6 +122,26 @@ export class ExpensesService {
     });
     return (await this.repo.claim(ctx.tenantId, publicId))!;
   }
+
+  /**
+   * Send to the CEO: whoever may decide it now, while it still waits for a decision; never your own. It stays decidable
+   * by the manager too (the first decision wins). Sent twice: stored once, the same answer.
+   */
+  async forward(ctx: RequestContext, publicId: string, req: ForwardRequest): Promise<ExpenseClaim> {
+    await this.db.transaction(async (tx) => {
+      const claim = await this.decidable(tx, ctx, publicId, 'approve');
+      if (claim.escalatedAt) return;
+      await this.repo.escalate(tx, claim.id, ctx.personId, req.reason);
+      await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'expense.forwarded', entity: 'expense_claim',
+        entityPublicId: claim.publicId, subjectPersonId: claim.personId, legalEntityId: claim.legalEntityId,
+        summary: `Expense claim of ${claim.personName} for ${rupees(claim.amountPaise)} forwarded to the CEO` });
+    });
+    return (await this.repo.claim(ctx.tenantId, publicId))!;
+  }
+
+  /** For the daily job: claims waiting since before the instant, not yet sent to the CEO; send one automatically. */
+  waiting(createdBefore: Date) { return this.repo.waiting(createdBefore); }
+  escalateAutomatically(id: number, reason: string) { return this.repo.escalate(this.db, id, null, reason); }
 
   async markPaid(ctx: RequestContext, publicId: string, req: MarkExpensePaidRequest): Promise<ExpenseClaim> {
     requireAll(ctx, EXPENSES.pay);

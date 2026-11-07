@@ -41,8 +41,13 @@ export const leaveRequests = hrms.table('leave_requests', {
   decisionReason: text('decision_reason'),
   cancelledBy: bigint('cancelled_by', { mode: 'number' }).references(() => persons.id),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  // sent to the CEO: forwarded by an approver (escalated_by) or automatically after the waiting days (escalated_by null)
+  escalatedAt: timestamp('escalated_at', { withTimezone: true }),
+  escalatedBy: bigint('escalated_by', { mode: 'number' }).references(() => persons.id),
+  escalationReason: text('escalation_reason'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  check('leave_requests_escalation_fields', sql`(escalated_at IS NULL) = (escalation_reason IS NULL) AND (escalated_by IS NULL OR escalated_at IS NOT NULL)`),
   foreignKey({ name: 'leave_requests_employment_company_fk', columns: [t.employmentId, t.legalEntityId], foreignColumns: [employments.id, employments.legalEntityId] }),
   index('idx_leave_requests_employment').on(t.employmentId, t.fromDate),
   index('idx_leave_requests_approver').on(t.approverPersonId, t.status),

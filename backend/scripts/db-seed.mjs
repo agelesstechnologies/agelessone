@@ -38,7 +38,7 @@ const roles = [
   { code: 'supervisor', name: 'Supervisor', permissions: ['hrms.people.view', 'hrms.employments.update', 'hrms.expenses.submit', 'hrms.expenses.approve',
     'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report',
     'hrms.skills.add', 'hrms.skills.verify', 'hrms.skills.view', 'hrms.dashboard.view', 'payroll.payslip.own',
-    'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.work', 'tickets.manage', 'tickets.time.adjust'] },
+    'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.work', 'tickets.manage', 'tickets.create', 'tickets.time.adjust'] },
   // Payroll: prepares runs, salaries and bank details. Payroll Approver: approves runs (never one they prepared).
   { code: 'payroll', name: 'Payroll', permissions: ['payroll.prepare', 'payroll.payslip.own'] },
   { code: 'payroll_approver', name: 'Payroll Approver', permissions: ['payroll.approve', 'payroll.payslip.own'] },
@@ -46,8 +46,8 @@ const roles = [
   { code: 'admin_user', name: 'Admin user', permissions: ['tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage'] },
   { code: 'system_admin', name: 'System admin', permissions: ['core.users.manage', 'core.policies.manage', 'hrms.people.view', 'hrms.attendance.rebuild', 'hrms.month.unlock'] },
   // Last approver (after the manager, department head and HR); scope team: decides requests that name them.
-  // Their own requests need no approval (policy hrms.approvals.auto_approve_roles).
-  { code: 'ceo', name: 'CEO', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report',
+  // Their own requests need no approval (policy hrms.approvals.auto_approve_roles). The CEO does not apply for leave.
+  { code: 'ceo', name: 'CEO', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.attendance.approve', 'hrms.leave.approve', 'hrms.leave.report',
     'payroll.payslip.own', 'tickets.types.view'] },
   // Management (the CEO, scope all): reads every HRMS record and payroll, decides any pending request (never their own),
   // sees private details masked and may reveal them (audited).
@@ -126,6 +126,15 @@ try {
        ON CONFLICT (person_id) DO NOTHING`,
       [id(300 + p.n), p.phone, p.email, passwordHash, id(p.n)]);
   }
+  // Demo Supervisor also works in ATPL (second, non-primary job), so they can create tickets in both companies
+  // (a supervisor creates tickets only in companies they work in).
+  await client.query(
+    `INSERT INTO hrms.employments (tenant_id, public_id, person_id, legal_entity_id, employee_code, employment_type, joined_on, is_primary)
+     SELECT 1, $1, p.id, le.id, 'ATPL-D003', 'permanent', DATE '2025-04-01', false
+       FROM core.persons p JOIN core.legal_entities le ON le.tenant_id = 1 AND le.code = 'ATPL'
+      WHERE p.public_id = $2
+     ON CONFLICT (public_id) DO NOTHING`,
+    [id(107), id(1)]);
 
   // The 13 standard ticket types, for every company (is_standard: only admin user and Management may change them).
   // Written by Demo Admin; safe to run again (a type that exists is left alone).

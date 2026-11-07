@@ -17,15 +17,15 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0
 describe('Tickets API', () => {
   let app: INestApplication;
   let db: pg.Client;
-  let hr: Auth, admin: Auth, ceo: Auth, adminUser: Auth;
+  let hr: Auth, admin: Auth, ceo: Auth, adminUser: Auth, creator: Auth, creatorId: string;
   let head: Staff, otherHead: Staff, s1: Staff, s2: Staff, s3: Staff, onLeave: Staff, atplStaff: Staff;
   let dept: string, otherDept: string, atplDept: string;
   const types: Record<string, Record<string, string>> = { AE: {}, ATPL: {} };
   const http = () => request(app.getHttpServer());
   const actions = async (id: string, who: Auth = adminUser) => (await http().get(`/api/tickets/${id}`).set(who)).body.timeline.map((e: any) => e.action);
-  /** A ticket in the head's department (made by admin user). */
+  /** A ticket in the head's department (made by a supervisor of the company). */
   const ticket = async (code: string, details: Record<string, unknown>, over: Record<string, unknown> = {}) => {
-    const res = await http().post('/api/tickets').set(adminUser).send({ company: 'AE', typePublicId: types.AE[code], title: `Test ${code} ${tag()}`,
+    const res = await http().post('/api/tickets').set(creator).send({ company: 'AE', typePublicId: types.AE[code], title: `Test ${code} ${tag()}`,
       departmentPublicId: dept, scheduledAt: AT, details, ...over });
     if (res.status !== 201) throw new Error(`create ticket failed: ${res.status} ${JSON.stringify(res.body)}`);
     return res.body;
@@ -52,6 +52,10 @@ describe('Tickets API', () => {
     const a = await newStaff(app, hr, admin, ['AE']);
     await grant(a.personId, 'admin_user', 'all');
     adminUser = a.auth;
+    const c = await newStaff(app, hr, admin, ['AE', 'ATPL']);   // a supervisor working in both companies creates the tickets
+    await grant(c.personId, 'supervisor', 'team');
+    creator = c.auth;
+    creatorId = c.personId;
     dept = await makeDept('AE', head.personId);
     otherDept = await makeDept('AE', otherHead.personId);
     atplDept = (await http().get('/api/hrms/departments').query({ company: 'ATPL' }).set(hr)).body[0].publicId;
@@ -67,11 +71,11 @@ describe('Tickets API', () => {
   afterAll(async () => { await db?.end(); await app?.close(); });
 
   it('type details are checked against the type version\'s fields', async () => {
-    const bad = await http().post('/api/tickets').set(adminUser).send({ company: 'AE', typePublicId: types.AE.purchase, title: 'Buy bolts',
+    const bad = await http().post('/api/tickets').set(creator).send({ company: 'AE', typePublicId: types.AE.purchase, title: 'Buy bolts',
       departmentPublicId: dept, scheduledAt: AT, details: { items: 'M8 bolts', amount: 10.5, colour: 'red' } });
     expect([bad.status, bad.body.code]).toEqual([400, 'TICKETS_INVALID_DETAILS']);
     expect(bad.body.details.errors).toEqual(['colour: not a field of this ticket type', 'vendor: required', 'amount: must be whole paise, 0 or more']);
-    const person = await http().post('/api/tickets').set(adminUser).send({ company: 'AE', typePublicId: types.AE.production, title: 'Frame',
+    const person = await http().post('/api/tickets').set(creator).send({ company: 'AE', typePublicId: types.AE.production, title: 'Frame',
       departmentPublicId: dept, scheduledAt: AT, details: { item: 'Frame', quantity: 'many' } });
     expect(person.body.details.errors).toEqual(['quantity: must be a number']);
 
@@ -88,7 +92,7 @@ describe('Tickets API', () => {
     expect((await http().put('/api/tickets/number-series/ATPL').set(adminUser).send({ prefix: 'ATX', nextNumber: 558 })).status).toBe(403);
     const set = await http().put('/api/tickets/number-series/ATPL').set(hr).send({ prefix: 'ATX', nextNumber: 558 });
     expect(set.body).toEqual({ company: 'ATPL', prefix: 'ATX', nextNumber: 558, example: 'ATX-0558' });
-    const make = () => http().post('/api/tickets').set(adminUser).send({ company: 'ATPL', typePublicId: types.ATPL.site_work, title: 'Imported series',
+    const make = () => http().post('/api/tickets').set(creator).send({ company: 'ATPL', typePublicId: types.ATPL.site_work, title: 'Imported series',
       departmentPublicId: atplDept, supervisorPublicId: DEMO.engineer.publicId, scheduledAt: AT, details: { site: 'Pune' } });
     const first = await make();
     expect(first.body.number).toBe('ATX-0558');
@@ -98,9 +102,9 @@ describe('Tickets API', () => {
 
   it('company consistency: type, department, assignees and links stay within one company', async () => {
     const base = { company: 'AE', title: 'Mixed', scheduledAt: AT, departmentPublicId: dept, details: { site: 'Goa' } };
-    const otherType = await http().post('/api/tickets').set(adminUser).send({ ...base, typePublicId: types.ATPL.site_work });
+    const otherType = await http().post('/api/tickets').set(creator).send({ ...base, typePublicId: types.ATPL.site_work });
     expect(otherType.body.code).toBe('TICKETS_TYPE_OTHER_COMPANY');
-    const otherDeptRes = await http().post('/api/tickets').set(adminUser).send({ ...base, typePublicId: types.AE.site_work, departmentPublicId: atplDept });
+    const otherDeptRes = await http().post('/api/tickets').set(creator).send({ ...base, typePublicId: types.AE.site_work, departmentPublicId: atplDept });
     expect(otherDeptRes.body.code).toBe('TICKETS_UNKNOWN_DEPARTMENT');
     const t = await ticket('site_work', { site: 'Goa' });
     const res = await assign(t.publicId, atplStaff.jobs.ATPL);
@@ -160,10 +164,25 @@ describe('Tickets API', () => {
     expect((await http().post(`/api/tickets/${mine.publicId}/cancel`).set(s3.auth).send({ reason: 'Not needed' })).status).toBe(403);
   });
 
+  it('who creates: a supervisor for any department of their company, a head for theirs; never the CEO or admin user', async () => {
+    const body = (company: string, departmentPublicId: string, typePublicId: string) =>
+      ({ company, typePublicId, title: `Created ${tag()}`, departmentPublicId, scheduledAt: AT, details: { site: 'Goa' } });
+    for (const who of [ceo, adminUser]) {
+      const res = await http().post('/api/tickets').set(who).send(body('AE', dept, types.AE.site_work));
+      expect([res.status, res.body.code]).toEqual([403, 'TICKETS_FORBIDDEN']);
+    }
+    // a supervisor (head of another department) creates for any AE department; the ticket's supervisor is that department's head
+    const elsewhere = await http().post('/api/tickets').set(head.auth).send(body('AE', otherDept, types.AE.site_work));
+    expect([elsewhere.status, elsewhere.body.supervisor.publicId]).toEqual([201, otherHead.personId]);
+    // but not for a company they do not work in
+    const atpl = await http().post('/api/tickets').set(head.auth).send(body('ATPL', atplDept, types.ATPL.site_work));
+    expect([atpl.status, atpl.body.code]).toEqual([403, 'TICKETS_FORBIDDEN']);
+    // a department with no head: the supervisor who creates the ticket supervises it
+    const noHead = await http().post('/api/tickets').set(creator).send(body('ATPL', atplDept, types.ATPL.site_work));
+    expect([noHead.status, noHead.body.supervisor.publicId]).toEqual([201, creatorId]);
+  });
+
   it('a head runs only their own department\'s tickets', async () => {
-    const res = await http().post('/api/tickets').set(head.auth).send({ company: 'AE', typePublicId: types.AE.site_work, title: 'Elsewhere',
-      departmentPublicId: otherDept, scheduledAt: AT, details: { site: 'Goa' } });
-    expect([res.status, res.body.code]).toEqual([403, 'TICKETS_FORBIDDEN']);
     const own = await http().post('/api/tickets').set(head.auth).send({ company: 'AE', typePublicId: types.AE.site_work, title: 'Mine',
       departmentPublicId: dept, scheduledAt: AT, details: { site: 'Goa' } });
     expect([own.status, own.body.supervisor.publicId]).toEqual([201, head.personId]);

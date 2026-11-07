@@ -22,6 +22,10 @@ export const POLICIES = {
     value: z.array(z.string().trim().min(1).max(40)).max(10), default: ['ceo'] as string[],
     description: 'Roles whose own requests (leave, expense, correction, overtime) need no approval: approved on submit, with no decider',
   },
+  'hrms.approvals.escalate_after_days': {
+    value: z.number().int().min(1).max(60), default: 5,
+    description: 'A leave, expense, correction or overtime request with no decision after this many days is sent to the CEO (the approver may still decide it)',
+  },
   'tickets.time.split': {
     value: z.enum(['equal']), default: 'equal' as 'equal',
     description: 'How time is shared between tickets running at the same moment: equal = each of n tickets gets 1/n of that period',

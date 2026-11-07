@@ -142,9 +142,10 @@ writes a timeline event** in the same transaction.
 
 | Who | May |
 | --- | --- |
-| Management (CEO; role Management) | everything, every company; picks themselves when reassigning |
-| Admin user (`tickets.manage`, scope all) | create, edit details, assign, hold, resume, complete, cancel, reopen, link, every ticket |
-| Department head (role Supervisor, `tickets.manage` team) | the same for tickets of a department they head, or tickets they supervise |
+| Management (CEO; role Management) | everything except **creating**, every company; picks themselves when reassigning |
+| Admin user (`tickets.manage`, scope all) | edit details, assign, hold, resume, complete, cancel, reopen, link, every ticket; **does not create** |
+| Supervisor (`tickets.create`) | **create** tickets for any department of a company they have an active job in |
+| Department head (role Supervisor, `tickets.manage` team) | create tickets for a department they head; run (as admin user) tickets of a department they head, or tickets they supervise |
 | Staff (`tickets.work`, own) | see and work on tickets they are a current assignee of: start, checklist, files, sign-off, daily updates, ask for reassignment; complete only as primary |
 | HR (`tickets.view`, all) | view every ticket; set the number series (`tickets.numbering.manage`) |
 
@@ -187,7 +188,9 @@ sign-offs and head approval.
 Required fields must be filled on create and edit, except `file` fields; **every** required field is checked at completion.
 
 ### Create — `POST /tickets`
-`tickets.manage`: admin user / Management, or the head of `departmentPublicId`.
+A supervisor (`tickets.create`) with an active job in `company`, for any of its departments; or the head of
+`departmentPublicId`. Management (CEO) and admin user do not create tickets (`403 TICKETS_FORBIDDEN`). The ticket's
+supervisor is `supervisorPublicId` if given, else the department head, else the creator (when the department has no head).
 ```json
 {
   "publicId": "optional uuid (sending it twice stores one ticket; the second answers 200)",

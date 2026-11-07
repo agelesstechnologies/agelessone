@@ -13,7 +13,7 @@ import { TicketRow, TicketsRepository, Visibility } from '../infrastructure/tick
 import { checkDetails, FieldDef } from '../domain/type-details';
 import { missingForCompletion } from '../domain/completion';
 import { isFinished, Move, nextStatus, Status } from '../domain/lifecycle';
-import { Caller, canComplete, canManage, canView, canWork, Relation } from '../domain/ticket-access';
+import { Caller, canComplete, canCreate, canManage, canView, canWork, Relation } from '../domain/ticket-access';
 import { TICKETS } from '../domain/permissions';
 
 export type Warning = { code: string; message: string; employmentPublicId?: string };
@@ -87,10 +87,12 @@ export class TicketsService {
     const dept = await this.repo.findDepartment(ctx.tenantId, req.departmentPublicId);
     if (!dept || dept.legalEntityId !== company.id) throw new AppError('TICKETS_UNKNOWN_DEPARTMENT', 400, `That department does not belong to ${company.code}`);
     const caller = this.caller(ctx);
-    if (!canManage(caller, { headsDepartment: dept.headPersonId === ctx.personId, supervises: false, assignee: false, primary: false })) {
-      throw new AppError('TICKETS_FORBIDDEN', 403, 'You can create tickets only for a department you head');
+    const worksInCompany = (await this.repo.activeJob(this.db, ctx.personId, company.id)) !== undefined;
+    if (!canCreate(caller, { headsDepartment: dept.headPersonId === ctx.personId, worksInCompany })) {
+      throw new AppError('TICKETS_FORBIDDEN', 403, 'Tickets are created by a supervisor of the company or the head of the department');
     }
-    const supervisorId = await this.supervisorFor(ctx, company.id, req.supervisorPublicId, dept.headPersonId);
+    // the supervisor: whoever is named, else the department head, else the creator (a supervisor working in this company)
+    const supervisorId = await this.supervisorFor(ctx, company.id, req.supervisorPublicId, dept.headPersonId ?? (worksInCompany ? ctx.personId : null));
     const skillId = await this.skillFor(ctx, company.id, req.requiredSkillPublicId);
     const details = await this.checkedDetails(ctx, type.fields, req.details, null);
     const scheduledAt = new Date(req.scheduledAt);
@@ -252,7 +254,8 @@ export class TicketsService {
   }
 
   caller(ctx: RequestContext): Caller {
-    return { view: ctx.permissions[TICKETS.view], work: ctx.permissions[TICKETS.work], manage: ctx.permissions[TICKETS.manage], management: isManagement(ctx) };
+    return { view: ctx.permissions[TICKETS.view], work: ctx.permissions[TICKETS.work], manage: ctx.permissions[TICKETS.manage],
+      create: ctx.permissions[TICKETS.create], management: isManagement(ctx) };
   }
 
   requireUnfinished(t: TicketRow): void {

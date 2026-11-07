@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DateOnly, Instant, PersonRef, PublicId, DecidedAs } from '../common';
+import { DateOnly, Instant, PersonRef, PublicId, DecidedAs, Escalation } from '../common';
 /** Expense claims: requests and responses shared by the API and the web app. Money is always integer paise. */
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').refine((d) => !Number.isNaN(Date.parse(d)), 'Not a real date');
@@ -82,6 +82,7 @@ export const ExpenseClaim = z.object({
   rejectionReason: z.string().nullable(),
   paidAt: Instant.nullable(),
   paymentRef: z.string().nullable(),
+  escalation: Escalation.nullable(),  // sent to the CEO (forwarded or waited too long)
   createdAt: Instant,
 });
 export type ExpenseClaim = z.infer<typeof ExpenseClaim>;

@@ -18,6 +18,17 @@ export type PersonRef = z.infer<typeof PersonRef>;
 export const DecidedAs = z.enum(['approver', 'hr', 'management', 'no_approval_required']);
 export type DecidedAs = z.infer<typeof DecidedAs>;
 
+/**
+ * A request sent to the CEO: forwarded by an approver (`by`), or automatically after waiting too long (`by` null,
+ * policy hrms.approvals.escalate_after_days). The original approver may still decide it; the first decision wins.
+ */
+export const Escalation = z.object({ at: Instant, by: PersonRef.nullable(), reason: z.string() });
+export type Escalation = z.infer<typeof Escalation>;
+
+/** POST /api/hrms/.../:publicId/forward: send a request waiting for your decision to the CEO, with the reason. */
+export const ForwardRequest = z.object({ reason: z.string().trim().min(3, 'Give a reason (at least 3 characters)').max(500) });
+export type ForwardRequest = z.infer<typeof ForwardRequest>;
+
 /** The answer to a create call that only returns the new record's id. */
 export const CreatedId = z.object({ publicId: PublicId });
 export type CreatedId = z.infer<typeof CreatedId>;

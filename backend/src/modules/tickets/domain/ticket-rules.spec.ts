@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { checkDetails } from './type-details';
 import { nextStatus } from './lifecycle';
 import { missingForCompletion, WorkDone } from './completion';
-import { canComplete, canManage, canView, canWork } from './ticket-access';
+import { canComplete, canCreate, canManage, canView, canWork } from './ticket-access';
 
 const fields = [
   { key: 'vendor', label: 'Vendor', type: 'text', required: true },
@@ -91,5 +91,27 @@ describe('who may do what', () => {
     expect(canWork(hr, none)).toBe(false);
     expect(canManage({ view: 'all', work: undefined, manage: 'all', management: false }, none)).toBe(true);
     expect(canComplete({ view: undefined, work: undefined, manage: undefined, management: true }, none)).toBe(true);
+  });
+});
+
+describe('who creates a ticket', () => {
+  const supervisor = { view: 'team', work: 'team', manage: 'team', create: 'team', management: false } as const;
+  const headOnly = { view: 'team', work: undefined, manage: 'team', management: false } as const;
+  const ceo = { view: 'all', work: undefined, manage: 'all', management: true } as const;
+  const adminUser = { view: 'all', work: undefined, manage: 'all', management: false } as const;
+  const staff = { view: 'own', work: 'own', manage: undefined, management: false } as const;
+
+  it('a supervisor: any department of a company they work in, not another company', () => {
+    expect(canCreate(supervisor, { headsDepartment: false, worksInCompany: true })).toBe(true);
+    expect(canCreate(supervisor, { headsDepartment: false, worksInCompany: false })).toBe(false);
+  });
+
+  it('a department head: their own department', () => {
+    expect(canCreate(headOnly, { headsDepartment: true, worksInCompany: true })).toBe(true);
+    expect(canCreate(headOnly, { headsDepartment: false, worksInCompany: true })).toBe(false);
+  });
+
+  it('the CEO (Management) and Admin user run tickets but do not create them; staff neither', () => {
+    for (const c of [ceo, adminUser, staff]) expect(canCreate(c, { headsDepartment: false, worksInCompany: true })).toBe(false);
   });
 });

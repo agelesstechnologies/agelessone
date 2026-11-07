@@ -4,6 +4,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../../app.module';
 import { createTestApp, DEMO, signIn } from '../../test/create-app';
+import { todayIst } from '../../platform/time';
 import { newStaff, Staff } from '../../test/staff';
 import { tag } from '../../test/people';
 
@@ -43,6 +44,7 @@ describe('Ticket reports and dashboard', () => {
     await grant(otherHead.personId, 'supervisor', 'team');
     const a = await newStaff(app, hr, admin, ['AE']);
     await grant(a.personId, 'admin_user', 'all');
+    await grant(a.personId, 'supervisor', 'team');   // admin user no longer creates tickets: a supervisor of the company does
     adminUser = a.auth;
     const dept = async (headId: string, member: Staff) => {
       const prefix = letters();
@@ -160,7 +162,7 @@ describe('Ticket reports and dashboard', () => {
     await http().post(`/api/tickets/${done.publicId}/start`).set(s1.auth).expect(200);
     await http().post(`/api/tickets/${done.publicId}/complete`).set(s1.auth).expect(200);
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIst(); // the IST date (the UTC date is still yesterday between 00:00 and 05:30 IST)
     const weekly = (await get(head.auth, 'reports/weekly', { from: '2026-01-01', to: today < '2026-01-02' ? '2026-12-31' : today })).body;
     expect(weekly.totals).toEqual({ created: 4, completed: 1 });          // A1, A2, the overdue one, the dispatch
     expect(weekly.rows.find((x: any) => x.type.code === 'packing_transport')).toMatchObject({ created: 1, completed: 1 });
@@ -170,6 +172,18 @@ describe('Ticket reports and dashboard', () => {
     expect(dash.openByType).toEqual(expect.arrayContaining([{ type: { code: 'site_work', name: 'Site work' }, count: 2 }, { type: { code: 'sales_visit', name: 'Sales visit' }, count: 1 }]));
     expect(dash.openByPriority).toEqual([{ priority: 1, count: 1 }, { priority: 3, count: 2 }]);
     expect(dash.openByTypeAndPriority).toEqual(expect.arrayContaining([{ type: { code: 'site_work', name: 'Site work' }, priority: 1, count: 1 }]));
+    // how long this month's completed tickets took: the dispatch, created and completed just now, nobody's time allocated yet
+    expect(dash.completion).toMatchObject({ completed: 1, avgHours: expect.any(Number), medianHours: expect.any(Number), avgWorkedMinutes: 0 });
+    expect(dash.completion.avgHours).toBeLessThan(1);
+    expect(dash.completion.byType).toEqual([expect.objectContaining({ type: { code: 'packing_transport', name: expect.any(String) }, completed: 1 })]);
+    // the oldest unfinished tickets, oldest first, with age and whether overdue
+    expect(dash.oldestOpen).toHaveLength(3);
+    expect(dash.oldestOpen.map((t: any) => t.ticket.publicId)).toEqual(expect.arrayContaining([a1.publicId, a2.publicId, overdue.publicId]));
+    expect(dash.oldestOpen.find((t: any) => t.ticket.publicId === overdue.publicId)).toMatchObject({ overdue: true, ageDays: expect.any(Number) });
+    // another month: nothing completed there, figures null (never 0)
+    const old = (await get(head.auth, 'dashboard', { month: '2025-01' })).body;
+    expect(old).toMatchObject({ month: '2025-01', completedThisMonth: 0, completion: { completed: 0, avgHours: null, medianHours: null, avgWorkedMinutes: null, byType: [] } });
+    expect((await get(head.auth, 'dashboard', { month: '2025-13' })).status).toBe(400);
     const all = (await get(ceo, 'dashboard', { company: 'AE' })).body;
     expect(all.open).toBeGreaterThanOrEqual(dash.open);
     expect(all.overdue).toBeGreaterThanOrEqual(1);

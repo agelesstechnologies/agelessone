@@ -69,7 +69,7 @@ describe('Sign-in and roles', () => {
         'hrms.attendance.punch': 'team', 'hrms.attendance.view': 'team', 'hrms.attendance.approve': 'team', 'hrms.leave.apply': 'team', 'hrms.leave.approve': 'team', 'hrms.leave.report': 'team',
         'hrms.skills.add': 'team', 'hrms.skills.verify': 'team', 'hrms.skills.view': 'team', 'hrms.dashboard.view': 'team', 'payroll.payslip.own': 'team',
         'tickets.types.view': 'team', 'tickets.types.manage': 'team',
-        'tickets.view': 'team', 'tickets.work': 'team', 'tickets.manage': 'team', 'tickets.time.adjust': 'team',
+        'tickets.view': 'team', 'tickets.work': 'team', 'tickets.manage': 'team', 'tickets.create': 'team', 'tickets.time.adjust': 'team',
       });
     });
   });

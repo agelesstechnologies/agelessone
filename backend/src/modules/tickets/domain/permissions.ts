@@ -12,8 +12,10 @@ export const TICKETS = {
   view: 'tickets.view',
   /** work on tickets you are assigned to (staff, supervisors) */
   work: 'tickets.work',
-  /** create and run tickets: all (admin user, Management) or a department head for their departments */
+  /** run tickets (assign, edit, hold, cancel, approve): all (admin user, Management) or a department head for their departments */
   manage: 'tickets.manage',
+  /** create tickets for any department of a company you work in (Supervisor); department heads create for their departments */
+  create: 'tickets.create',
   /** HR: each company's number prefix and next number */
   numbering: 'tickets.numbering.manage',
   /** review ticket time: team = tickets of departments you head; all = every ticket (Management). Never your own */
