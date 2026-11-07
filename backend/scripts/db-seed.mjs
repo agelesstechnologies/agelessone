@@ -42,6 +42,10 @@ const roles = [
   // Payroll: prepares runs, salaries and bank details. Payroll Approver: approves runs (never one they prepared).
   { code: 'payroll', name: 'Payroll', permissions: ['payroll.prepare', 'payroll.payslip.own'] },
   { code: 'payroll_approver', name: 'Payroll Approver', permissions: ['payroll.approve', 'payroll.payslip.own'] },
+  // Accounts: the executive drafts (maker), the manager approves (checker). Until they are appointed, the policy
+  // accounts.interim_roles lets HR make and the CEO check, so nobody holds these roles in the demo data.
+  { code: 'accounts_executive', name: 'Accounts executive', permissions: ['accounts.make', 'accounts.view', 'payroll.payslip.own'] },
+  { code: 'accounts_manager', name: 'Accounts manager', permissions: ['accounts.check', 'accounts.view', 'payroll.payslip.own'] },
   { code: 'hr', name: 'HR', permissions: HR },
   { code: 'admin_user', name: 'Admin user', permissions: ['tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage'] },
   { code: 'system_admin', name: 'System admin', permissions: ['core.users.manage', 'core.policies.manage', 'hrms.people.view', 'hrms.attendance.rebuild', 'hrms.month.unlock'] },

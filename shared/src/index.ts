@@ -1,5 +1,6 @@
 /** The zod instance these schemas are built with (tools that extend zod, like the OpenAPI builder, must use this one). */
 export { z } from 'zod';
+export * from './accounts';
 export * from './common';
 export * from './core/auth';
 export * from './core/policies';

@@ -5,7 +5,8 @@ import { CoreModule } from './modules/core/core.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { HrmsModule } from './modules/hrms/hrms.module';
 import { PayrollModule } from './modules/payroll/payroll.module';
+import { AccountsModule } from './modules/accounts/accounts.module';
 
 // Every module is registered here. Later: SalesModule, OperationsModule, InventoryModule, WorkshopModule ...
-@Module({ imports: [DbModule, HttpModule, CoreModule, TicketsModule, HrmsModule, PayrollModule] })
+@Module({ imports: [DbModule, HttpModule, CoreModule, TicketsModule, HrmsModule, PayrollModule, AccountsModule] })
 export class AppModule {}

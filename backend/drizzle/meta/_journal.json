@@ -211,6 +211,13 @@
       "when": 1794030083445,
       "tag": "0029_ceo_no_leave_apply",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794035707944,
+      "tag": "0030_accounts_foundation",
+      "breakpoints": true
     }
   ]
 }

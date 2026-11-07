@@ -65,6 +65,11 @@ export class CoreFacade {
     return (await this.approvals.rolesOf(tenantId, personId)).some((r) => roles.includes(r));
   }
 
+  /** The codes of the roles a person holds today. */
+  rolesOf(tenantId: number, personId: number): Promise<string[]> {
+    return this.approvals.rolesOf(tenantId, personId);
+  }
+
   /** Who decides a request: manager, then department head, then HR, then CEO — never one of notAllowed (person ids). */
   approverFor(tenantId: number, notAllowed: number[], job: JobApprovers): Promise<number | null> {
     return this.approvals.approverFor(tenantId, notAllowed, job);

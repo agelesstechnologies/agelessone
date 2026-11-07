@@ -34,6 +34,12 @@ export const POLICIES = {
     value: z.enum(['calendar_days', 'fixed_30']), default: 'calendar_days' as 'calendar_days' | 'fixed_30',
     description: 'Days a monthly salary is divided by for loss of pay and part months: calendar days of the month, or always 30',
   },
+  // DECISION: HR & Accounts staff are not appointed yet. Until they are, these roles act as Accounts maker and checker.
+  'accounts.interim_roles': {
+    value: z.object({ maker: z.array(z.string().trim().min(1).max(40)).max(10), checker: z.array(z.string().trim().min(1).max(40)).max(10) }),
+    default: { maker: ['hr'], checker: ['ceo'] } as { maker: string[]; checker: string[] },
+    description: 'Roles that act as Accounts maker (drafts, creates batches) and checker (approves, closes months) until Accounts staff exist',
+  },
 } as const;
 export type PolicyKey = keyof typeof POLICIES;
 export type PolicyValue<K extends PolicyKey> = z.infer<(typeof POLICIES)[K]['value']>;
