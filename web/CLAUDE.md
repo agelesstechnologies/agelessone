@@ -1,15 +1,7 @@
-# Web admin panel
+# CLAUDE.md — web
 
-React + Vite + TypeScript admin panel for HR, supervisors and admin users. Read the root `CLAUDE.md` first; its rules apply here too.
-
-## Current implementation
-- Sign-in page (`POST /api/auth/login`); the token is kept in localStorage and sent as `Authorization: Bearer`. A 401 signs the person out.
-- Menus, tabs and buttons are shown from `GET /api/auth/me` permissions (`src/permissions.ts`); the backend still checks every request.
-- Screens: Overview, People (with edit actions in the profile), Attendance (punch, history, corrections, overtime, approvals, team register, work hours), Expenses, Leave (balances, apply, approvals, report, HR adjustments), Calendar (month view, holidays, weekly offs), Policies, Roles & access. Every backend endpoint has a screen except lists the backend does not offer (all logins, all role assignments, approved-unpaid claims).
-- Also: Payroll (runs, salaries, bank accounts, payslips), Skills (matrix, add skill/certificate), Organisation (departments, designations, positions), Month locks, Approvals. People profile has activate, offer letter and private details (Aadhaar/PAN masked; HR sets, Management reveals, audited). Reports (leave, expenses, work hours) have a CSV button. `JobPicker` picks a job when a form needs an employment ID.
-- Uses `@ageless/shared` schemas and response types. Configure the API URL with `VITE_API_URL`.
-- Run with `pnpm --filter @ageless/web dev`; build with `pnpm --filter @ageless/web build`.
-- The backend has no list of approved-but-unpaid claims, so Mark paid appears on a claim only right after it is approved in the same session.
+The admin panel for HR, supervisors and admin users. **Not created yet**: this file holds the plan until the
+React + Vite app is set up as its own step. Read the root `CLAUDE.md` first; its rules apply here too.
 
 ## Plan
 - React + Vite + TypeScript, package name `@ageless/web`, created inside this folder (keep this file and the README).
