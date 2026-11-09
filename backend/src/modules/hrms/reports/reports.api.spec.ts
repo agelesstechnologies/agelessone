@@ -60,8 +60,8 @@ describe('HRMS reports and month lock', () => {
       await refused(punch(s, 'in', ist('2026-05-12', '09:00')));
       await refused(http().post('/api/hrms/attendance/corrections').set(s.auth).send({ employmentPublicId: s.jobs.AE, workDate: '2026-05-11',
         kind: 'missed_out', requestedOut: ist('2026-05-11', '18:00'), reason: 'Left later than recorded' }));
-      await refused(http().post('/api/hrms/leave/requests').set(s.auth).send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'GL', fromDate: '2026-05-13', toDate: '2026-05-13' }));
-      await refused(http().post('/api/hrms/leave/requests').set(s.auth).send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'GL', fromDate: '2026-04-30', toDate: '2026-05-04' }));
+      await refused(http().post('/api/hrms/leave/requests').set(s.auth).send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'EL', fromDate: '2026-05-13', toDate: '2026-05-13' }));
+      await refused(http().post('/api/hrms/leave/requests').set(s.auth).send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'EL', fromDate: '2026-04-30', toDate: '2026-05-04' }));
       await refused(http().post('/api/hrms/attendance/overtime').set(s.auth).send({ employmentPublicId: s.jobs.AE, workDate: '2026-05-11', minutes: 30, reason: 'Stayed late' }));
       // the database refuses too, even when the services are bypassed
       await expect(db.query(`INSERT INTO hrms.attendance_events (tenant_id, public_id, person_id, employment_id, legal_entity_id, kind, source, occurred_at)
@@ -124,9 +124,9 @@ describe('HRMS reports and month lock', () => {
     it('leave: days taken inside the period by type and the current balance; the CSV line equals the screen', async () => {
       const s = await staff();
       await http().post('/api/hrms/leave/ledger/adjustments').set(hr)
-        .send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'GL', year: 2025, entry: 'opening', days: 10, reason: 'Opening balance' }).expect(201);
+        .send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'EL', year: 2025, entry: 'opening', days: 10, reason: 'Opening balance' }).expect(201);
       // Fri 27 Jun – Tue 1 Jul 2025: Sat 28 (4th Saturday) and Sun 29 are off → June has Fri 27 and Mon 30, July has Tue 1
-      const leave = await http().post('/api/hrms/leave/requests').set(s.auth).send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'GL', fromDate: '2025-06-27', toDate: '2025-07-01' });
+      const leave = await http().post('/api/hrms/leave/requests').set(s.auth).send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'EL', fromDate: '2025-06-27', toDate: '2025-07-01' });
       expect(leave.body.days).toBe(3);
       await http().post(`/api/hrms/leave/requests/${leave.body.publicId}/approve`).set(sup).expect(200);
 
@@ -134,11 +134,11 @@ describe('HRMS reports and month lock', () => {
       const screen = (await http().get('/api/hrms/leave/report').query(q).set(hr)).body;
       expect(screen).toMatchObject({ company: 'AE', from: '2025-06-01', to: '2025-06-30' });
       const mine = screen.people.find((p: { person: { publicId: string } }) => p.person.publicId === s.personId);
-      expect(mine).toMatchObject({ takenByType: { GL: 2 }, balanceByType: { GL: 7 }, totalTaken: 2 });
+      expect(mine).toMatchObject({ takenByType: { EL: 2 }, balanceByType: { EL: 7 }, totalTaken: 2 });
 
       const csv = parseCsv((await http().get('/api/hrms/leave/report').query({ ...q, format: 'csv' }).set(hr)).text);
       expect(csv.about).toMatchObject({ Report: 'Leave', Company: 'AE', Period: '2025-06-01 to 2025-06-30' });
-      const line = csv.rows.find((r) => r[1] === mine.employment.employeeCode && r[3] === 'GL')!;
+      const line = csv.rows.find((r) => r[1] === mine.employment.employeeCode && r[3] === 'EL')!;
       expect([Number(line[4]), Number(line[5])]).toEqual([2, 7]);
     });
   });

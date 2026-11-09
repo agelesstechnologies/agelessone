@@ -18,7 +18,7 @@ const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 // Fixed public ids, so the same people, logins and roles exist on every PC.
 const people = [
   { n: 1, display: 'Demo Supervisor', full: 'Demo Supervisor One', company: 'AE', code: 'AE-D001', phone: '+910000000001', email: 'demo.supervisor@example.com', role: 'supervisor', scope: 'team' },
-  { n: 2, display: 'Demo Technician', full: 'Demo Technician Two', company: 'AE', code: 'AE-D002', phone: '+910000000002', email: null, role: 'employee', scope: 'own', manager: 1 },
+  { n: 2, display: 'Demo Technician', full: 'Demo Technician Two', company: 'AE', code: 'AE-D002', phone: '+910000000002', email: 'demo.technician@example.com', role: 'employee', scope: 'own', manager: 1 },
   { n: 3, display: 'Demo Engineer', full: 'Demo Engineer Three', company: 'ATPL', code: 'ATPL-D001', phone: null, email: 'demo.engineer@example.com', role: 'employee', scope: 'own' },
   { n: 4, display: 'Demo HR', full: 'Demo HR Four', company: 'AE', code: 'AE-D003', phone: null, email: 'demo.hr@example.com', role: 'hr', scope: 'all' },
   { n: 5, display: 'Demo Admin', full: 'Demo Admin Five', company: 'ATPL', code: 'ATPL-D002', phone: null, email: 'demo.admin@example.com', role: 'system_admin', scope: 'all', grantedBy: 4 },
@@ -26,7 +26,7 @@ const people = [
 ];
 
 // Roles for tenant 1 and their permissions (the permission list itself comes from migration 0005).
-const HR = ['hrms.people.view', 'hrms.people.create', 'hrms.people.update', 'hrms.contacts.manage', 'hrms.contacts.review', 'hrms.employments.manage', 'hrms.employments.update',
+const HR = ['hrms.people.view', 'hrms.people.create', 'hrms.letters.manage', 'hrms.people.update', 'hrms.contacts.manage', 'hrms.contacts.review', 'hrms.employments.manage', 'hrms.employments.update',
   'hrms.expenses.submit', 'hrms.expenses.approve', 'hrms.expenses.pay', 'hrms.expenses.report',
   'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.rebuild', 'hrms.attendance.approve', 'hrms.calendar.manage',
   'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.manage', 'hrms.leave.report', 'core.policies.manage', 'hrms.positions.manage',
@@ -35,10 +35,14 @@ const HR = ['hrms.people.view', 'hrms.people.create', 'hrms.people.update', 'hrm
 const roles = [
   { code: 'employee', name: 'Employee', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.leave.apply',
     'hrms.skills.add', 'hrms.skills.view', 'payroll.payslip.own', 'tickets.types.view', 'tickets.view', 'tickets.work'] },
-  { code: 'supervisor', name: 'Supervisor', permissions: ['hrms.people.view', 'hrms.employments.update', 'hrms.expenses.submit', 'hrms.expenses.approve',
+  // Manager: leads a team: approvals, add people and logins, create and run tickets. (Was the Supervisor role.)
+  { code: 'manager', name: 'Manager', permissions: ['hrms.people.view', 'hrms.people.create', 'hrms.employments.update', 'hrms.expenses.submit', 'hrms.expenses.approve',
     'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report',
     'hrms.skills.add', 'hrms.skills.verify', 'hrms.skills.view', 'hrms.dashboard.view', 'payroll.payslip.own',
-    'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.work', 'tickets.manage', 'tickets.create', 'tickets.time.adjust'] },
+    'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.work', 'tickets.manage', 'tickets.create', 'tickets.time.adjust', 'core.users.team'] },
+  // Supervisor: on site only: own self-service plus the site work of the tickets they supervise (tickets.site).
+  { code: 'supervisor', name: 'Supervisor', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.leave.apply',
+    'hrms.skills.add', 'hrms.skills.view', 'payroll.payslip.own', 'tickets.types.view', 'tickets.view', 'tickets.work', 'tickets.site'] },
   // Payroll: prepares runs, salaries and bank details. Payroll Approver: approves runs (never one they prepared).
   { code: 'payroll', name: 'Payroll', permissions: ['payroll.prepare', 'payroll.payslip.own'] },
   { code: 'payroll_approver', name: 'Payroll Approver', permissions: ['payroll.approve', 'payroll.payslip.own'] },
@@ -53,10 +57,11 @@ const roles = [
   // sees private details masked and may reveal them (audited).
   { code: 'management', name: 'Management', permissions: ['hrms.management', 'hrms.people.view', 'hrms.attendance.view', 'hrms.attendance.approve',
     'hrms.leave.approve', 'hrms.leave.report', 'hrms.expenses.approve', 'hrms.expenses.report', 'hrms.skills.view', 'hrms.dashboard.view',
-    'hrms.private.view', 'hrms.private.reveal', 'payroll.payslip.own', 'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage', 'tickets.time.adjust'] },
+    'hrms.private.view', 'hrms.private.reveal', 'hrms.letters.manage', 'payroll.payslip.own', 'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage', 'tickets.time.adjust'] },
 ];
 // Second roles: Demo HR runs payroll, Demo CEO approves it and has Management access (granted by Demo Admin).
-const extraRoles = [{ n: 214, person: 4, role: 'payroll' }, { n: 216, person: 6, role: 'payroll_approver' }, { n: 226, person: 6, role: 'management' }];
+const extraRoles = [{ n: 214, person: 4, role: 'payroll' }, { n: 216, person: 6, role: 'payroll_approver' }, { n: 226, person: 6, role: 'management' },
+  { n: 227, person: 1, role: 'manager', scope: 'team' }];   // Demo Supervisor also leads a team (Manager) as well as supervising on site
 
 const client = new pg.Client({ connectionString: url.toString() });
 await client.connect();
@@ -70,9 +75,12 @@ try {
       (1, 'ATPL', 'Ageless Technologies', 'private_limited')
     ON CONFLICT (tenant_id, code) DO NOTHING`);
 
-  // POLICY: until HR confirms the leave types — one paid type for now.
-  await client.query(`INSERT INTO hrms.leave_types (tenant_id, code, name, policy_key, is_paid)
-    VALUES (1, 'GL', 'General leave', 'hrms.leave.gl', true) ON CONFLICT (tenant_id, code) DO NOTHING`);
+  // Leave types: Sick and Earned (paid, 1 day each a month: policy hrms.leave.monthly_accrual), Leave without pay
+  // (unpaid). General leave stays for history but can no longer be applied for.
+  await client.query(`INSERT INTO hrms.leave_types (tenant_id, code, name, policy_key, is_paid, is_active) VALUES
+      (1, 'SL', 'Sick leave', 'hrms.leave.sl', true, true), (1, 'EL', 'Earned leave', 'hrms.leave.el', true, true),
+      (1, 'LWP', 'Leave without pay', 'hrms.leave.lwp', false, true), (1, 'GL', 'General leave', 'hrms.leave.gl', true, false)
+    ON CONFLICT (tenant_id, code) DO NOTHING`);
 
   // Ageless Technologies: departments (code prefix starts the employee codes: ATS001 ...; heads are set later by HR)
   // and the designations its positions use.
@@ -125,6 +133,10 @@ try {
        SELECT 1, $1, id, $2, $3, $4 FROM core.persons WHERE public_id = $5
        ON CONFLICT (person_id) DO NOTHING`,
       [id(300 + p.n), p.phone, p.email, passwordHash, id(p.n)]);
+    // every login needs an email now (sign-in codes): fill one in for a demo login seeded before that rule
+    if (p.email) {
+      await client.query(`UPDATE core.users SET login_email = $1 WHERE public_id = $2 AND login_email IS NULL`, [p.email, id(300 + p.n)]);
+    }
   }
   // Demo Supervisor also works in ATPL (second, non-primary job), so they can create tickets in both companies
   // (a supervisor creates tickets only in companies they work in).
@@ -219,11 +231,11 @@ try {
   for (const x of extraRoles) {
     await client.query(
       `INSERT INTO core.role_assignments (tenant_id, public_id, person_id, role_id, scope, valid_from, granted_by)
-       SELECT 1, $1, person.id, r.id, 'all', DATE '2025-04-01', granter.id
+       SELECT 1, $1, person.id, r.id, $5, DATE '2025-04-01', granter.id
          FROM core.persons person, core.roles r, core.persons granter
         WHERE person.public_id = $2 AND r.tenant_id = 1 AND r.code = $3 AND granter.public_id = $4
        ON CONFLICT (public_id) DO NOTHING`,
-      [id(x.n), id(x.person), x.role, id(5)]);
+      [id(x.n), id(x.person), x.role, id(5), x.scope ?? 'all']);
   }
 
   await client.query('COMMIT');

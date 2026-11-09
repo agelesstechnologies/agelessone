@@ -10,6 +10,9 @@ export const PEOPLE = {
   managePositions: 'hrms.positions.manage',
 } as const;
 
+/** Letter templates and issued letters (row added by migration 0030): HR and Management, scope all. */
+export const LETTERS = { manage: 'hrms.letters.manage' } as const;
+
 /** Private details (rows added by migration 0021): view masked (HR, Management), reveal in full (Management), change (HR). */
 export const PRIVATE = {
   view: 'hrms.private.view',

@@ -40,11 +40,11 @@ describe('Ticket reports and dashboard', () => {
     const grant = (personId: string, roleCode: string, scope: string) =>
       http().post('/api/core/role-assignments').set(admin).send({ personPublicId: personId, roleCode, scope }).expect(201);
     [head, otherHead, s1, s2] = await Promise.all(Array.from({ length: 4 }, () => newStaff(app, hr, admin, ['AE'])));
-    await grant(head.personId, 'supervisor', 'team');
-    await grant(otherHead.personId, 'supervisor', 'team');
+    await grant(head.personId, 'manager', 'team');
+    await grant(otherHead.personId, 'manager', 'team');
     const a = await newStaff(app, hr, admin, ['AE']);
     await grant(a.personId, 'admin_user', 'all');
-    await grant(a.personId, 'supervisor', 'team');   // admin user no longer creates tickets: a supervisor of the company does
+    await grant(a.personId, 'manager', 'team');   // admin user no longer creates tickets: a supervisor of the company does
     adminUser = a.auth;
     const dept = async (headId: string, member: Staff) => {
       const prefix = letters();

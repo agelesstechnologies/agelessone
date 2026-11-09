@@ -28,7 +28,7 @@ describe('HRMS management access, approvals inbox and dashboard', () => {
   const managedBySupervisor = async (s: Staff, company = 'AE') =>
     http().patch(`/api/hrms/employments/${s.jobs[company]}`).set(hr).send({ managerPublicId: DEMO.supervisor.publicId }).expect(200);
   const applyLeave = (auth: Auth, employmentPublicId: string, date: string, extra: Record<string, unknown> = {}) =>
-    http().post('/api/hrms/leave/requests').set(auth).send({ employmentPublicId, leaveTypeCode: 'GL', fromDate: date, toDate: date, ...extra });
+    http().post('/api/hrms/leave/requests').set(auth).send({ employmentPublicId, leaveTypeCode: 'EL', fromDate: date, toDate: date, ...extra });
   const leaveAct = (auth: Auth, id: string, action: 'approve' | 'reject', body: Record<string, unknown> = {}) =>
     http().post(`/api/hrms/leave/requests/${id}/${action}`).set(auth).send(body);
   const claim = (auth: Auth, employmentPublicId: string, amountPaise: number) =>

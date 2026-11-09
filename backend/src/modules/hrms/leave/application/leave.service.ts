@@ -7,7 +7,7 @@ import {
 import { Conn, DB, Db, Tx, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
 import { decidedAs, DecidedAs, RequestContext, requireAll } from '../../../../platform/http/request-context';
-import { todayIst } from '../../../../platform/time';
+import { addDays, todayIst } from '../../../../platform/time';
 import { CoreFacade } from '../../../core/core.facade';
 import { AttendanceService } from '../../attendance/application/attendance.service';
 import { MonthLocksService } from '../../attendance/application/month-locks.service';
@@ -16,6 +16,7 @@ import { LeaveRepository, Visibility } from '../infrastructure/leave.repository'
 import { calculateLeaveDays, FromHalf, ToHalf } from '../leave-days';
 import { balanceAllows, daysPerYear, fitToTotal, LeaveAction, LeaveStatus, stepNotAllowed } from '../domain/requests';
 import { LEAVE } from '../domain/permissions';
+import { monthsToAccrue, paidParts, unpaidDaysFor, unpaidInside } from '../domain/accrual';
 import { toCsv } from '../../../../platform/csv';
 
 /**
@@ -36,8 +37,9 @@ export class LeaveService {
 
   health() { return { module: 'hrms', sub: 'leave', ok: true }; }
 
+  /** The types that can be applied for (Sick, Earned, Leave without pay; not the old General leave). */
   types(ctx: RequestContext): Promise<LeaveType[]> {
-    return this.repo.types(ctx.tenantId);
+    return this.repo.types(ctx.tenantId, true);
   }
 
   /** Working days of leave on one job: its holidays and weekly offs (from the work calendar) are not counted. */
@@ -66,6 +68,9 @@ export class LeaveService {
     if (job.status !== 'active') throw new AppError('HRMS_EMPLOYMENT_NOT_ACTIVE', 409, 'This job is not active');
     const type = await this.repo.findType(ctx.tenantId, req.leaveTypeCode);
     if (!type) throw new AppError('HRMS_UNKNOWN_LEAVE_TYPE', 400, `Unknown leave type ${req.leaveTypeCode}`);
+    if (!type.isActive) {
+      throw new AppError('HRMS_LEAVE_TYPE_INACTIVE', 400, `${req.leaveTypeCode} can no longer be applied for; choose Sick leave, Earned leave or Leave without pay`);
+    }
 
     await this.months.assertOpen(this.db, job.legalEntityId, req.fromDate, req.toDate);
     const days = (await this.parts(this.db, job.id, req)).reduce((sum, p) => sum + p.days, 0);
@@ -156,7 +161,10 @@ export class LeaveService {
     deciderId: number | null, as: DecidedAs): Promise<void> {
     await this.months.assertOpen(tx, r.legalEntityId, r.fromDate, r.toDate);
     await this.checkBalance(tx, tenantId, r.legalEntityId, r.employmentId, r.leaveTypeId, r.days, r.fromDate);
-    const parts = fitToTotal(await this.parts(tx, r.employmentId, r), r.days);
+    // a paid type: days beyond the balance are loss of pay (the last days of the leave); only the paid days leave the balance
+    const unpaid = r.typePaid ? unpaidDaysFor(r.days, await this.repo.balance(tx, r.employmentId, r.leaveTypeId)) : 0;
+    if (unpaid > 0) await this.repo.setUnpaidDays(tx, r.id, unpaid);
+    const parts = paidParts(fitToTotal(await this.parts(tx, r.employmentId, r), r.days), unpaid);
     await this.repo.insertLedger(tx, parts.map((p) => ({
       tenantId, employmentId: r.employmentId, legalEntityId: r.legalEntityId, leaveTypeId: r.leaveTypeId, year: p.year, entry: 'taken', days: -p.days,
       leaveRequestId: r.id, postedBy: deciderId ?? r.personId,
@@ -168,7 +176,7 @@ export class LeaveService {
       summary: as === 'no_approval_required'
         ? `Leave of ${r.personName} ${r.fromDate} to ${r.toDate} (${r.days} days) approved on submit: no approval required`
         : `Leave of ${r.personName} ${r.fromDate} to ${r.toDate} (${r.days} days) approved (${as})`,
-      details: { decidedAs: as, days: r.days } });
+      details: { decidedAs: as, days: r.days, unpaidDays: unpaid } });
   }
 
   /**
@@ -268,16 +276,57 @@ export class LeaveService {
    * (by employment public id). They count as absence for loss of pay.
    */
   async unpaidDaysIn(tenantId: number, company: string, from: string, to: string): Promise<Map<string, number>> {
-    const unpaid = new Set((await this.repo.types(tenantId)).filter((t) => !t.isPaid).map((t) => t.code));
     const jobs = await this.repo.jobsInRange(tenantId, from, to, company, { scope: 'all' });
-    const approved = (await this.repo.approvedInRange(jobs.map((j) => j.id), from, to)).filter((a) => unpaid.has(a.typeCode));
+    const approved = await this.repo.approvedInRange(jobs.map((j) => j.id), from, to);
     const out = new Map<string, number>();
     for (const j of jobs) {
-      const taken = await this.takenInPeriod(j.id, approved.filter((a) => a.employmentId === j.id), from, to);
-      const days = Object.values(taken).reduce((s, d) => s + d, 0);
+      const mine = approved.filter((a) => a.employmentId === j.id);
+      // leave of an unpaid type (Leave without pay): every day inside the period
+      const taken = await this.takenInPeriod(j.id, mine.filter((a) => !a.isPaid), from, to);
+      let days = Object.values(taken).reduce((s, d) => s + d, 0);
+      // paid leave beyond the balance: its last days are unpaid; count the ones inside the period
+      for (const a of mine.filter((r) => r.isPaid && r.unpaidDays > 0)) {
+        const inside = Object.values(await this.takenInPeriod(j.id, [a], from, to)).reduce((s, d) => s + d, 0);
+        const after = a.toDate > to ? Object.values(await this.takenInPeriod(j.id, [a], addDays(to, 1), a.toDate)).reduce((s, d) => s + d, 0) : 0;
+        days += unpaidInside(a.unpaidDays, after, inside);
+      }
       if (days > 0) out.set(j.employmentPublicId, days);
     }
     return out;
+  }
+
+  /**
+   * The daily job: every active job gets this year's monthly entitlement up to this month (policy
+   * hrms.leave.monthly_accrual, e.g. 1 sick + 1 earned a month, from the joining month; missed months are added too).
+   * In a new year, unused days of types not carried forward (policy hrms.leave.carry_forward, Earned by default) lapse
+   * on 31 December of the year before. Each row is added once. Returns how many rows were added.
+   */
+  async runMonthlyLeave(today: string = todayIst(), onlyJobs?: string[]): Promise<{ granted: number; lapsed: number }> {
+    const year = Number(today.slice(0, 4));
+    let granted = 0, lapsed = 0;
+    const typeIds = new Map<number, Map<string, number>>();
+    for (const job of await this.repo.activeJobs(onlyJobs)) {
+      if (!typeIds.has(job.tenantId)) typeIds.set(job.tenantId, await this.repo.typeIds(job.tenantId));
+      const types = typeIds.get(job.tenantId)!;
+      const accrual = await this.core.getPolicy(job.tenantId, 'hrms.leave.monthly_accrual', job.legalEntityId, today);
+      const carry = new Set(await this.core.getPolicy(job.tenantId, 'hrms.leave.carry_forward', job.legalEntityId, today));
+      const base = { tenantId: job.tenantId, employmentId: job.id, legalEntityId: job.legalEntityId };
+      for (const [code, perMonth] of Object.entries(accrual)) {
+        const typeId = types.get(code);
+        if (!typeId || perMonth <= 0) continue;
+        // year end: what is left of last year lapses unless the type carries forward
+        if (!carry.has(code) && job.joinedOn < `${year}-01-01`) {
+          const left = await this.repo.balanceUpTo(this.db, job.id, typeId, year - 1);
+          if (left > 0 && await this.repo.addSystemEntry(this.db, { ...base, leaveTypeId: typeId, year: year - 1, entry: 'lapse', days: -left,
+            period: `${year - 1}-12-31`, reason: `Unused ${code} of ${year - 1} lapsed` })) lapsed++;
+        }
+        for (const month of monthsToAccrue(job.joinedOn, today)) {
+          if (await this.repo.addSystemEntry(this.db, { ...base, leaveTypeId: typeId, year, entry: 'grant', days: perMonth,
+            period: month, reason: `Monthly entitlement ${month.slice(0, 7)}` })) granted++;
+        }
+      }
+    }
+    return { granted, lapsed };
   }
 
   /** Approved leave days of one job inside from..to by leave type (a request crossing the period counts only its days inside). */

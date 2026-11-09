@@ -25,15 +25,15 @@ describe('HRMS leave API', () => {
   const http = () => request(app.getHttpServer());
   const staff = (companies?: string[]) => newStaff(app, hr, admin, companies);
   const apply = (s: Staff, from: string, to: string, extra: Record<string, unknown> = {}, company = 'AE') =>
-    http().post('/api/hrms/leave/requests').set(s.auth).send({ employmentPublicId: s.jobs[company], leaveTypeCode: 'GL', fromDate: from, toDate: to, ...extra });
+    http().post('/api/hrms/leave/requests').set(s.auth).send({ employmentPublicId: s.jobs[company], leaveTypeCode: 'EL', fromDate: from, toDate: to, ...extra });
   const act = (auth: Auth, id: string, action: 'approve' | 'reject' | 'cancel', body: Record<string, unknown> = {}) =>
     http().post(`/api/hrms/leave/requests/${id}/${action}`).set(auth).send(body);
   const balance = async (s: Staff) => (await http().get('/api/hrms/leave/balances/mine').set(s.auth)).body
-    .find((b: { employment: { company: string }; leaveType: { code: string } }) => b.employment.company === 'AE' && b.leaveType.code === 'GL').balance;
+    .find((b: { employment: { company: string }; leaveType: { code: string } }) => b.employment.company === 'AE' && b.leaveType.code === 'EL').balance;
   const statuses = async (s: Staff, from: string, to: string) =>
     (await http().get('/api/hrms/attendance/history').query({ from, to }).set(s.auth)).body.map((r: { date: string; status: string }) => [r.date, r.status]);
   const opening = (s: Staff, days: number) => http().post('/api/hrms/leave/ledger/adjustments').set(hr)
-    .send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'GL', year: Number(day(0).slice(0, 4)), entry: 'opening', days, reason: 'Opening balance' });
+    .send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'EL', year: Number(day(0).slice(0, 4)), entry: 'opening', days, reason: 'Opening balance' });
 
   beforeAll(async () => {
     app = await createTestApp(AppModule);
@@ -43,7 +43,7 @@ describe('HRMS leave API', () => {
 
   it('lists the leave types', async () => {
     const res = await http().get('/api/hrms/leave/types').set(tech);
-    expect(res.body).toEqual(expect.arrayContaining([{ code: 'GL', name: 'General leave', isPaid: true }]));
+    expect(res.body).toEqual([{ code: 'EL', name: 'Earned leave', isPaid: true }, { code: 'LWP', name: 'Leave without pay', isPaid: false }, { code: 'SL', name: 'Sick leave', isPaid: true }]);   // General leave is no longer offered
   });
 
   it('overlapping leave is refused on the same job but allowed in the other company; a resend is stored once', async () => {
@@ -61,7 +61,7 @@ describe('HRMS leave API', () => {
   });
 
   it('nobody approves their own leave; a supervisor decides only for their team', async () => {
-    const own = await http().post('/api/hrms/leave/requests').set(hr).send({ employmentPublicId: HR_JOB, leaveTypeCode: 'GL', fromDate: day(21), toDate: day(21) });
+    const own = await http().post('/api/hrms/leave/requests').set(hr).send({ employmentPublicId: HR_JOB, leaveTypeCode: 'EL', fromDate: day(21), toDate: day(21) });
     expect(own.status).toBe(201);
     expect(own.body.approver).not.toBeNull();
     expect(own.body.approver.publicId).not.toBe(DEMO.hr.publicId); // another HR person, else the CEO
@@ -90,11 +90,11 @@ describe('HRMS leave API', () => {
     // a far-future ATPL policy version, so no other test is affected
     await http().post('/api/core/policies').set(hr).send({ key: 'hrms.leave.balance_check', company: 'ATPL', value: true, effectiveFrom: '2030-01-01' }).expect(201);
     const s = await staff(['ATPL']);
-    const body = { employmentPublicId: s.jobs.ATPL, leaveTypeCode: 'GL', fromDate: '2030-03-04', toDate: '2030-03-05' };
+    const body = { employmentPublicId: s.jobs.ATPL, leaveTypeCode: 'EL', fromDate: '2030-03-04', toDate: '2030-03-05' };
     const refused = await http().post('/api/hrms/leave/requests').set(s.auth).send(body);
     expect([refused.status, refused.body.code]).toEqual([409, 'HRMS_LEAVE_BALANCE']);
     await http().post('/api/hrms/leave/ledger/adjustments').set(hr)
-      .send({ employmentPublicId: s.jobs.ATPL, leaveTypeCode: 'GL', year: 2030, entry: 'opening', days: 2, reason: 'Opening balance' }).expect(201);
+      .send({ employmentPublicId: s.jobs.ATPL, leaveTypeCode: 'EL', year: 2030, entry: 'opening', days: 2, reason: 'Opening balance' }).expect(201);
     expect((await http().post('/api/hrms/leave/requests').set(s.auth).send(body)).status).toBe(201);
     // before the policy takes effect the check is off
     expect((await http().post('/api/hrms/leave/requests').set(s.auth).send({ ...body, fromDate: '2029-12-03', toDate: '2029-12-04' })).status).toBe(201);
@@ -186,7 +186,7 @@ describe('HRMS leave API', () => {
   it('HR posts opening balances and adjustments with a reason, never on their own balance', async () => {
     const s = await staff();
     const year = Number(day(0).slice(0, 4));
-    const body = { employmentPublicId: s.jobs.AE, leaveTypeCode: 'GL', year, entry: 'adjustment', days: -1.5, reason: 'Unpaid absence in March' };
+    const body = { employmentPublicId: s.jobs.AE, leaveTypeCode: 'EL', year, entry: 'adjustment', days: -1.5, reason: 'Unpaid absence in March' };
     expect((await http().post('/api/hrms/leave/ledger/adjustments').set(tech).send(body)).status).toBe(403);
     expect((await http().post('/api/hrms/leave/ledger/adjustments').set(hr).send({ ...body, reason: undefined })).status).toBe(400);
     expect((await http().post('/api/hrms/leave/ledger/adjustments').set(hr).send({ ...body, days: 0.3 })).status).toBe(400);

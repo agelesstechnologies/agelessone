@@ -47,13 +47,13 @@ describe('Tickets API', () => {
     };
     [head, otherHead, s1, s2, s3, onLeave] = await Promise.all(Array.from({ length: 6 }, () => newStaff(app, hr, admin, ['AE'])));
     atplStaff = await newStaff(app, hr, admin, ['ATPL']);
-    await grant(head.personId, 'supervisor', 'team');
-    await grant(otherHead.personId, 'supervisor', 'team');
+    await grant(head.personId, 'manager', 'team');
+    await grant(otherHead.personId, 'manager', 'team');
     const a = await newStaff(app, hr, admin, ['AE']);
     await grant(a.personId, 'admin_user', 'all');
     adminUser = a.auth;
     const c = await newStaff(app, hr, admin, ['AE', 'ATPL']);   // a supervisor working in both companies creates the tickets
-    await grant(c.personId, 'supervisor', 'team');
+    await grant(c.personId, 'manager', 'team');
     creator = c.auth;
     creatorId = c.personId;
     dept = await makeDept('AE', head.personId);
@@ -66,7 +66,7 @@ describe('Tickets API', () => {
       `INSERT INTO hrms.leave_requests (tenant_id, person_id, employment_id, legal_entity_id, leave_type_id, from_date, to_date, days, status, decided_by, decided_at, decided_as)
        SELECT 1, e.person_id, e.id, e.legal_entity_id, lt.id, $2, $2, 1, 'approved', hr.id, now(), 'hr'
          FROM hrms.employments e, hrms.leave_types lt, core.persons hr
-        WHERE e.public_id = $1 AND lt.tenant_id = 1 AND lt.code = 'GL' AND hr.public_id = $3`, [onLeave.jobs.AE, DAY, DEMO.hr.publicId]);
+        WHERE e.public_id = $1 AND lt.tenant_id = 1 AND lt.code = 'EL' AND hr.public_id = $3`, [onLeave.jobs.AE, DAY, DEMO.hr.publicId]);
   }, 60_000); // heavy setup: give it time when the whole suite runs in parallel
   afterAll(async () => { await db?.end(); await app?.close(); });
 
@@ -190,8 +190,10 @@ describe('Tickets API', () => {
       departmentPublicId: otherDept, scheduledAt: AT, details: { site: 'Goa' } });
     expect((await http().get(`/api/tickets/${theirs.body.publicId}`).set(head.auth)).status).toBe(404);
     expect((await http().patch(`/api/tickets/${theirs.body.publicId}`).set(head.auth).send({ title: 'Taken over' })).status).toBe(404);
-    const listed = (await http().get('/api/tickets').set(head.auth)).body.map((t: any) => t.department.publicId);
-    expect(new Set(listed)).toEqual(new Set([dept]));
+    // listed: their department's tickets and the ones they raised elsewhere, never another head's
+    const listed = (await http().get('/api/tickets').set(head.auth)).body.map((t: any) => t.publicId);
+    expect(listed).toContain(own.body.publicId);
+    expect(listed).not.toContain(theirs.body.publicId);
     expect((await assign(own.body.publicId, head.jobs.AE)).body.code).toBe('TICKETS_SELF_ASSIGN');
   });
 

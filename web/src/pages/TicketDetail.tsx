@@ -1,12 +1,12 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Download, Plus } from 'lucide-react';
 import {
-  AssignTicketRequest, ChecklistResultRequest, LinkTicketRequest, ReasonRequest, SignoffRequest, UpdateTicketRequest,
-  type ChecklistResult, type TicketDetail as Detail, type TicketSummary,
+  AddExternalStaffRequest, AssignTicketRequest, ChecklistResultRequest, EndExternalStaffRequest, LinkTicketRequest, ReasonRequest, SignoffRequest, UpdateTicketRequest,
+  type ChecklistResult, type ExternalStaff, type TicketDetail as Detail, type TicketSummary,
 } from '@ageless/shared';
 import { api, downloadFile, errText } from '../api';
 import { useAuth } from '../auth';
-import { dayLabel, useLoad } from '../hooks';
+import { dayLabel, todayIst, useLoad, uuidv7 } from '../hooks';
 import JobPicker from '../JobPicker';
 import { TICKETS } from '../permissions';
 import { TicketUpdates } from './TicketTime';
@@ -21,14 +21,17 @@ const REASON_TITLE = { hold: 'Put on hold', cancel: 'Cancel ticket', reopen: 'Re
 
 /** One ticket with every action the signed-in person may take. The API answers each action with the updated ticket. */
 export default function TicketDetail({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
-  const { can } = useAuth();
+  const { can, me } = useAuth();
   const q = useLoad(() => api<Detail>(`/tickets/${id}`), [id]);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const t = q.data;
   const manage = can(TICKETS.manage);
-  const work = can(TICKETS.work) || manage;
+  /** the on-site supervisor of this ticket: requirements, external staff, hold and resume (not create, assign or cancel) */
+  const siteSup = !manage && can(TICKETS.site) && !!t && t.supervisor.publicId === me?.person.publicId;
+  const runSite = manage || siteSup;
+  const work = can(TICKETS.work) || runSite;
   const live = t && t.status !== 'completed' && t.status !== 'cancelled';
 
   async function act(fn: () => Promise<Detail | void>) {
@@ -59,7 +62,7 @@ export default function TicketDetail({ id, onClose, onChanged }: { id: string; o
       <div className="detail-section">
         <div className="detail-row"><span>Scheduled</span><b>{stamp(t.scheduledAt)}</b></div>
         <div className="detail-row"><span>Due</span><b>{t.dueDate ? dayLabel(t.dueDate) : '—'}</b></div>
-        <div className="detail-row"><span>Site</span><b>{t.site ?? '—'}</b></div>
+        {(t.site || !('site' in t.details)) && <div className="detail-row"><span>Site</span><b>{t.site ?? '—'}</b></div>}
         <div className="detail-row"><span>Supervisor</span><b>{t.supervisor.displayName}</b></div>
         {t.description && <div className="detail-row"><span>Description</span><b>{t.description}</b></div>}
         {t.holdReason && t.status === 'on_hold' && <div className="detail-row"><span>On hold because</span><b>{t.holdReason}</b></div>}
@@ -98,6 +101,8 @@ export default function TicketDetail({ id, onClose, onChanged }: { id: string; o
           <button className="outline-btn" onClick={() => setDialog('signoff')}>Customer sign-off</button></div>}
       </div>
 
+      <ExternalStaffSection ticketId={id} canAdd={runSite && !!live} />
+
       {t.links.length > 0 && <div className="detail-section"><h3>Linked tickets</h3>
         {t.links.map((l) => <div className="detail-row" key={`${l.direction}-${l.ticket.publicId}`}>
           <span>{l.direction === 'to' ? l.kind.replace('_', ' ') : `${l.kind.replace('_', ' ')} (from)`}</span><b>{l.ticket.number} · {l.ticket.title} · {statusLabel(l.ticket.status)}</b></div>)}</div>}
@@ -109,13 +114,13 @@ export default function TicketDetail({ id, onClose, onChanged }: { id: string; o
 
       <div className="modal-foot" style={{ flexWrap: 'wrap' }}>
         <button className="outline-btn" onClick={() => setDialog('updates')}>Daily updates</button>
-        {live && manage && <button className="outline-btn" onClick={() => setDialog('edit')}>Edit</button>}
+        {live && runSite && <button className="outline-btn" onClick={() => setDialog('edit')}>{siteSup ? 'Edit requirements' : 'Edit'}</button>}
         {live && manage && <button className="outline-btn" onClick={() => setDialog('assign')}>Assign</button>}
         {live && manage && <button className="outline-btn" onClick={() => setDialog('link')}>Link ticket</button>}
         {live && manage && t.typeRules.completionRules.head_approval_required && !t.headApproval && <button className="outline-btn" disabled={busy} onClick={() => void post('head-approval')}>Head approval</button>}
         {live && work && (t.status === 'assigned' || t.status === 'open') && <button className="outline-btn" disabled={busy} onClick={() => void post('start')}>Start work</button>}
-        {live && manage && t.status === 'on_hold' && <button className="outline-btn" disabled={busy} onClick={() => void post('resume')}>Resume</button>}
-        {live && manage && t.status === 'in_progress' && <button className="outline-btn" onClick={() => setDialog({ reason: 'hold' })}>Hold</button>}
+        {live && runSite && t.status === 'on_hold' && <button className="outline-btn" disabled={busy} onClick={() => void post('resume')}>Resume</button>}
+        {live && runSite && t.status === 'in_progress' && <button className="outline-btn" onClick={() => setDialog({ reason: 'hold' })}>Hold</button>}
         {live && can(TICKETS.work) && t.assignees.length > 0 && <button className="outline-btn" onClick={() => setDialog({ reason: 'reassign-request' })}>Ask to be reassigned</button>}
         {live && manage && <button className="outline-btn" onClick={() => setDialog({ reason: 'cancel' })}>Cancel ticket</button>}
         {t.status === 'completed' && manage && <button className="outline-btn" onClick={() => setDialog({ reason: 'reopen' })}>Reopen</button>}
@@ -126,7 +131,7 @@ export default function TicketDetail({ id, onClose, onChanged }: { id: string; o
         {t.timeline.map((e, i) => <div className="detail-row" key={i}><span>{e.action.replace(/_/g, ' ')}{e.actor ? ` · ${e.actor.displayName}` : ''}</span><b>{stamp(e.at)}</b></div>)}</div>
     </>}
 
-    {t && dialog === 'edit' && <EditTicket t={t} onClose={() => setDialog(null)} run={(body) => act(() => api<Detail>(`/tickets/${id}`, { method: 'PATCH', json: body }))} />}
+    {t && dialog === 'edit' && <EditTicket t={t} limited={siteSup} onClose={() => setDialog(null)} run={(body) => act(() => api<Detail>(`/tickets/${id}`, { method: 'PATCH', json: body }))} />}
     {t && dialog === 'updates' && <TicketUpdates ticketId={id} label={t.number} onClose={() => setDialog(null)} />}
     {t && dialog === 'assign' && <AssignTicket onClose={() => setDialog(null)} run={(body) => act(() => api<Detail>(`/tickets/${id}/assignees`, { method: 'PUT', json: body }))} />}
     {t && dialog === 'link' && <LinkTicket t={t} onClose={() => setDialog(null)} run={(body) => act(() => api<Detail>(`/tickets/${id}/links`, { method: 'POST', json: body }))} />}
@@ -150,16 +155,17 @@ function Reason({ title, onClose, run }: { title: string; onClose: () => void; r
     <div className="modal-foot"><button type="button" className="outline-btn" onClick={onClose}>Close</button><button className="primary-btn">{title}</button></div></form></Modal>;
 }
 
-function EditTicket({ t, onClose, run }: { t: Detail; onClose: () => void; run: (b: UpdateTicketRequest) => Promise<void> }) {
+/** Edit a ticket. limited (the on-site supervisor): the requirements only, not the title or priority. */
+function EditTicket({ t, limited, onClose, run }: { t: Detail; limited: boolean; onClose: () => void; run: (b: UpdateTicketRequest) => Promise<void> }) {
   const [error, setError] = useState('');
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const text = (k: string) => String(f.get(k) ?? '').trim();
     const body: Record<string, unknown> = {};
-    if (text('title') !== t.title) body.title = text('title');
+    if (f.has('title') && text('title') !== t.title) body.title = text('title');
     if (text('description') !== (t.description ?? '')) body.description = text('description') || null;
-    if (Number(f.get('priority')) !== t.priority) body.priority = Number(f.get('priority'));
+    if (f.has('priority') && Number(f.get('priority')) !== t.priority) body.priority = Number(f.get('priority'));
     if (text('site') !== (t.site ?? '')) body.site = text('site') || null;
     if (text('due') !== (t.dueDate ?? '')) body.dueDate = text('due') || null;
     const parsed = UpdateTicketRequest.safeParse(body);
@@ -169,9 +175,9 @@ function EditTicket({ t, onClose, run }: { t: Detail; onClose: () => void; run: 
   return <Modal title="Edit ticket" subtitle={t.number} onClose={onClose}><form onSubmit={submit}>
     {error && <Notice>{error}</Notice>}
     <div className="form-grid">
-      <label className="span-two">Title<input id="te-title" name="title" required minLength={3} maxLength={150} defaultValue={t.title} /></label>
+      {!limited && <label className="span-two">Title<input id="te-title" name="title" required minLength={3} maxLength={150} defaultValue={t.title} /></label>}
       <label className="span-two">Description<input id="te-desc" name="description" maxLength={1000} defaultValue={t.description ?? ''} /></label>
-      <label>Priority<select id="te-priority" name="priority" defaultValue={t.priority}>{[1, 2, 3, 4, 5].map((p) => <option key={p} value={p}>{p}{p === 1 ? ' (highest)' : p === 5 ? ' (lowest)' : ''}</option>)}</select></label>
+      {!limited && <label>Priority<select id="te-priority" name="priority" defaultValue={t.priority}>{[1, 2, 3, 4, 5].map((p) => <option key={p} value={p}>{p}{p === 1 ? ' (highest)' : p === 5 ? ' (lowest)' : ''}</option>)}</select></label>}
       <label>Due date<input id="te-due" name="due" type="date" defaultValue={t.dueDate ?? ''} /></label>
       <label className="span-two">Site<input id="te-site" name="site" maxLength={200} defaultValue={t.site ?? ''} /></label>
     </div>
@@ -240,4 +246,71 @@ function Signoff({ onClose, run }: { onClose: () => void; run: (b: FormData) => 
       <label className="span-two">Photo<input id="so-photo" name="photo" type="file" accept="image/jpeg,image/png" required /></label>
     </div>
     <div className="modal-foot"><button type="button" className="outline-btn" onClick={onClose}>Close</button><button className="primary-btn">Record sign-off</button></div></form></Modal>;
+}
+
+/** Outside workers on site (contractor or agency staff): who, from where, which trade, which days, and a photo. */
+function ExternalStaffSection({ ticketId, canAdd }: { ticketId: string; canAdd: boolean }) {
+  const list = useLoad(() => api<ExternalStaff[]>(`/tickets/${ticketId}/external-staff`), [ticketId]);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState('');
+  async function end(s: ExternalStaff) {
+    setError('');
+    const parsed = EndExternalStaffRequest.safeParse({ toDate: todayIst() < s.fromDate ? s.fromDate : todayIst() });
+    if (!parsed.success) return;
+    try { list.setData(await api<ExternalStaff[]>(`/tickets/${ticketId}/external-staff/${s.publicId}/end`, { method: 'POST', json: parsed.data })); }
+    catch (e) { setError(errText(e)); }
+  }
+  async function photo(s: ExternalStaff) {
+    setError('');
+    try { await downloadFile(`/tickets/${ticketId}/external-staff/${s.publicId}/photo`, `${s.name}.jpg`); } catch (e) { setError(errText(e)); }
+  }
+  const rows = list.data ?? [];
+  return <div className="detail-section"><h3>External staff</h3>
+    {error && <Notice onClose={() => setError('')}>{error}</Notice>}
+    {list.error && <Notice>{list.error}</Notice>}
+    {list.loading && !list.data ? <Loading /> : !rows.length ? <p className="muted-text">No outside workers recorded.</p> :
+      rows.map((s) => <div className="detail-row ext-staff" key={s.publicId}>
+        <span><b>{s.name}</b>
+          {(s.trade || s.agency || s.phone) && <span>{[s.trade, s.agency, s.phone].filter(Boolean).join(' · ')}</span>}
+          <small className="muted-text">{dayLabel(s.fromDate)} – {s.toDate ? dayLabel(s.toDate) : 'on site'} · added by {s.addedBy.displayName}</small></span>
+        <span className="chip-row">
+          {s.hasPhoto && <button className="text-btn" onClick={() => void photo(s)}><Download size={12} /> Photo</button>}
+          {canAdd && !s.toDate && <button className="text-btn" onClick={() => void end(s)}>Last day today</button>}
+        </span></div>)}
+    {canAdd && <div className="chip-row"><button className="outline-btn" onClick={() => setAdding(true)}><Plus size={13} /> Add external staff</button></div>}
+    {adding && <AddExternalStaff onClose={() => setAdding(false)}
+      run={async (body) => { list.setData(await api<ExternalStaff[]>(`/tickets/${ticketId}/external-staff`, { method: 'POST', body })); setAdding(false); }} />}
+  </div>;
+}
+
+function AddExternalStaff({ onClose, run }: { onClose: () => void; run: (b: FormData) => Promise<void> }) {
+  const id = useRef(uuidv7());            // the same id on a retry, so the worker is stored once
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const text = (k: string) => String(f.get(k) ?? '').trim();
+    const parsed = AddExternalStaffRequest.safeParse({ publicId: id.current, name: text('name'), phone: text('phone'), agency: text('agency'),
+      trade: text('trade'), fromDate: text('from'), toDate: text('to') });
+    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    const body = new FormData();
+    for (const [k, v] of Object.entries(parsed.data)) if (v !== undefined) body.append(k, String(v));
+    const p = f.get('photo');
+    if (p instanceof File && p.size > 0) body.append('photo', p);
+    setBusy(true); setError('');
+    try { await run(body); } catch (err) { setError(errText(err)); } finally { setBusy(false); }
+  }
+  return <Modal title="Add external staff" subtitle="A contractor's or agency's worker on this site." onClose={onClose}><form onSubmit={submit}>
+    {error && <Notice>{error}</Notice>}
+    <div className="form-grid">
+      <label>Name<input id="xs-name" name="name" required minLength={2} maxLength={100} autoFocus /></label>
+      <label>Phone <span className="optional">optional</span><input id="xs-phone" name="phone" type="tel" maxLength={20} /></label>
+      <label>Agency / contractor <span className="optional">optional</span><input id="xs-agency" name="agency" maxLength={100} /></label>
+      <label>Trade / work <span className="optional">optional</span><input id="xs-trade" name="trade" maxLength={60} placeholder="Welder, electrician, helper…" /></label>
+      <label>First day on site<input id="xs-from" name="from" type="date" required defaultValue={todayIst()} /></label>
+      <label>Last day <span className="optional">optional</span><input id="xs-to" name="to" type="date" /></label>
+      <label className="span-two">Photo <span className="optional">optional, JPEG or PNG</span><input id="xs-photo" name="photo" type="file" accept="image/jpeg,image/png" /></label>
+    </div>
+    <div className="modal-foot"><button type="button" className="outline-btn" onClick={onClose}>Close</button><button className="primary-btn" disabled={busy}>Add</button></div></form></Modal>;
 }

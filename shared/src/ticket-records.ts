@@ -181,3 +181,31 @@ export const TicketDetail = TicketSummary.extend({
   warnings: z.array(TicketWarning),
 });
 export type TicketDetail = z.infer<typeof TicketDetail>;
+
+// ---------------- external staff on a ticket ----------------
+
+const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
+const optionalText = (max: number) => z.preprocess((v) => (v === '' ? undefined : v), z.string().trim().min(1).max(max).optional());
+
+/** POST /api/tickets/:publicId/external-staff (multipart: these fields, and an optional `photo`, JPEG or PNG). */
+export const AddExternalStaffRequest = z.object({
+  publicId: z.preprocess((v) => (v === '' ? undefined : v), z.string().uuid().optional()),
+  name: z.string().trim().min(2, 'Give their name').max(100),
+  phone: optionalText(20),
+  agency: optionalText(100),     // the contractor or agency they come from
+  trade: optionalText(60),       // e.g. welder, electrician, helper
+  fromDate: dateOnly,
+  toDate: z.preprocess((v) => (v === '' ? undefined : v), dateOnly.optional()),
+}).refine((r) => !r.toDate || r.toDate >= r.fromDate, { message: 'The last day is before the first', path: ['toDate'] });
+export type AddExternalStaffRequest = z.infer<typeof AddExternalStaffRequest>;
+
+/** POST /api/tickets/:publicId/external-staff/:staffId/end: their last day on site. */
+export const EndExternalStaffRequest = z.object({ toDate: dateOnly });
+export type EndExternalStaffRequest = z.infer<typeof EndExternalStaffRequest>;
+
+export const ExternalStaff = z.object({
+  publicId: z.string().uuid(), name: z.string(), phone: z.string().nullable(), agency: z.string().nullable(), trade: z.string().nullable(),
+  fromDate: z.string(), toDate: z.string().nullable(), hasPhoto: z.boolean(),
+  addedBy: z.object({ publicId: z.string().uuid(), displayName: z.string() }), addedAt: z.string(),
+});
+export type ExternalStaff = z.infer<typeof ExternalStaff>;

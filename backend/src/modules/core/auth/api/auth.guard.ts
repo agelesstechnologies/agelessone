@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, Inject, Injectable, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AppError } from '../../../../platform/http/app-error';
-import { ANY_SIGNED_IN, IS_PUBLIC, REQUIRED_PERMISSION, RequestContext } from '../../../../platform/http/request-context';
+import { ANY_SIGNED_IN, DURING_PASSWORD_SETUP, IS_PUBLIC, REQUIRED_PERMISSION, RequestContext } from '../../../../platform/http/request-context';
 import { AuthService } from '../application/auth.service';
 
 /**
@@ -22,6 +22,9 @@ export class AuthGuard implements CanActivate {
     const [kind, token] = (req.headers.authorization ?? '').split(' ');
     if (kind !== 'Bearer' || !token) throw new AppError('AUTH_MISSING', 401, 'Sign in first (Authorization: Bearer <token>)');
     req.context = await this.auth.authenticate(token);
+    if (req.context.mustChangePassword && !this.reflector.getAllAndOverride<boolean>(DURING_PASSWORD_SETUP, targets)) {
+      throw new AppError('AUTH_PASSWORD_CHANGE_REQUIRED', 403, 'Set your own password first');
+    }
 
     const required = this.reflector.getAllAndOverride<string | string[] | undefined>(REQUIRED_PERMISSION, targets);
     if (!required) {

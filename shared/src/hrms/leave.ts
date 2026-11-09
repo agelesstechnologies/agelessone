@@ -53,6 +53,7 @@ export const LeaveRequestView = z.object({
   fromDate: DateOnly, toDate: DateOnly,
   fromHalf: z.enum(['full', 'second_half']), toHalf: z.enum(['full', 'first_half']),
   days: z.number(),
+  unpaidDays: z.number(),          // days beyond the balance when approved: loss of pay (the last days of the leave)
   reason: z.string().nullable(),
   status: LeaveStatus,
   approver: PersonRef.nullable(),  // manager, department head, HR, then CEO; null only when nobody is left

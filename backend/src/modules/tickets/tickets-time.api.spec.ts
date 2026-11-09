@@ -51,11 +51,11 @@ describe('Ticket time API', () => {
     const grant = (personId: string, roleCode: string, scope: string) =>
       http().post('/api/core/role-assignments').set(admin).send({ personPublicId: personId, roleCode, scope }).expect(201);
     [head, otherHead] = await Promise.all([newStaff(app, hr, admin, ['AE']), newStaff(app, hr, admin, ['AE'])]);
-    await grant(head.personId, 'supervisor', 'team');
-    await grant(otherHead.personId, 'supervisor', 'team');
+    await grant(head.personId, 'manager', 'team');
+    await grant(otherHead.personId, 'manager', 'team');
     const a = await newStaff(app, hr, admin, ['AE']);
     await grant(a.personId, 'admin_user', 'all');
-    await grant(a.personId, 'supervisor', 'team');   // admin user no longer creates tickets: a supervisor of the company does
+    await grant(a.personId, 'manager', 'team');   // admin user no longer creates tickets: a supervisor of the company does
     adminUser = a.auth;
     dept = (await http().post('/api/hrms/departments').set(hr).send({ company: 'AE', name: `Time ${tag()}`, codePrefix: letters() }).expect(201)).body.publicId;
     await http().patch(`/api/hrms/departments/${dept}`).set(hr).send({ headPublicId: head.personId }).expect(200);

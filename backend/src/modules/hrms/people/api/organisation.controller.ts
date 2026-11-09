@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { z } from 'zod';
 import {
-  CreateDepartmentRequest, CreatePositionRequest, Department, DepartmentsQuery, Designation, DesignationsQuery, FillPositionRequest, Position, PositionsQuery, PositionStatusRequest, UpdateDepartmentRequest,
+  CreateDepartmentRequest, CreatePositionRequest, Department, DepartmentsQuery, Designation, DesignationsQuery, FillPositionRequest, NextEmployeeCode, Position, PositionsQuery, PositionStatusRequest, UpdateDepartmentRequest,
 } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
 import { Ctx, MANAGEMENT, Permission, RequestContext, SignedIn } from '../../../../platform/http/request-context';
@@ -19,6 +19,12 @@ export class OrganisationController {
   @SignedIn() @Get('departments')
   departments(@Ctx() ctx: RequestContext, @Query(new ZodValidationPipe(DepartmentsQuery)) q: DepartmentsQuery) {
     return this.service.departments(ctx, q);
+  }
+
+  @Doc({ summary: 'The employee code the next person in this department would get (ATS004 …); reserved only when the job is saved', response: NextEmployeeCode })
+  @Permission(PEOPLE.create, PEOPLE.manageEmployments) @Get('departments/:publicId/next-employee-code')
+  nextEmployeeCode(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string) {
+    return this.service.nextEmployeeCode(ctx, publicId);
   }
 
   @Doc({ summary: 'Add a department (name and employee-code prefix)', response: Department })

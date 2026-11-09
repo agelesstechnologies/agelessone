@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Activity, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, CircleHelp, ClipboardCheck, Crown, LayoutDashboard, LoaderCircle, Lock, LogOut, Menu, SlidersHorizontal, Users, Wallet, X } from 'lucide-react';
+import { Activity, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, CircleHelp, ClipboardCheck, Crown, KeyRound, LayoutDashboard, LoaderCircle, Lock, LogOut, Menu, SlidersHorizontal, Users, Wallet, X } from 'lucide-react';
 import { AuthProvider, useAuth } from './auth';
 import { ATTENDANCE, EXPENSES, LEAVE, MANAGEMENT, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
 import Approvals from './pages/Approvals';
@@ -9,6 +9,7 @@ import Calendar from './pages/Calendar';
 import Expenses from './pages/Expenses';
 import Leave from './pages/Leave';
 import Login from './pages/Login';
+import FirstLogin from './pages/FirstLogin';
 import MonthLocks from './pages/MonthLocks';
 import Organisation from './pages/Organisation';
 import Overview from './pages/Overview';
@@ -17,6 +18,7 @@ import People from './pages/People';
 import Policies from './pages/Policies';
 import Skills from './pages/Skills';
 import Tickets from './pages/Tickets';
+import ChangePassword from './ChangePassword';
 import { Modal } from './ui';
 
 type PageKey = 'overview' | 'ceo' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies';
@@ -50,6 +52,7 @@ function Shell() {
   const [page, setPage] = useState<PageKey>(pageFromHash);
   const [mobileNav, setMobileNav] = useState(false);
   const [confirmOut, setConfirmOut] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const go = useCallback((p: string) => { window.location.hash = p; setMobileNav(false); }, []);
   useEffect(() => {
     const onHash = () => setPage(pageFromHash());
@@ -76,6 +79,7 @@ function Shell() {
       <div className="sidebar-bottom">
         <div className="help-card"><div className="help-icon"><CircleHelp size={18} /></div><div><b>Need a hand?</b><small>Visit the help center</small></div></div>
         <div className="profile"><div className="avatar avatar-blue">{initials}</div><div><b>{me.person.displayName}</b><small>{role}</small></div>
+          <button className="icon-button" onClick={() => setChangingPassword(true)} aria-label="Change password" title="Change password"><KeyRound size={17} /></button>
           <button className="icon-button" onClick={() => setConfirmOut(true)} aria-label="Sign out" title="Sign out"><LogOut size={17} /></button></div>
       </div>
     </aside>
@@ -101,6 +105,7 @@ function Shell() {
         <footer className="footer"><span>© 2026 Ageless Universe</span><span>Built for the people who make it happen <span className="heart">♥</span></span><span>v0.1.0</span></footer>
       </div>
     </main>
+    {changingPassword && <ChangePassword onClose={() => setChangingPassword(false)} />}
     {confirmOut && <Modal title="Sign out?" subtitle="You will need to sign in again to continue." onClose={() => setConfirmOut(false)}>
       <div className="modal-foot"><button type="button" className="outline-btn" onClick={() => setConfirmOut(false)} autoFocus>Stay signed in</button>
         <button type="button" className="primary-btn" onClick={() => { setConfirmOut(false); logout(); }}>Sign out</button></div>
@@ -111,7 +116,9 @@ function Shell() {
 function Gate() {
   const { me, loading } = useAuth();
   if (loading) return <div className="boot"><LoaderCircle className="spin" size={22} />Loading…</div>;
-  return me ? <Shell /> : <Login />;
+  if (!me) return <Login />;
+  // a temporary password (new login, admin reset): set your own before anything else
+  return me.user.mustChangePassword ? <FirstLogin /> : <Shell />;
 }
 
 export default function App() {

@@ -41,7 +41,7 @@ describe('Ticket types API', () => {
       http().post('/api/core/role-assignments').set(admin).send({ personPublicId: personId, roleCode, scope }).expect(201);
     const h = await newStaff(app, hr, admin, ['ATPL']);
     headPersonId = h.personId;
-    await grant(h.personId, 'supervisor', 'team');
+    await grant(h.personId, 'manager', 'team');
     head = h.auth;
     const a = await newStaff(app, hr, admin, ['ATPL']);
     await grant(a.personId, 'admin_user', 'all');

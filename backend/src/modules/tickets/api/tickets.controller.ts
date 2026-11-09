@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Put, Query
 import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import {
-  ApproveReassignRequest, AssignTicketRequest, AttachmentRequest, ChecklistResultRequest, CreateTicketRequest, LinkTicketRequest,
+  AddExternalStaffRequest, ApproveReassignRequest, AssignTicketRequest, AttachmentRequest, EndExternalStaffRequest, ExternalStaff, ChecklistResultRequest, CreateTicketRequest, LinkTicketRequest,
   MyTicketsQuery, NumberSeries, NumberSeriesRequest, ReasonRequest, ReassignmentRequest, ReassignRequestsQuery, SignoffRequest, TicketDetail,
   TicketsQuery, TicketSummary, UpdateTicketRequest,
 } from '@ageless/shared';
@@ -92,7 +92,7 @@ export class TicketsController {
   }
 
   @Doc({ summary: 'Change details (not after completion or cancellation)', response: TicketDetail, description: MANAGE })
-  @Permission(TICKETS.manage) @Patch(':publicId')
+  @Permission(TICKETS.manage, TICKETS.site) @Patch(':publicId')
   update(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string, @Body(new ZodValidationPipe(UpdateTicketRequest)) body: UpdateTicketRequest) {
     return this.service.update(ctx, publicId, body);
   }
@@ -110,13 +110,13 @@ export class TicketsController {
   }
 
   @Doc({ summary: 'Put on hold (reason required)', response: TicketDetail, description: MANAGE })
-  @Permission(TICKETS.manage) @Post(':publicId/hold') @HttpCode(200)
+  @Permission(TICKETS.manage, TICKETS.site) @Post(':publicId/hold') @HttpCode(200)
   hold(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string, @Body(new ZodValidationPipe(ReasonRequest)) body: ReasonRequest) {
     return this.service.hold(ctx, publicId, body.reason);
   }
 
   @Doc({ summary: 'Resume a ticket on hold', response: TicketDetail, description: MANAGE })
-  @Permission(TICKETS.manage) @Post(':publicId/resume') @HttpCode(200)
+  @Permission(TICKETS.manage, TICKETS.site) @Post(':publicId/resume') @HttpCode(200)
   resume(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string) {
     return this.service.resume(ctx, publicId);
   }
@@ -153,6 +153,38 @@ export class TicketsController {
   attach(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string, @Body(new ZodValidationPipe(AttachmentRequest)) body: AttachmentRequest,
     @UploadedFile() file: TicketUpload | undefined) {
     return this.work.attach(ctx, publicId, body.kind, file);
+  }
+
+  @Doc({ summary: "The ticket's external staff (outside workers), earliest first", response: z.array(ExternalStaff) })
+  @Permission(...SEE) @Get(':publicId/external-staff')
+  externalStaff(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string) {
+    return this.work.externalStaff(ctx, publicId);
+  }
+
+  @Doc({ summary: 'Add an outside worker (name, phone, agency, trade, days on site) with an optional photo (JPEG, PNG)', response: z.array(ExternalStaff),
+    multipart: 'photo', resend: true, description: "The ticket's on-site supervisor (tickets.site), a manager or the department head." })
+  @Permission(TICKETS.manage, TICKETS.site) @Post(':publicId/external-staff')
+  @UseInterceptors(FileInterceptor('photo', UPLOAD))
+  addExternalStaff(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string,
+    @Body(new ZodValidationPipe(AddExternalStaffRequest)) body: AddExternalStaffRequest, @UploadedFile() photo: TicketUpload | undefined) {
+    return this.work.addExternalStaff(ctx, publicId, body, photo);
+  }
+
+  @Doc({ summary: "An outside worker's last day on site", response: z.array(ExternalStaff) })
+  @Permission(TICKETS.manage, TICKETS.site) @Post(':publicId/external-staff/:staffId/end') @HttpCode(200)
+  endExternalStaff(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string, @Param('staffId', PublicIdParam) staffId: string,
+    @Body(new ZodValidationPipe(EndExternalStaffRequest)) body: EndExternalStaffRequest) {
+    return this.work.endExternalStaff(ctx, publicId, staffId, body);
+  }
+
+  @Doc({ summary: "An outside worker's photo", file: true })
+  @Permission(...SEE) @Get(':publicId/external-staff/:staffId/photo')
+  async externalStaffPhoto(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string,
+    @Param('staffId', PublicIdParam) staffId: string, @Res() res: FileReply) {
+    const f = await this.work.externalStaffPhoto(ctx, publicId, staffId);
+    res.setHeader('Content-Type', f.type);
+    res.setHeader('Content-Disposition', `inline; filename="${f.name}"`);
+    res.send(f.data);
   }
 
   @Doc({ summary: 'Download an attachment', file: true })

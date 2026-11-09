@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  ApproveReassignRequest, ChecklistResultRequest, LinkTicketRequest, ReassignmentRequest, ReassignRequestsQuery, SignoffRequest, TicketDetail,
+  AddExternalStaffRequest, ApproveReassignRequest, ChecklistResultRequest, EndExternalStaffRequest, ExternalStaff, LinkTicketRequest, ReassignmentRequest,
+  ReassignRequestsQuery, SignoffRequest, TicketDetail,
 } from '@ageless/shared';
 import { DB, Db, Tx, violatedConstraint } from '../../../platform/db/db.module';
 import { AppError } from '../../../platform/http/app-error';
@@ -232,10 +234,79 @@ export class TicketWorkService {
     return { r, t, as: (named ? 'approver' : 'management') as 'approver' | 'management' };
   }
 
+  // ---- external staff (outside workers on the ticket) ----
+
+  /** The ticket's outside workers (anyone who may see the ticket). */
+  async externalStaff(ctx: RequestContext, publicId: string): Promise<ExternalStaff[]> {
+    const { t } = await this.tickets.load(this.db, ctx, publicId, 'view');
+    return (await this.repo.externalStaff(this.db, t.id)).map(toExternal);
+  }
+
+  /**
+   * Add an outside worker: the on-site supervisor, a manager or the department head; an optional photo (JPEG, PNG).
+   * Sent twice with the same publicId: stored once. Not on a finished ticket.
+   */
+  async addExternalStaff(ctx: RequestContext, publicId: string, req: AddExternalStaffRequest, photo: TicketUpload | undefined): Promise<ExternalStaff[]> {
+    const id = req.publicId ?? randomUUID();
+    if (req.publicId) {
+      const tenant = await this.repo.externalStaffTenant(req.publicId);
+      if (tenant === ctx.tenantId) return this.externalStaff(ctx, publicId);
+      if (tenant !== undefined) throw new AppError('TICKETS_DUPLICATE_ID', 409, 'This publicId is already used');
+    }
+    const type = photo ? this.fileType(photo, ['jpg', 'png']) : undefined;
+    const { t: before } = await this.tickets.load(this.db, ctx, publicId, 'site');
+    this.tickets.requireUnfinished(before);
+    const path = photo && type ? await saveUpload('tickets', type, photo.buffer) : undefined;
+    try {
+      await this.db.transaction(async (tx) => {
+        const { t } = await this.tickets.load(tx, ctx, publicId, 'site', true);
+        await this.repo.insertExternalStaff(tx, {
+          tenantId: t.tenantId, publicId: id, ticketId: t.id, legalEntityId: t.legalEntityId, name: req.name, phone: req.phone ?? null,
+          agency: req.agency ?? null, trade: req.trade ?? null, fromDate: req.fromDate, toDate: req.toDate ?? null,
+          photoPath: path ?? null, photoType: path ? type! : null, addedBy: ctx.personId,
+        });
+        await this.tickets.event(tx, ctx.personId, t, 'external_staff_added', { externalStaff: id });
+      });
+    } catch (err) {
+      if (path) await discardUpload(path);
+      throw err;
+    }
+    return this.externalStaff(ctx, publicId);
+  }
+
+  /** Their last day on site. */
+  async endExternalStaff(ctx: RequestContext, publicId: string, staffPublicId: string, req: EndExternalStaffRequest): Promise<ExternalStaff[]> {
+    await this.db.transaction(async (tx) => {
+      const { t } = await this.tickets.load(tx, ctx, publicId, 'site', true);
+      const row = (await this.repo.externalStaff(tx, t.id)).find((x) => x.publicId === staffPublicId);
+      if (!row) throw new AppError('TICKETS_EXTERNAL_STAFF_NOT_FOUND', 404, 'Unknown external staff');
+      if (req.toDate < row.fromDate) throw new AppError('TICKETS_EXTERNAL_STAFF_DATES', 400, 'The last day is before the first');
+      await this.repo.endExternalStaff(tx, row.id, req.toDate);
+      await this.tickets.event(tx, ctx.personId, t, 'external_staff_ended', { externalStaff: staffPublicId, toDate: req.toDate });
+    });
+    return this.externalStaff(ctx, publicId);
+  }
+
+  async externalStaffPhoto(ctx: RequestContext, publicId: string, staffPublicId: string): Promise<{ type: string; name: string; data: Buffer }> {
+    const { t } = await this.tickets.load(this.db, ctx, publicId, 'view');
+    const row = (await this.repo.externalStaff(this.db, t.id)).find((x) => x.publicId === staffPublicId);
+    if (!row?.photoPath) throw new AppError('TICKETS_EXTERNAL_STAFF_NOT_FOUND', 404, 'No photo');
+    return { type: CONTENT_TYPES[row.photoType as DocumentType], name: `${t.number}-external-${row.name.replace(/[^A-Za-z0-9]+/g, '-')}.${row.photoType}`,
+      data: await readUpload(row.photoPath) };
+  }
+
   private fileType(file: TicketUpload | undefined, allowed: DocumentType[]): DocumentType {
     if (!file) throw new AppError('TICKETS_FILE_REQUIRED', 400, 'Attach the file (field file)');
     const type = detectDocumentType(file.buffer);
     if (!type || !allowed.includes(type)) throw new AppError('TICKETS_FILE_TYPE', 400, `Only ${allowed.join(', ').toUpperCase()} files are accepted here`);
     return type;
   }
+}
+
+type ExternalRow = Awaited<ReturnType<TicketsRepository['externalStaff']>>[number];
+function toExternal(r: ExternalRow): ExternalStaff {
+  return {
+    publicId: r.publicId, name: r.name, phone: r.phone, agency: r.agency, trade: r.trade, fromDate: r.fromDate, toDate: r.toDate,
+    hasPhoto: r.photoPath !== null, addedBy: { publicId: r.addedByPublicId, displayName: r.addedByName }, addedAt: r.addedAt.toISOString(),
+  };
 }

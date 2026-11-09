@@ -11,6 +11,8 @@ export const leaveTypes = hrms.table('leave_types', {
   name: text('name').notNull(),
   policyKey: text('policy_key').notNull(),
   isPaid: boolean('is_paid').notNull().default(true),
+  // inactive types (e.g. the old General leave) stay for history but can no longer be applied for
+  isActive: boolean('is_active').notNull().default(true),
 }, (t) => [
   unique('leave_types_tenant_code_unique').on(t.tenantId, t.code),
 ]);
@@ -32,6 +34,8 @@ export const leaveRequests = hrms.table('leave_requests', {
   fromHalf: text('from_half').notNull().default('full'),
   toHalf: text('to_half').notNull().default('full'),
   days: numeric('days', { precision: 5, scale: 1 }).notNull(),
+  // days beyond the balance when approved: loss of pay (the last days of the request); the rest are paid
+  unpaidDays: numeric('unpaid_days', { precision: 5, scale: 1 }).notNull().default('0'),
   reason: text('reason'),
   status: text('status').notNull().default('submitted'),
   approverPersonId: bigint('approver_person_id', { mode: 'number' }).references(() => persons.id),
@@ -55,6 +59,7 @@ export const leaveRequests = hrms.table('leave_requests', {
   check('leave_requests_halves_check', sql`from_half IN ('full','second_half') AND to_half IN ('full','first_half')`),
   check('leave_requests_dates_check', sql`to_date >= from_date`),
   check('leave_requests_days_check', sql`days > 0`),
+  check('leave_requests_unpaid_days_check', sql`unpaid_days >= 0 AND unpaid_days <= days`),
   check('leave_requests_not_own_decision', sql`decided_by IS NULL OR decided_by <> person_id`),
   check('leave_requests_not_own_approver', sql`approver_person_id IS NULL OR approver_person_id <> person_id`),
   check('leave_requests_decided_fields', sql`status = 'cancelled' OR (status IN ('approved','rejected')) = (decided_at IS NOT NULL AND decided_as IS NOT NULL)`),
@@ -80,16 +85,22 @@ export const leaveLedger = hrms.table('leave_ledger', {
   days: numeric('days', { precision: 5, scale: 1 }).notNull(),
   leaveRequestId: bigint('leave_request_id', { mode: 'number' }).references(() => leaveRequests.id),
   reason: text('reason'),
-  postedBy: bigint('posted_by', { mode: 'number' }).notNull().references(() => persons.id),
+  // null only for the daily job's monthly entitlement and year-end lapse
+  postedBy: bigint('posted_by', { mode: 'number' }).references(() => persons.id),
+  // grant: the month it is for (its 1st day); lapse: the year it ends (31 December)
+  period: date('period'),
   postedAt: timestamp('posted_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   foreignKey({ name: 'leave_ledger_employment_company_fk', columns: [t.employmentId, t.legalEntityId], foreignColumns: [employments.id, employments.legalEntityId] }),
   index('idx_leave_ledger_balance').on(t.employmentId, t.leaveTypeId, t.year),
   uniqueIndex('uq_leave_ledger_one_opening').on(t.employmentId, t.leaveTypeId, t.year).where(sql`entry = 'opening'`),
   uniqueIndex('uq_leave_ledger_request_entry').on(t.leaveRequestId, t.entry, t.year).where(sql`leave_request_id IS NOT NULL`),
-  check('leave_ledger_entry_check', sql`entry IN ('opening','grant','taken','taken_reversal','adjustment')`),
+  check('leave_ledger_entry_check', sql`entry IN ('opening','grant','taken','taken_reversal','adjustment','lapse')`),
+  uniqueIndex('uq_leave_ledger_period').on(t.employmentId, t.leaveTypeId, t.entry, t.period).where(sql`period IS NOT NULL`),
+  check('leave_ledger_lapse_sign', sql`entry <> 'lapse' OR days < 0`),
+  check('leave_ledger_system_entries', sql`posted_by IS NOT NULL OR entry IN ('grant','lapse')`),
   check('leave_ledger_days_not_zero', sql`days <> 0`),
   check('leave_ledger_taken_sign', sql`(entry <> 'taken' OR days < 0) AND (entry <> 'taken_reversal' OR days > 0)`),
   check('leave_ledger_request_link', sql`(entry IN ('taken','taken_reversal')) = (leave_request_id IS NOT NULL)`),
-  check('leave_ledger_reason_required', sql`entry NOT IN ('opening','adjustment','grant') OR reason IS NOT NULL`),
+  check('leave_ledger_reason_required', sql`entry NOT IN ('opening','adjustment','grant','lapse') OR reason IS NOT NULL`),
 ]);

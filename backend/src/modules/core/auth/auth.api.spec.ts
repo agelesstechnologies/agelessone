@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../../../app.module';
 import { createTestApp, DEMO, signIn } from '../../../test/create-app';
 import { fakePhone, peopleApi, tag } from '../../../test/people';
+import { finishFirstLogin, TEMP_PASSWORD } from '../../../test/staff';
 
 // A route with no access rule, to prove the guard closes it.
 @Controller('test/no-rule')
@@ -23,8 +24,9 @@ describe('Sign-in and roles', () => {
   async function newStaff(role?: { code: string; scope: string }) {
     const personId = await peopleApi(app, hr).createPerson();
     const login = `staff.${tag().toLowerCase()}@example.com`;
-    const user = await http().post('/api/core/users').set(admin).send({ personPublicId: personId, loginEmail: login, password: 'first-pass-1' });
+    const user = await http().post('/api/core/users').set(admin).send({ personPublicId: personId, loginEmail: login, password: TEMP_PASSWORD });
     expect(user.status).toBe(201);
+    await finishFirstLogin(app, login, TEMP_PASSWORD, 'first-pass-1');
     let assignment: string | undefined;
     if (role) {
       const a = await http().post('/api/core/role-assignments').set(admin).send({ personPublicId: personId, roleCode: role.code, scope: role.scope });
@@ -63,13 +65,16 @@ describe('Sign-in and roles', () => {
       const res = await http().get('/api/auth/me').set(sup);
       expect(res.status).toBe(200);
       expect(res.body.person).toEqual({ publicId: DEMO.supervisor.publicId, displayName: 'Demo Supervisor' });
-      expect(res.body.roles).toEqual([expect.objectContaining({ code: 'supervisor', scope: 'team' })]);
+      // Demo Supervisor supervises on site and also leads a team (Manager)
+      expect(res.body.roles).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'supervisor', scope: 'team' }), expect.objectContaining({ code: 'manager', scope: 'team' })]));
+      expect(res.body.roles).toHaveLength(2);
       expect(res.body.permissions).toEqual({
-        'hrms.people.view': 'team', 'hrms.employments.update': 'team', 'hrms.expenses.submit': 'team', 'hrms.expenses.approve': 'team',
+        'hrms.people.view': 'team', 'hrms.people.create': 'team', 'hrms.employments.update': 'team', 'hrms.expenses.submit': 'team', 'hrms.expenses.approve': 'team',
         'hrms.attendance.punch': 'team', 'hrms.attendance.view': 'team', 'hrms.attendance.approve': 'team', 'hrms.leave.apply': 'team', 'hrms.leave.approve': 'team', 'hrms.leave.report': 'team',
         'hrms.skills.add': 'team', 'hrms.skills.verify': 'team', 'hrms.skills.view': 'team', 'hrms.dashboard.view': 'team', 'payroll.payslip.own': 'team',
         'tickets.types.view': 'team', 'tickets.types.manage': 'team',
-        'tickets.view': 'team', 'tickets.work': 'team', 'tickets.manage': 'team', 'tickets.create': 'team', 'tickets.time.adjust': 'team',
+        'tickets.view': 'team', 'tickets.work': 'team', 'tickets.manage': 'team', 'tickets.create': 'team', 'tickets.time.adjust': 'team', 'core.users.team': 'team',
+        'tickets.site': 'team',
       });
     });
   });
@@ -138,7 +143,7 @@ describe('Sign-in and roles', () => {
       const ownJob = await peopleApi(app, hr).employmentIn(DEMO.supervisor.publicId, 'AE');
       expect((await http().patch(`/api/hrms/employments/${ownJob}`).set(sup).send({ designation: 'Boss' })).status).toBe(403);
       expect((await http().post(`/api/hrms/employments/${techJob}/exit`).set(sup).send({ exitOn: '2026-03-31', exitReason: 'Not allowed' })).status).toBe(403);
-      expect((await http().post('/api/hrms/people').set(sup).send({})).status).toBe(403);
+      expect((await http().post('/api/hrms/people').set(sup).send({})).status).toBe(400);   // supervisors may add people (own company; first-login.api.spec)
     });
 
     it('HR may do everything in People but cannot manage logins', async () => {
@@ -163,7 +168,7 @@ describe('Sign-in and roles', () => {
 
     it('refuses a login phone or email that another login uses, and a second login for a person', async () => {
       const personId = await peopleApi(app, hr).createPerson();
-      const taken = await http().post('/api/core/users').set(admin).send({ personPublicId: personId, loginPhone: '+91 00000 00001', password: 'first-pass-1' });
+      const taken = await http().post('/api/core/users').set(admin).send({ personPublicId: personId, loginPhone: '+91 00000 00001', loginEmail: `p.${tag().toLowerCase()}@example.com`, password: 'first-pass-1' });
       expect(taken.status).toBe(409);
       expect(taken.body.code).toBe('CORE_LOGIN_TAKEN');
       const second = await http().post('/api/core/users').set(admin).send({ personPublicId: DEMO.hr.publicId, loginEmail: `x.${tag().toLowerCase()}@example.com`, password: 'first-pass-1' });

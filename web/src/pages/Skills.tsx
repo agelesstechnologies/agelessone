@@ -63,8 +63,8 @@ function Matrix() {
               {c.hasFile && <button className="text-btn" onClick={() => openFile(c.publicId)}><Download size={12} /> File</button>}
               {c.status === 'review' && can(SKILLS.verify) && <button className="text-btn" onClick={() => verify(`/hrms/certificates/${c.publicId}/verify`)}><Check size={12} /> Verify</button>}</div>)}</td>
             {can(SKILLS.add) && <td><span className="chip-row">
-              <button className="text-btn" onClick={() => setDialog({ kind: 'skill', row: r })}><Plus size={12} /> Skill</button>
-              <button className="text-btn" onClick={() => setDialog({ kind: 'certificate', row: r })}><Plus size={12} /> Certificate</button></span></td>}
+              <button className="outline-btn small-btn" onClick={() => setDialog({ kind: 'skill', row: r })}><Plus size={13} /> Skill</button>
+              <button className="outline-btn small-btn" onClick={() => setDialog({ kind: 'certificate', row: r })}><Plus size={13} /> Certificate</button></span></td>}
           </tr>)}</tbody></table></div>}
       {dialog?.kind === 'skill' && <AddSkill row={dialog.row} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); q.reload(); }} />}
       {dialog?.kind === 'certificate' && <AddCertificate row={dialog.row} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); q.reload(); }} />}

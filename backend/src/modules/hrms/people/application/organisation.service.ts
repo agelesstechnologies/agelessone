@@ -2,13 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   CreateDepartmentRequest, CreatePositionRequest, Department, DepartmentsQuery, Designation, DesignationsQuery, FillPositionRequest,
-  Position, PositionsQuery, PositionStatusRequest, UpdateDepartmentRequest,
+  NextEmployeeCode, Position, PositionsQuery, PositionStatusRequest, UpdateDepartmentRequest,
 } from '@ageless/shared';
 import { DB, Db, violatedConstraint } from '../../../../platform/db/db.module';
 import { AppError } from '../../../../platform/http/app-error';
 import { RequestContext, requireAll, requireReadAll } from '../../../../platform/http/request-context';
 import { OrganisationRepository } from '../infrastructure/organisation.repository';
 import { PEOPLE } from '../domain/permissions';
+import { nextEmployeeCode } from '../domain/employee-codes';
 
 /** Use cases live here: a company's departments (with their heads), designations and positions. */
 @Injectable()
@@ -20,6 +21,16 @@ export class OrganisationService {
 
   departments(ctx: RequestContext, q: DepartmentsQuery): Promise<Department[]> {
     return this.repo.departments(ctx.tenantId, q.company);
+  }
+
+  /**
+   * The employee code the next person in this department would get (ATS004 …), to show in the form. The code is only
+   * reserved when the job is saved without an employeeCode: it is generated again then, in the same transaction.
+   */
+  async nextEmployeeCode(ctx: RequestContext, departmentPublicId: string): Promise<NextEmployeeCode> {
+    const found = await this.repo.departmentCodes(ctx.tenantId, departmentPublicId);
+    if (!found) throw new AppError('HRMS_DEPARTMENT_NOT_FOUND', 404, 'Department not found');
+    return { department: departmentPublicId, codePrefix: found.codePrefix, code: nextEmployeeCode(found.codePrefix, found.codes) };
   }
 
   async createDepartment(ctx: RequestContext, req: CreateDepartmentRequest): Promise<Department> {

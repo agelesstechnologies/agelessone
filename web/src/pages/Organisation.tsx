@@ -8,10 +8,11 @@ import { api, errText } from '../api';
 import { useAuth } from '../auth';
 import { dayLabel, useLoad, uuidv7 } from '../hooks';
 import JobPicker, { PersonPicker } from '../JobPicker';
-import { PEOPLE } from '../permissions';
+import { LETTERS, PEOPLE } from '../permissions';
+import LetterTemplates from './LetterTemplates';
 import { Badge, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs, type Tone } from '../ui';
 
-type TabKey = 'departments' | 'designations' | 'positions';
+type TabKey = 'departments' | 'designations' | 'positions' | 'letters';
 const COMPANIES = [{ code: 'AE', name: 'Ageless Entertainments' }, { code: 'ATPL', name: 'Ageless Technologies' }];
 const POSITION_TONE: Record<string, Tone> = { planned: 'gray', open: 'amber', filled: 'green' };
 
@@ -26,6 +27,7 @@ export default function Organisation() {
     { key: 'departments', label: 'Departments' },
     { key: 'designations', label: 'Designations' },
     ...(can(PEOPLE.managePositions) || can('hrms.management') ? [{ key: 'positions' as const, label: 'Positions' }] : []),
+    ...(can(LETTERS.manage) ? [{ key: 'letters' as const, label: 'Letter templates' }] : []),
   ];
   const [tab, setTab] = useState<TabKey>('departments');
   return <>
@@ -34,6 +36,7 @@ export default function Organisation() {
     {tab === 'departments' && <Departments />}
     {tab === 'designations' && <Designations />}
     {tab === 'positions' && <Positions />}
+    {tab === 'letters' && <LetterTemplates />}
   </>;
 }
 

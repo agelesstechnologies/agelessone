@@ -14,6 +14,8 @@ export interface RequestContext {
   userPublicId: string;
   /** permission code → widest scope the caller holds it with */
   permissions: Record<string, Scope>;
+  /** someone else chose the password: only routes marked @DuringPasswordSetup() may be used until the person sets their own */
+  mustChangePassword?: boolean;
 }
 
 export const IS_PUBLIC = 'access:public';
@@ -26,6 +28,9 @@ export const Public = () => SetMetadata(IS_PUBLIC, true);
 export const Permission = (...codes: [string, ...string[]]) => SetMetadata(REQUIRED_PERMISSION, codes.length === 1 ? codes[0] : codes);
 /** A route any signed-in person may use (their own profile, password). */
 export const SignedIn = () => SetMetadata(REQUIRED_PERMISSION, ANY_SIGNED_IN);
+export const DURING_PASSWORD_SETUP = 'access:password-setup';
+/** Also open while the person must still set their own password (who am I, send the code, set the password). */
+export const DuringPasswordSetup = () => SetMetadata(DURING_PASSWORD_SETUP, true);
 
 /** For actions that only make sense over the whole tenant (create people, manage logins): the permission must have scope all. */
 export function requireAll(ctx: RequestContext, permission: string): void {

@@ -8,7 +8,7 @@ import { leaveRequests } from '../../hrms/leave/schema';
 import { personSkills, skills } from '../../hrms/skills/schema';
 import {
   numberSeries, reassignRequests, ticketAssignees, ticketAttachments, ticketChecklistResults, ticketEvents, ticketLinks, tickets,
-  ticketSignoffs, ticketTypes,
+  ticketExternalStaff, ticketSignoffs, ticketTypes,
 } from '../schema';
 
 export type TicketRow = typeof tickets.$inferSelect;
@@ -225,7 +225,7 @@ export class TicketsRepository {
     if (!who.all) {
       const mine = [this.assignedTo(who.personId)];
       if (who.team) {
-        mine.push(eq(tickets.supervisorPersonId, who.personId));
+        mine.push(eq(tickets.supervisorPersonId, who.personId), eq(tickets.createdBy, who.personId));   // supervised or raised by me
         if (who.headedDepartmentIds.length) mine.push(inArray(tickets.departmentId, who.headedDepartmentIds));
       }
       conds.push(or(...mine));
@@ -395,5 +395,32 @@ export class TicketsRepository {
         by.approverId ? eq(reassignRequests.approverPersonId, by.approverId) : undefined,
         by.status ? eq(reassignRequests.status, by.status) : undefined))
       .orderBy(desc(reassignRequests.id));
+  }
+
+  // ---- external staff ----
+
+  async externalStaffTenant(publicId: string): Promise<number | undefined> {
+    const [row] = await this.db.select({ tenantId: ticketExternalStaff.tenantId }).from(ticketExternalStaff).where(eq(ticketExternalStaff.publicId, publicId));
+    return row?.tenantId;
+  }
+
+  async insertExternalStaff(tx: Tx, v: typeof ticketExternalStaff.$inferInsert): Promise<void> {
+    await tx.insert(ticketExternalStaff).values(v);
+  }
+
+  /** The ticket's outside workers, earliest first. */
+  async externalStaff(conn: Conn, ticketId: number) {
+    const addedBy = alias(persons, 'added_by');
+    return conn.select({
+      id: ticketExternalStaff.id, publicId: ticketExternalStaff.publicId, name: ticketExternalStaff.name, phone: ticketExternalStaff.phone,
+      agency: ticketExternalStaff.agency, trade: ticketExternalStaff.trade, fromDate: ticketExternalStaff.fromDate, toDate: ticketExternalStaff.toDate,
+      photoPath: ticketExternalStaff.photoPath, photoType: ticketExternalStaff.photoType, addedAt: ticketExternalStaff.addedAt,
+      addedByPublicId: addedBy.publicId, addedByName: addedBy.displayName,
+    }).from(ticketExternalStaff).innerJoin(addedBy, eq(addedBy.id, ticketExternalStaff.addedBy))
+      .where(eq(ticketExternalStaff.ticketId, ticketId)).orderBy(ticketExternalStaff.fromDate, ticketExternalStaff.id);
+  }
+
+  async endExternalStaff(tx: Tx, id: number, toDate: string): Promise<void> {
+    await tx.update(ticketExternalStaff).set({ toDate }).where(eq(ticketExternalStaff.id, id));
   }
 }

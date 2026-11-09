@@ -67,6 +67,8 @@ export const users = core.table('users', {
   passwordHash: text('password_hash').notNull(),
   isActive: boolean('is_active').notNull().default(true),
   passwordChangedAt: timestamp('password_changed_at', { withTimezone: true }).notNull().defaultNow(), // older tokens stop working
+  // set when someone else chose the password (a new login, an admin reset): the person must set their own before anything else
+  mustChangePassword: boolean('must_change_password').notNull().default(false),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, () => [
@@ -196,4 +198,24 @@ export const loginThrottle = core.table('login_throttle', {
 }, (t) => [
   index('idx_login_throttle_window').on(t.windowStartedAt),
   check('login_throttle_failures_check', sql`failures >= 0`),
+]);
+
+/**
+ * One-time sign-in codes sent by email: first login (purpose first_login) and forgot password (reset). Only a keyed
+ * hash of the code is stored (HMAC with JWT_SECRET). A code works once, for 10 minutes, with at most 5 wrong tries.
+ */
+export const loginCodes = core.table('login_codes', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
+  userId: bigint('user_id', { mode: 'number' }).notNull().references(() => users.id),
+  purpose: text('purpose').notNull(),
+  codeHash: text('code_hash').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('idx_login_codes_user').on(t.userId, t.createdAt),
+  check('login_codes_purpose_check', sql`purpose IN ('first_login','reset')`),
+  check('login_codes_attempts_check', sql`attempts BETWEEN 0 AND 5`),
 ]);

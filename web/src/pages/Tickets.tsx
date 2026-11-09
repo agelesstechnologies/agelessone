@@ -61,7 +61,7 @@ function TicketList({ mine }: { mine?: boolean }) {
   const path = mine ? `/tickets/mine${status ? `?status=${status}` : ''}`
     : `/tickets?${new URLSearchParams({ limit: '200', ...(status && { status }), ...(company && { company }), ...(overdue && { overdue: 'true' }) })}`;
   const q = useLoad(() => api<TicketSummary[]>(path), [path]);
-  return <Panel title={mine ? 'My tickets' : 'All tickets'} note={mine ? 'Tickets you are assigned to.' : 'Tickets you may see, newest first.'}>
+  return <Panel title={mine ? 'My tickets' : 'All tickets'} note={mine ? 'Tickets you are assigned to, supervise or created.' : 'Tickets you may see, newest first.'}>
     <div className="panel-body">
       <div className="filters">
         <label className="inline-field">Status<select id="tk-status" className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -148,10 +148,8 @@ function NewTicket({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
           : <label key={fld.key} className="span-two">{fld.label}{fld.required ? '' : ' '}{!fld.required && <span className="optional">optional</span>}
             <input id={`nt-d-${fld.key}`} name={`d_${fld.key}`} required={fld.required} type={fld.type === 'number' || fld.type === 'money' ? 'number' : fld.type === 'date' ? 'date' : 'text'}
               step={fld.type === 'money' ? '0.01' : undefined} placeholder={fld.type === 'money' ? 'Amount in ₹' : fld.type === 'person' ? "Person's ID" : undefined} /></label>)}
-        <p className="form-section">Supervisor <span className="optional">the department head by default, or you if the department has no head; choose someone only to change that</span></p>
-        <PersonPicker idPrefix="nt-sup" label="Supervisor" onChange={setSupervisor} />
-        <p className="form-section">Assign now <span className="optional">optional</span></p>
-        <JobPicker idPrefix="nt-asg" onChange={setJob} />
+        <PersonPicker idPrefix="nt-sup" label="Supervisor" hint="optional — the department head, or you, if left empty" onChange={setSupervisor} />
+        <JobPicker idPrefix="nt-asg" label="Assign to" hint="optional" onChange={setJob} />
       </div>
       <div className="modal-foot"><button type="button" className="outline-btn" onClick={onClose}>Cancel</button>
         <button className="primary-btn" disabled={saving || noDepts}>{saving ? 'Creating…' : 'Create ticket'}</button></div>

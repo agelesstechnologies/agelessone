@@ -13,18 +13,18 @@ import { TicketRow, TicketsRepository, Visibility } from '../infrastructure/tick
 import { checkDetails, FieldDef } from '../domain/type-details';
 import { missingForCompletion } from '../domain/completion';
 import { isFinished, Move, nextStatus, Status } from '../domain/lifecycle';
-import { Caller, canComplete, canCreate, canManage, canView, canWork, Relation } from '../domain/ticket-access';
+import { Caller, canComplete, canCreate, canManage, canRunSite, canView, canWork, Relation } from '../domain/ticket-access';
 import { TICKETS } from '../domain/permissions';
 
 export type Warning = { code: string; message: string; employmentPublicId?: string };
-type Check = 'view' | 'work' | 'manage' | 'complete';
+type Check = 'view' | 'work' | 'manage' | 'complete' | 'site';
 type TicketRef = { id: number; tenantId: number; legalEntityId: number };
 /** An assignee ready to store: a checked job. */
 interface NewAssignee { employmentId: number; employmentPublicId: string; personId: number; isPrimary: boolean }
 /** A ticket loaded for one action, with how the caller relates to it. */
 export interface Loaded { t: TicketRow; caller: Caller; rel: Relation }
 
-const CHECK = { view: canView, work: canWork, manage: canManage, complete: canComplete };
+const CHECK = { view: canView, work: canWork, manage: canManage, complete: canComplete, site: canRunSite };
 const formatNumber = (prefix: string, n: number) => `${prefix}-${String(n).padStart(4, '0')}`;
 /** The IST date a ticket is scheduled for (leave is checked on it). */
 const istDate = (d: Date) => todayIst(d);
@@ -56,10 +56,12 @@ export class TicketsService {
     return q.overdue === false ? out.filter((t) => !t.overdue) : out;
   }
 
-  /** Tickets I am a current assignee of. */
+  /** Tickets I am a current assignee of, and (an on-site supervisor or manager) the tickets I supervise. */
   async mine(ctx: RequestContext, q: MyTicketsQuery): Promise<TicketSummary[]> {
+    const c = this.caller(ctx);
+    const supervises = c.site !== undefined || c.manage !== undefined;
     const rows = await this.repo.list(ctx.tenantId, { status: q.status, limit: 500, offset: 0 },
-      { all: false, personId: ctx.personId, team: false, headedDepartmentIds: [] });
+      { all: false, personId: ctx.personId, team: supervises, headedDepartmentIds: [] });
     return rows.map(toSummary);
   }
 
@@ -121,8 +123,16 @@ export class TicketsService {
   /** Change details (not after completion or cancellation). Type details are checked against the ticket's own type version. */
   async update(ctx: RequestContext, publicId: string, req: UpdateTicketRequest): Promise<TicketDetail> {
     return this.db.transaction(async (tx) => {
-      const { t } = await this.load(tx, ctx, publicId, 'manage', true);
+      const { t, caller, rel } = await this.load(tx, ctx, publicId, 'site', true);
       this.requireUnfinished(t);
+      // the on-site supervisor edits the requirements only: description, site, due date, the type's fields
+      if (!canManage(caller, rel)) {
+        const managerOnly = (['title', 'priority', 'customerId', 'scheduledAt', 'supervisorPublicId', 'requiredSkillPublicId'] as const)
+          .filter((k) => req[k] !== undefined);
+        if (managerOnly.length) {
+          throw new AppError('TICKETS_FORBIDDEN', 403, `Only the department head or a manager can change ${managerOnly.join(', ')}`, { fields: managerOnly });
+        }
+      }
       const patch: Partial<TicketRow> = {};
       if (req.title !== undefined) patch.title = req.title;
       if (req.description !== undefined) patch.description = req.description;
@@ -171,11 +181,11 @@ export class TicketsService {
   }
 
   hold(ctx: RequestContext, publicId: string, reason: string): Promise<TicketDetail> {
-    return this.move(ctx, publicId, 'hold', 'manage', { holdReason: reason }, 'held', { reason });
+    return this.move(ctx, publicId, 'hold', 'site', { holdReason: reason }, 'held', { reason });
   }
 
   resume(ctx: RequestContext, publicId: string): Promise<TicketDetail> {
-    return this.move(ctx, publicId, 'resume', 'manage', { holdReason: null }, 'resumed');
+    return this.move(ctx, publicId, 'resume', 'site', { holdReason: null }, 'resumed');
   }
 
   cancel(ctx: RequestContext, publicId: string, reason: string): Promise<TicketDetail> {
@@ -242,12 +252,13 @@ export class TicketsService {
     const mine = assignees.find((a) => a.personId === ctx.personId);
     const rel: Relation = {
       headsDepartment: (await this.repo.departmentHead(conn, t.departmentId)) === ctx.personId,
-      supervises: t.supervisorPersonId === ctx.personId, assignee: mine !== undefined, primary: mine?.isPrimary ?? false,
+      supervises: t.supervisorPersonId === ctx.personId, created: t.createdBy === ctx.personId,
+      assignee: mine !== undefined, primary: mine?.isPrimary ?? false,
     };
     if (!canView(caller, rel)) throw new AppError('TICKETS_NOT_FOUND', 404, 'Unknown ticket');
     if (!CHECK[check](caller, rel)) {
       const why = { view: '', work: 'Only its assignees, its department head or admin can work on this ticket',
-        manage: 'Only the department head, admin or Management can change this ticket', complete: 'Only the primary assignee, the department head or admin can complete this ticket' };
+        manage: 'Only the department head, a manager, admin or Management can do this', site: 'Only the department head, a manager or the supervisor of this ticket can do this', complete: 'Only the primary assignee, the department head or admin can complete this ticket' };
       throw new AppError('TICKETS_FORBIDDEN', 403, why[check]);
     }
     return { t, caller, rel };
@@ -255,7 +266,7 @@ export class TicketsService {
 
   caller(ctx: RequestContext): Caller {
     return { view: ctx.permissions[TICKETS.view], work: ctx.permissions[TICKETS.work], manage: ctx.permissions[TICKETS.manage],
-      create: ctx.permissions[TICKETS.create], management: isManagement(ctx) };
+      create: ctx.permissions[TICKETS.create], site: ctx.permissions[TICKETS.site], management: isManagement(ctx) };
   }
 
   requireUnfinished(t: TicketRow): void {

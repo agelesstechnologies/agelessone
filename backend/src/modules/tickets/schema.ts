@@ -365,3 +365,31 @@ export const ticketTimeAdjustments = ticketsSchema.table('ticket_time_adjustment
   check('ticket_time_adjustments_not_own', sql`adjusted_by <> person_id`),
   check('ticket_time_adjustments_as_check', sql`adjusted_as IN ('head','management')`),
 ]);
+
+/**
+ * Outside workers on a ticket (contractor labour, agency staff): who, how to reach them, where from, their trade, the
+ * days on site and a photo. Added by the ticket's on-site supervisor, a manager or the department head.
+ */
+export const ticketExternalStaff = ticketsSchema.table('ticket_external_staff', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  publicId: uuid('public_id').notNull().unique(),
+  ticketId: bigint('ticket_id', { mode: 'number' }).notNull(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull(),
+  name: text('name').notNull(),
+  phone: text('phone'),
+  agency: text('agency'),
+  trade: text('trade'),
+  fromDate: date('from_date').notNull(),
+  toDate: date('to_date'),
+  photoPath: text('photo_path'),
+  photoType: text('photo_type'),
+  addedBy: bigint('added_by', { mode: 'number' }).notNull().references(() => persons.id),
+  addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  foreignKey({ name: 'ticket_external_staff_ticket_company_fk', columns: [t.ticketId, t.legalEntityId], foreignColumns: [tickets.id, tickets.legalEntityId] }),
+  index('idx_ticket_external_staff_ticket').on(t.ticketId),
+  check('ticket_external_staff_dates_check', sql`to_date IS NULL OR to_date >= from_date`),
+  check('ticket_external_staff_name_check', sql`char_length(name) BETWEEN 2 AND 100`),
+  check('ticket_external_staff_photo_check', sql`(photo_path IS NULL) = (photo_type IS NULL) AND (photo_type IS NULL OR photo_type IN ('jpg','png'))`),
+]);

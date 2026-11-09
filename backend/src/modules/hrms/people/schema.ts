@@ -105,3 +105,43 @@ export const personPrivate = hrms.table('person_private', {
   check('person_private_aadhaar_format', sql`aadhaar IS NULL OR aadhaar ~ '^[0-9]{12}$'`),
   check('person_private_pan_format', sql`pan IS NULL OR pan ~ '^[A-Z]{5}[0-9]{4}[A-Z]$'`),
 ]);
+
+/**
+ * Letter templates, one per company and kind (today only 'joining'). HR or Management edits the text; placeholders such
+ * as {{name}} and {{joiningDate}} are filled from the person's job when a letter is prepared.
+ */
+export const letterTemplates = hrms.table('letter_templates', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  publicId: uuid('public_id').notNull().defaultRandom().unique(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
+  kind: text('kind').notNull(),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  updatedBy: bigint('updated_by', { mode: 'number' }).notNull().references(() => persons.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  unique('letter_templates_company_kind_unique').on(t.legalEntityId, t.kind),
+  check('letter_templates_kind_check', sql`kind IN ('joining')`),
+  check('letter_templates_text_check', sql`char_length(title) BETWEEN 1 AND 200 AND char_length(body) BETWEEN 1 AND 20000`),
+]);
+
+/** A letter issued for one job: the exact text as downloaded, who issued it and when. Kept, never changed. */
+export const issuedLetters = hrms.table('issued_letters', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  publicId: uuid('public_id').notNull().unique(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
+  employmentId: bigint('employment_id', { mode: 'number' }).notNull(),
+  personId: bigint('person_id', { mode: 'number' }).notNull().references(() => persons.id),
+  kind: text('kind').notNull(),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  issuedBy: bigint('issued_by', { mode: 'number' }).notNull().references(() => persons.id),
+  issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  foreignKey({ name: 'issued_letters_employment_company_fk', columns: [t.employmentId, t.legalEntityId], foreignColumns: [employments.id, employments.legalEntityId] }),
+  index('idx_issued_letters_employment').on(t.employmentId, t.issuedAt),
+  check('issued_letters_kind_check', sql`kind IN ('joining')`),
+  check('issued_letters_text_check', sql`char_length(title) BETWEEN 1 AND 200 AND char_length(body) BETWEEN 1 AND 20000`),
+]);

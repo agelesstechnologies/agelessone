@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, like } from 'drizzle-orm';
 import { Department, Designation, Position, PositionStatus } from '@ageless/shared';
 import { DB, Db, Tx } from '../../../../platform/db/db.module';
 import { legalEntities, persons } from '../../../core/schema';
@@ -37,6 +37,16 @@ export class OrganisationRepository {
     const [row] = await this.db.select({ id: departments.id }).from(departments)
       .where(and(eq(departments.tenantId, tenantId), eq(departments.legalEntityId, legalEntityId), eq(departments.codePrefix, codePrefix)));
     return row;
+  }
+
+  /** The department's code prefix and the company's employee codes that start with it (to show the next code). */
+  async departmentCodes(tenantId: number, publicId: string) {
+    const [dept] = await this.db.select({ legalEntityId: departments.legalEntityId, codePrefix: departments.codePrefix }).from(departments)
+      .where(and(eq(departments.tenantId, tenantId), eq(departments.publicId, publicId)));
+    if (!dept) return undefined;
+    const rows = await this.db.select({ code: employments.employeeCode }).from(employments)
+      .where(and(eq(employments.legalEntityId, dept.legalEntityId), like(employments.employeeCode, `${dept.codePrefix}%`)));
+    return { codePrefix: dept.codePrefix, codes: rows.map((r) => r.code) };
   }
 
   async insertDepartment(v: { tenantId: number; legalEntityId: number; name: string; codePrefix: string }): Promise<string> {

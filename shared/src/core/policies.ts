@@ -22,6 +22,14 @@ export const POLICIES = {
     value: z.array(z.string().trim().min(1).max(40)).max(10), default: ['ceo'] as string[],
     description: 'Roles whose own requests (leave, expense, correction, overtime) need no approval: approved on submit, with no decider',
   },
+  'hrms.leave.monthly_accrual': {
+    value: z.record(z.string().trim().min(1).max(10), z.number().min(0).max(5)), default: { SL: 1, EL: 1 } as Record<string, number>,
+    description: 'Leave days added to every active job on the 1st of each month, per leave type (12 sick + 12 earned a year)',
+  },
+  'hrms.leave.carry_forward': {
+    value: z.array(z.string().trim().min(1).max(10)).max(10), default: ['EL'] as string[],
+    description: 'Leave types whose unused days carry into the next year; the others lapse on 31 December',
+  },
   'hrms.approvals.escalate_after_days': {
     value: z.number().int().min(1).max(60), default: 5,
     description: 'A leave, expense, correction or overtime request with no decision after this many days is sent to the CEO (the approver may still decide it)',

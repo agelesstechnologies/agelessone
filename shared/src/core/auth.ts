@@ -25,21 +25,53 @@ export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequest>;
 /** GET /api/auth/me */
 export const Me = z.object({
   person: PersonRef,
-  user: z.object({ publicId: PublicId, loginPhone: z.string().nullable(), loginEmail: z.string().nullable() }),
+  user: z.object({
+    publicId: PublicId, loginPhone: z.string().nullable(), loginEmail: z.string().nullable(),
+    /** someone else chose the password (new login, admin reset): set your own before using the app */
+    mustChangePassword: z.boolean(),
+  }),
   roles: z.array(z.object({ publicId: PublicId, code: z.string(), name: z.string(), scope: RoleScope })),
   /** permission code → widest scope the person holds it with */
   permissions: z.record(z.string(), RoleScope),
 });
 export type Me = z.infer<typeof Me>;
 
-/** POST /api/core/users: a login for an existing person, with a phone, an email, or both. */
+/**
+ * POST /api/core/users: a login for an existing person. An email is required: a welcome email tells the person to set
+ * their password with a code sent to it ("First time or forgot your password?" on the sign-in page). A phone is
+ * optional. No password is needed; one given is temporary (the person confirms an emailed code and sets their own).
+ */
 export const CreateUserRequest = z.object({
   personPublicId: z.string().uuid(),
   loginPhone: z.string().trim().min(6).max(20).optional(),
-  loginEmail: z.string().trim().email().max(100).optional(),
-  password,
-}).refine((u) => u.loginPhone !== undefined || u.loginEmail !== undefined, { message: 'Give a login phone or email', path: ['loginPhone'] });
+  loginEmail: z.string().trim().email('Enter a valid email address').max(100),
+  password: password.optional(),
+});
 export type CreateUserRequest = z.infer<typeof CreateUserRequest>;
+
+const code = z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit code from the email');
+
+/** POST /api/auth/first-login/code: emails a code to the signed-in person's login email. */
+export const CodeSent = z.object({
+  sentTo: z.string(),               // masked: "ne***@example.com and the phone ending 3210"
+  expiresAt: Instant,
+  devCode: z.string().optional(),   // development only (DEV_SHOW_CODES): the code itself, to test without email or SMS
+});
+export type CodeSent = z.infer<typeof CodeSent>;
+
+/** POST /api/auth/first-login: the emailed code and your own password; answers a fresh token. */
+export const CompleteFirstLoginRequest = z.object({ code: code.optional(), newPassword: password });
+export type CompleteFirstLoginRequest = z.infer<typeof CompleteFirstLoginRequest>;
+
+/** POST /api/auth/forgot-password: emails a code if the login exists (the answer never says whether it does). */
+export const ForgotPasswordRequest = z.object({ login: z.string().trim().min(3).max(100) });
+export type ForgotPasswordRequest = z.infer<typeof ForgotPasswordRequest>;
+export const ForgotPasswordResponse = z.object({ message: z.string(), devCode: z.string().optional() });
+export type ForgotPasswordResponse = z.infer<typeof ForgotPasswordResponse>;
+
+/** POST /api/auth/reset-password: the emailed code and a new password; answers a token (you are signed in). */
+export const ResetWithCodeRequest = z.object({ login: z.string().trim().min(3).max(100), code, newPassword: password });
+export type ResetWithCodeRequest = z.infer<typeof ResetWithCodeRequest>;
 
 /** POST /api/core/users/:publicId/reset-password */
 export const ResetPasswordRequest = z.object({ newPassword: password });
@@ -54,3 +86,14 @@ export const AssignRoleRequest = z.object({
   validTo: isoDate.optional(),
 }).refine((r) => !r.validFrom || !r.validTo || r.validTo >= r.validFrom, { message: 'validTo is before validFrom', path: ['validTo'] });
 export type AssignRoleRequest = z.infer<typeof AssignRoleRequest>;
+
+/** GET /api/core/roles: the roles that can be given. */
+export const RoleOption = z.object({ code: z.string(), name: z.string() });
+export type RoleOption = z.infer<typeof RoleOption>;
+
+/** GET /api/core/people/:publicId/access: a person's login (null: none yet) and the roles they hold today. */
+export const PersonAccess = z.object({
+  login: z.object({ publicId: PublicId, loginEmail: z.string().nullable(), loginPhone: z.string().nullable(), isActive: z.boolean() }).nullable(),
+  roles: z.array(z.object({ publicId: PublicId, code: z.string(), name: z.string(), scope: RoleScope })),
+});
+export type PersonAccess = z.infer<typeof PersonAccess>;

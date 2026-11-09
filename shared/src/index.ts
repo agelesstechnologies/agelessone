@@ -12,6 +12,7 @@ export * from './hrms/events';
 export * from './hrms/expenses';
 export * from './hrms/facade';
 export * from './hrms/leave';
+export * from './hrms/letters';
 export * from './hrms/month-locks';
 export * from './hrms/organisation';
 export * from './hrms/overtime';
