@@ -366,7 +366,7 @@ export class LeaveService {
   private async checkBalance(conn: Conn, tenantId: number, companyId: number, employmentId: number, leaveTypeId: number, days: number, onDate: string): Promise<void> {
     if (!(await this.core.getPolicy(tenantId, 'hrms.leave.balance_check', companyId, onDate))) return;
     if (!balanceAllows(await this.repo.balance(conn, employmentId, leaveTypeId), days, true)) {
-      throw new AppError('HRMS_LEAVE_BALANCE', 409, 'Not enough leave balance');
+      throw new AppError('HRMS_LEAVE_BALANCE', 409, 'Not enough leave balance for these days. Choose fewer days, or apply as loss of pay (LWP).');
     }
   }
 

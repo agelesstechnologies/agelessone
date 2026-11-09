@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Plus } from 'lucide-react';
 import { CreatePolicyRequest, POLICIES as DEFINITIONS, type Policy, type PolicyKey } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { dayLabel, todayIst, useLoad, uuidv7 } from '../hooks';
 import { Empty, Loading, Modal, Notice, PageHead, Panel } from '../ui';
 
@@ -49,7 +49,7 @@ function NewVersion({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
       publicId: id, key, ...(company ? { company } : {}), effectiveFrom: d.get('from'),
       value: isFlag(key) ? d.get('value') === 'true' : Number(d.get('value')),
     });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { await api('/core/policies', { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }

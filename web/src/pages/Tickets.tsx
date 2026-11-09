@@ -4,7 +4,7 @@ import {
   ApproveReassignRequest, CreateTicketRequest, NumberSeriesRequest, ReasonRequest,
   type Department, type NumberSeries, type ReassignmentRequest, type TicketDetail as Detail, type TicketSummary, type TicketType,
 } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { dayLabel, uuidv7, useLoad, useMyEmployments } from '../hooks';
 import JobPicker, { PersonPicker } from '../JobPicker';
@@ -121,7 +121,7 @@ function NewTicket({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
       ...(text('due') ? { dueDate: text('due') } : {}), ...(supervisor ? { supervisorPublicId: supervisor } : {}), details,
       ...(job ? { assignees: [{ employmentPublicId: job, isPrimary: true }] } : {}),
     });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { await api<Detail>('/tickets', { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }
@@ -186,7 +186,7 @@ function Decide({ r, kind, onClose, onDone, onError }: { r: ReassignmentRequest;
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const body = kind === 'approve' ? ApproveReassignRequest.safeParse({ newEmploymentPublicId: job }) : ReasonRequest.safeParse({ reason: String(new FormData(e.currentTarget).get('reason')) });
-    if (!body.success) { setError(kind === 'approve' ? 'Choose who takes over' : body.error.issues[0]?.message ?? 'Give a reason'); return; }
+    if (!body.success) { setError(kind === 'approve' ? 'Choose who takes over' : formError(body.error, 'Give a reason')); return; }
     try { await api(`/tickets/reassign-requests/${r.publicId}/${kind}`, { method: 'POST', json: body.data }); onDone(); }
     catch (err) { onError(errText(err)); onClose(); }
   }
@@ -221,7 +221,7 @@ function EditSeries({ s, onClose, onSaved }: { s: NumberSeries; onClose: () => v
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const parsed = NumberSeriesRequest.safeParse({ prefix: String(f.get('prefix')).trim().toUpperCase(), nextNumber: Number(f.get('next')) });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     try { await api(`/tickets/number-series/${s.company}`, { method: 'PUT', json: parsed.data }); onSaved(); } catch (err) { setError(errText(err)); }
   }
   return <Modal title={`Numbering · ${s.company}`} onClose={onClose}><form onSubmit={submit}>

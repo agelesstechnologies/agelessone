@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type {
   HoursBy, HoursReport, MissingUpdatesReport, OnHoldReport, OverdueReport, TicketDashboard, UtilisationReport, WeeklyReport,
 } from '@ageless/shared';
-import { api } from '../api';
+import { api, ApiFailure } from '../api';
 import { addDays, dayLabel, hm, todayIst, useLoad } from '../hooks';
 import { CsvButton, Empty, Loading, Notice, Panel, Tabs } from '../ui';
 
@@ -22,6 +22,16 @@ export default function TicketReports() {
   const [from, setFrom] = useState(addDays(todayIst(), -29));
   const [by, setBy] = useState<HoursBy>('ticket');
   const [csvError, setCsvError] = useState('');
+  // reports cover the departments a manager heads (HR, admin user and Management: everything); a manager who heads no
+  // department is told so, instead of a red "forbidden"
+  const access = useLoad(() => api('/tickets/reports/overdue').then(() => true)
+    .catch((e) => (e instanceof ApiFailure && e.status === 403 ? false : true)), []);
+  if (access.data === null) return <Panel title="Ticket reports"><div className="panel-body"><Loading /></div></Panel>;
+  if (access.data === false) {
+    return <Panel title="Ticket reports"><div className="panel-body">
+      <Empty title="No department to report on" text="Ticket reports cover the departments you head. Ask HR to make you the head of a department to see its reports." />
+    </div></Panel>;
+  }
 
   const ranged = RANGED.includes(kind);
   const params = new URLSearchParams({ ...(company && { company }), ...(ranged && { from, to }), ...(kind === 'hours' && { by }) }).toString();

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { LoaderCircle, Plus, X } from 'lucide-react';
 import { CreatePersonRequest, type Department, type NextEmployeeCode } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { todayIst, useLoad, useMyEmployments } from '../hooks';
 import { useAuth } from '../auth';
 import { PEOPLE, USERS } from '../permissions';
@@ -67,7 +67,7 @@ export default function AddPerson({ onClose, onCreated }: { onClose: () => void;
     };
     if (!raw.employment.employeeCode && !raw.employment.departmentCode) { setError('Choose a department, or type an employee ID'); return; }
     const parsed = CreatePersonRequest.safeParse(raw);
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message || 'Check the form fields'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form fields')); return; }
     const email = giveLogin ? loginEmail.trim() : '';
     if (giveLogin && !/^\S+@\S+\.\S+$/.test(email)) { setError('Enter the email the person will sign in with, or untick "Give them a login"'); return; }
     setSaving(true); setError('');

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { ChangePasswordRequest, type LoginResponse } from '@ageless/shared';
-import { api, errText } from './api';
+import { api, errText, formError } from './api';
 import { useAuth } from './auth';
 import { Modal, Notice } from './ui';
 
@@ -16,7 +16,7 @@ export default function ChangePassword({ onClose }: { onClose: () => void }) {
     const f = new FormData(e.currentTarget);
     if (f.get('newPassword') !== f.get('again')) { setError('The two new passwords are not the same'); return; }
     const parsed = ChangePasswordRequest.safeParse({ currentPassword: f.get('currentPassword'), newPassword: f.get('newPassword') });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { await adopt((await api<LoginResponse>('/auth/password', { method: 'POST', json: parsed.data })).token); setDone(true); }
     catch (err) { setError(errText(err)); }

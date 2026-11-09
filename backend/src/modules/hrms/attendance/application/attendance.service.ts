@@ -27,6 +27,15 @@ export type PunchListener = (tx: Tx, punch: PunchStored) => Promise<PunchNotice[
 /** A device clock may run a little fast; anything later than this is refused. */
 const FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
 
+/** The punch-order rule (database trigger) in words a person acts on. */
+export function punchOrderText(dbMessage: string): string {
+  if (/punch in refused, the punch before it is also in/.test(dbMessage)) return 'You are already punched in. Punch out first.';
+  if (/punch out refused, the punch before it is also out/.test(dbMessage)) return 'You are not punched in. Punch in first.';
+  if (/another job/.test(dbMessage)) return 'You are punched in on another job. Punch out there first.';
+  if (/the punch after it/.test(dbMessage)) return 'This time clashes with a later punch. Check the time and try again.';
+  return 'In and out punches must alternate. Check your last punch.';
+}
+
 /**
  * Use cases live here: open the transaction, call repositories and other facades, write the outbox event.
  * Punches are stored as they come (append-only); work days are recalculated from them per job and IST date.
@@ -117,7 +126,7 @@ export class AttendanceService {
       });
     } catch (err) {
       const message = databaseMessage(err) ?? '';
-      if (message.startsWith('HRMS_PUNCH_ORDER')) throw new AppError('HRMS_PUNCH_ORDER', 409, message.replace(/^HRMS_PUNCH_ORDER:\s*/, ''));
+      if (message.startsWith('HRMS_PUNCH_ORDER')) throw new AppError('HRMS_PUNCH_ORDER', 409, punchOrderText(message));
       if (message.startsWith('HRMS_MONTH_LOCKED')) throw new AppError('HRMS_MONTH_LOCKED', 409, message.replace(/^HRMS_MONTH_LOCKED:\s*/, ''));
       if (violatedConstraint(err) === 'attendance_events_public_id_unique') {
         const again = await this.resent(ctx, req.publicId); // the same punch arrived twice at the same moment

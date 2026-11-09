@@ -20,21 +20,21 @@ export class AuthGuard implements CanActivate {
 
     const req = ctx.switchToHttp().getRequest<{ headers: Record<string, string | undefined>; context?: RequestContext }>();
     const [kind, token] = (req.headers.authorization ?? '').split(' ');
-    if (kind !== 'Bearer' || !token) throw new AppError('AUTH_MISSING', 401, 'Sign in first (Authorization: Bearer <token>)');
+    if (kind !== 'Bearer' || !token) throw new AppError('AUTH_MISSING', 401, 'Please sign in first.');
     req.context = await this.auth.authenticate(token);
     if (req.context.mustChangePassword && !this.reflector.getAllAndOverride<boolean>(DURING_PASSWORD_SETUP, targets)) {
-      throw new AppError('AUTH_PASSWORD_CHANGE_REQUIRED', 403, 'Set your own password first');
+      throw new AppError('AUTH_PASSWORD_CHANGE_REQUIRED', 403, 'Set your own password first: open Change password and choose a new one.');
     }
 
     const required = this.reflector.getAllAndOverride<string | string[] | undefined>(REQUIRED_PERMISSION, targets);
     if (!required) {
       this.logger.error(`Route without access rule: ${ctx.getClass().name}.${ctx.getHandler().name}`);
-      throw new AppError('FORBIDDEN', 403, 'This route has no access rule');
+      throw new AppError('FORBIDDEN', 403, 'This action is not available (no access rule is set for it). Tell support.');
     }
     const anyOf = Array.isArray(required) ? required : [required];
     const permissions = req.context.permissions;
     if (required !== ANY_SIGNED_IN && !anyOf.some((p) => permissions[p])) {
-      throw new AppError('FORBIDDEN', 403, `You need the permission ${anyOf.join(' or ')}`);
+      throw new AppError('FORBIDDEN', 403, `You do not have permission to do this. Ask HR or an admin for access (${anyOf.join(' or ')}).`, { needs: anyOf });
     }
     return true;
   }

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Lock, Unlock } from 'lucide-react';
 import { LockMonthRequest, UnlockMonthRequest, type MonthLock } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { useLoad } from '../hooks';
 import { ATTENDANCE } from '../permissions';
@@ -47,7 +47,7 @@ function LockForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const parsed = LockMonthRequest.safeParse({ company: String(f.get('company')), year: Number(f.get('year')), month: Number(f.get('month')) });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { await api('/hrms/month-locks', { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); setSaving(false); }
@@ -72,7 +72,7 @@ function UnlockForm({ lock, onClose, onSaved }: { lock: MonthLock; onClose: () =
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const parsed = UnlockMonthRequest.safeParse({ reason: String(new FormData(e.currentTarget).get('reason') ?? '') });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Give a reason'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Give a reason')); return; }
     setSaving(true); setError('');
     try { await api(`/hrms/month-locks/${lock.publicId}/unlock`, { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); setSaving(false); }

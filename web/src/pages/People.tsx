@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, ArrowDown, ArrowLeft, ArrowRight, BriefcaseBusiness, Building2, ChevronDown, ContactRound, FileText, Filter, LoaderCircle, MoreHorizontal, Plus, Search, SlidersHorizontal, Users, X } from 'lucide-react';
 import type { PersonDetail, PersonListItem } from '@ageless/shared';
-import { api } from '../api';
+import { api, errText } from '../api';
 import { useAuth } from '../auth';
 import PersonManage from './PersonManage';
 import AddPerson from './AddPerson';
@@ -23,11 +23,11 @@ export default function People() {
     const [people,setPeople]=useState<PersonListItem[]>([]), [total,setTotal]=useState(0), [page,setPage]=useState(1), [query,setQuery]=useState(''), [search,setSearch]=useState(''), [status,setStatus]=useState(''), [company,setCompany]=useState('');
   const [selected,setSelected]=useState<PersonDetail|null>(null), [modal,setModal]=useState(false), [loading,setLoading]=useState(true), [error,setError]=useState('');
   const pageSize=20;
-  const load=useCallback(async()=>{setLoading(true);setError('');try{const p=new URLSearchParams({page:String(page),pageSize:String(pageSize)});if(search)p.set('search',search);if(status)p.set('status',status);if(company)p.set('company',company);const r=await api<ListResponse>(`/hrms/people?${p}`);setPeople(r.items);setTotal(r.total);}catch(e){setError((e as Error).message);setPeople([]);}finally{setLoading(false);}},[page,search,status,company]);
+  const load=useCallback(async()=>{setLoading(true);setError('');try{const p=new URLSearchParams({page:String(page),pageSize:String(pageSize)});if(search)p.set('search',search);if(status)p.set('status',status);if(company)p.set('company',company);const r=await api<ListResponse>(`/hrms/people?${p}`);setPeople(r.items);setTotal(r.total);}catch(e){setError(errText(e));setPeople([]);}finally{setLoading(false);}},[page,search,status,company]);
   useEffect(()=>{void load();},[load]);
   useEffect(()=>{const t=setTimeout(()=>{setPage(1);setSearch(query.trim())},250);return()=>clearTimeout(t);},[query]);
   const stats=useMemo(()=>({ total, active:people.filter(p=>p.status==='active').length, teams:new Set(people.map(p=>p.primaryEmployment?.company).filter(Boolean)).size }),[people,total]);
-  async function openPerson(id:string){try{setError('');setSelected(await api<PersonDetail>(`/hrms/people/${id}`));}catch(e){setError((e as Error).message);}}
+  async function openPerson(id:string){try{setError('');setSelected(await api<PersonDetail>(`/hrms/people/${id}`));}catch(e){setError(errText(e));}}
   return <>
       <div className="heading-row"><div><div className="eyebrow">HRMS <span>•</span> DIRECTORY</div><h1>People <span className="title-count">{total}</span></h1><p>Manage your people, their roles, and company details.</p></div>{can('hrms.people.create')&&<button className="primary-btn" onClick={()=>{setError('');setModal(true)}}><Plus size={17}/> Add person</button>}</div>
         <div className="stats"><div className="stat-card"><div className="stat-icon purple"><Users size={18}/></div><div><small>PEOPLE IN DIRECTORY</small><strong>{total}</strong></div><div className="stat-foot">Across all companies</div></div><div className="stat-card"><div className="stat-icon green"><Activity size={18}/></div><div><small>ACTIVE ON TEAM</small><strong>{stats.active}</strong></div><div className="stat-foot"><span className="live-dot"/>Based on current page</div></div><div className="stat-card"><div className="stat-icon amber"><Building2 size={18}/></div><div><small>COMPANIES</small><strong>{stats.teams || '—'}</strong></div><div className="stat-foot">Represented in results</div></div></div>

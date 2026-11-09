@@ -4,7 +4,7 @@ import {
   CreateDepartmentRequest, CreatePositionRequest, FillPositionRequest, UpdateDepartmentRequest,
   type Department, type Designation, type Position,
 } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { dayLabel, useLoad, uuidv7 } from '../hooks';
 import JobPicker, { PersonPicker } from '../JobPicker';
@@ -87,7 +87,7 @@ function FormModal({ title, subtitle, submitLabel, onClose, run, children }: {
 function NewDepartment({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   return <FormModal title="Add a department" submitLabel="Add department" onClose={onClose} run={(f) => {
     const parsed = CreateDepartmentRequest.safeParse({ company: String(f.get('company')), name: String(f.get('name')), codePrefix: String(f.get('prefix')).trim().toUpperCase() });
-    return parsed.success ? api('/hrms/departments', { method: 'POST', json: parsed.data }).then(onSaved) : parsed.error.issues[0]?.message ?? 'Check the form';
+    return parsed.success ? api('/hrms/departments', { method: 'POST', json: parsed.data }).then(onSaved) : formError(parsed.error, 'Check the form');
   }}>
     <label className="span-two">Company<select id="nd-company" name="company">{COMPANIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select></label>
     <label>Name<input id="nd-name" name="name" required minLength={2} maxLength={80} /></label>
@@ -173,7 +173,7 @@ function NewPosition({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
       publicId: id, company, departmentCode: String(f.get('department')), designation: String(f.get('designation')).trim(),
       status: String(f.get('status')), ...(notes ? { notes } : {}),
     });
-    return parsed.success ? api('/hrms/positions', { method: 'POST', json: parsed.data }).then(onSaved) : parsed.error.issues[0]?.message ?? 'Check the form';
+    return parsed.success ? api('/hrms/positions', { method: 'POST', json: parsed.data }).then(onSaved) : formError(parsed.error, 'Check the form');
   }}>
     <label className="span-two">Company<select id="np-company" value={company} onChange={(e) => setCompany(e.target.value)}>{COMPANIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select></label>
     <label>Department<select id="np-department" name="department" required key={`d-${company}-${depts.data?.length ?? 0}`} defaultValue="">

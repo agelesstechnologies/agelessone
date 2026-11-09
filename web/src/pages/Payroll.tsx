@@ -4,7 +4,7 @@ import {
   AddAdjustmentRequest, AddBankAccountRequest, AddSalaryRequest, CreateRunRequest, MarkRunPaidRequest,
   type BankAccount, type PayrollItem, type PayrollRun, type PayrollRunSummary, type Payslip, type Salary,
 } from '@ageless/shared';
-import { api, downloadFile, errText } from '../api';
+import { api, downloadFile, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { dayLabel, rupees, todayIst, useLoad, uuidv7 } from '../hooks';
 import JobPicker from '../JobPicker';
@@ -95,7 +95,7 @@ function NewRun({ onClose, onSaved }: { onClose: () => void; onSaved: (id: strin
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const parsed = CreateRunRequest.safeParse({ company: String(f.get('company')), year: Number(f.get('year')), month: Number(f.get('month')) });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { const run = await api<PayrollRun>('/payroll/runs', { method: 'POST', json: parsed.data }); onSaved(run.publicId); }
     catch (err) { setError(errText(err)); }
@@ -181,7 +181,7 @@ function AdjustmentForm({ item, onClose, onSaved }: { item: PayrollItem; onClose
       publicId: adjId, kind: String(f.get('kind')), label: String(f.get('label')), amountPaise: Math.round(Number(f.get('amount')) * 100),
       ...(String(f.get('note')).trim() ? { note: String(f.get('note')) } : {}),
     });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { onSaved(await api<PayrollRun>(`/payroll/items/${item.publicId}/adjustments`, { method: 'POST', json: parsed.data })); }
     catch (err) { setError(errText(err)); }
@@ -209,7 +209,7 @@ function MarkPaid({ id, onClose, onSaved }: { id: string; onClose: () => void; o
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const parsed = MarkRunPaidRequest.safeParse({ paidAt: new Date(`${String(f.get('paidOn'))}T12:00:00+05:30`).toISOString(), bankRef: String(f.get('bankRef')) });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { onSaved(await api<PayrollRun>(`/payroll/runs/${id}/mark-paid`, { method: 'POST', json: parsed.data })); }
     catch (err) { setError(errText(err)); }
@@ -266,7 +266,7 @@ function AddSalary({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
       publicId: id, employmentPublicId: job, monthlyAmountPaise: Math.round(Number(f.get('amount')) * 100),
       effectiveFrom: String(f.get('from')), ...(note ? { note } : {}),
     });
-    if (!parsed.success) { setError(job ? parsed.error.issues[0]?.message ?? 'Check the form' : 'Choose a person and job'); return; }
+    if (!parsed.success) { setError(job ? formError(parsed.error, 'Check the form') : 'Choose a person and job'); return; }
     setSaving(true); setError('');
     try { await api('/payroll/salaries', { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }
@@ -319,7 +319,7 @@ function AddBank({ onClose, onSaved }: { onClose: () => void; onSaved: () => voi
       publicId: id, employmentPublicId: job, accountHolder: String(f.get('holder')), accountNumber: String(f.get('number')),
       ifsc: String(f.get('ifsc')), effectiveFrom: String(f.get('from')),
     });
-    if (!parsed.success) { setError(job ? parsed.error.issues[0]?.message ?? 'Check the form' : 'Choose a person and job'); return; }
+    if (!parsed.success) { setError(job ? formError(parsed.error, 'Check the form') : 'Choose a person and job'); return; }
     setSaving(true); setError('');
     try { await api('/payroll/bank-accounts', { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }

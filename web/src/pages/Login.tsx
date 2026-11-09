@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { CalendarCheck, Eye, EyeOff, LoaderCircle, ReceiptText, Ticket, Timer } from 'lucide-react';
 import { ForgotPasswordRequest, LoginRequest, ResetWithCodeRequest, type ForgotPasswordResponse, type LoginResponse } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 
 /** Demo logins from the development seed (backend/scripts/db-seed.mjs). Shown only in `pnpm dev`. */
@@ -103,7 +103,7 @@ function ForgotPassword({ initialLogin, onBack }: { initialLogin: string; onBack
     e.preventDefault();
     if (password !== again) { setError('The two passwords are not the same'); return; }
     const parsed = ResetWithCodeRequest.safeParse({ login, code, newPassword: password });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setBusy('reset'); setError('');
     try { await adopt((await api<LoginResponse>('/auth/reset-password', { method: 'POST', json: parsed.data })).token); }
     catch (err) { setError(errText(err)); setBusy(''); }

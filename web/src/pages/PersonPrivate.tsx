@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { UpdatePrivateRequest, type PersonDetail, type PrivateDetails } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { PRIVATE } from '../permissions';
 import { Modal, Notice } from '../ui';
@@ -55,7 +55,7 @@ function EditPrivate({ person, onClose, onSaved }: { person: PersonDetail; onClo
     const field = (name: string, clear: string) => (f.get(clear) === 'on' ? null : String(f.get(name)).trim() || undefined);
     const body = { aadhaar: field('aadhaar', 'clearAadhaar'), pan: field('pan', 'clearPan') };
     const parsed = UpdatePrivateRequest.safeParse(Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)));
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setBusy(true); setError('');
     try { await api(`/hrms/people/${person.publicId}/private`, { method: 'PUT', json: parsed.data }); await onSaved(); }
     catch (err) { setError(errText(err)); }

@@ -95,7 +95,7 @@ export class TicketWorkService {
   async download(ctx: RequestContext, publicId: string, attachmentPublicId: string): Promise<{ type: string; name: string; data: Buffer }> {
     const { t } = await this.tickets.load(this.db, ctx, publicId, 'view');
     const a = (await this.repo.attachments(this.db, t.id)).find((x) => x.publicId === attachmentPublicId);
-    if (!a) throw new AppError('TICKETS_ATTACHMENT_NOT_FOUND', 404, 'Unknown attachment');
+    if (!a) throw new AppError('TICKETS_ATTACHMENT_NOT_FOUND', 404, 'This file is not attached to the ticket (it may have been replaced).');
     return { type: CONTENT_TYPES[a.fileType as DocumentType], name: `${t.number}-${a.kind}.${a.fileType}`, data: await readUpload(a.filePath) };
   }
 
@@ -290,7 +290,7 @@ export class TicketWorkService {
   async externalStaffPhoto(ctx: RequestContext, publicId: string, staffPublicId: string): Promise<{ type: string; name: string; data: Buffer }> {
     const { t } = await this.tickets.load(this.db, ctx, publicId, 'view');
     const row = (await this.repo.externalStaff(this.db, t.id)).find((x) => x.publicId === staffPublicId);
-    if (!row?.photoPath) throw new AppError('TICKETS_EXTERNAL_STAFF_NOT_FOUND', 404, 'No photo');
+    if (!row?.photoPath) throw new AppError('TICKETS_EXTERNAL_STAFF_NOT_FOUND', 404, 'No photo was added for this worker.');
     return { type: CONTENT_TYPES[row.photoType as DocumentType], name: `${t.number}-external-${row.name.replace(/[^A-Za-z0-9]+/g, '-')}.${row.photoType}`,
       data: await readUpload(row.photoPath) };
   }

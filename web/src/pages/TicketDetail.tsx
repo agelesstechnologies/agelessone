@@ -4,7 +4,7 @@ import {
   AddExternalStaffRequest, AssignTicketRequest, ChecklistResultRequest, EndExternalStaffRequest, LinkTicketRequest, ReasonRequest, SignoffRequest, UpdateTicketRequest,
   type ChecklistResult, type ExternalStaff, type TicketDetail as Detail, type TicketSummary,
 } from '@ageless/shared';
-import { api, downloadFile, errText } from '../api';
+import { api, downloadFile, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { dayLabel, todayIst, useLoad, uuidv7 } from '../hooks';
 import JobPicker from '../JobPicker';
@@ -146,7 +146,7 @@ function Reason({ title, onClose, run }: { title: string; onClose: () => void; r
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const parsed = ReasonRequest.safeParse({ reason: String(new FormData(e.currentTarget).get('reason')) });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Give a reason'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Give a reason')); return; }
     void run(parsed.data);
   }
   return <Modal title={title} onClose={onClose}><form onSubmit={submit}>
@@ -229,7 +229,7 @@ function Signoff({ onClose, run }: { onClose: () => void; run: (b: FormData) => 
     const f = new FormData(e.currentTarget);
     const role = String(f.get('role')).trim();
     const parsed = SignoffRequest.safeParse({ signerName: String(f.get('name')).trim(), signerRole: role });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     const photo = f.get('photo');
     if (!(photo instanceof File) || photo.size === 0) { setError('Attach a photo of the signed sheet'); return; }
     const body = new FormData();
@@ -293,7 +293,7 @@ function AddExternalStaff({ onClose, run }: { onClose: () => void; run: (b: Form
     const text = (k: string) => String(f.get(k) ?? '').trim();
     const parsed = AddExternalStaffRequest.safeParse({ publicId: id.current, name: text('name'), phone: text('phone'), agency: text('agency'),
       trade: text('trade'), fromDate: text('from'), toDate: text('to') });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     const body = new FormData();
     for (const [k, v] of Object.entries(parsed.data)) if (v !== undefined) body.append(k, String(v));
     const p = f.get('photo');

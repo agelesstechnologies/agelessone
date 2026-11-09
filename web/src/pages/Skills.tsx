@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Check, Download, Plus } from 'lucide-react';
 import { AddCertificateRequest, AddPersonSkillRequest, CreateSkillRequest, type ExpiringCertificates, type Skill, type SkillsMatrix } from '@ageless/shared';
-import { api, downloadFile, errText } from '../api';
+import { api, downloadFile, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { dayLabel, useLoad } from '../hooks';
 import { SKILLS } from '../permissions';
@@ -103,7 +103,7 @@ function NewSkill({ onClose }: { onClose: () => void }) {
     const parsed = CreateSkillRequest.safeParse({
       company: String(f.get('company')), code: String(f.get('code')), name: String(f.get('name')), ...(dept ? { departmentCode: dept } : {}),
     });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError(''); setDone('');
     try { await api('/hrms/skills', { method: 'POST', json: parsed.data }); setDone(`Added ${parsed.data.name}.`); form.reset(); }
     catch (err) { setError(errText(err)); }
@@ -136,7 +136,7 @@ function AddSkill({ row, onClose, onSaved }: { row: Row; onClose: () => void; on
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const parsed = AddPersonSkillRequest.safeParse({ skillPublicId: String(f.get('skill')), level: String(f.get('level')) });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { await api(`/hrms/people/${row.person.publicId}/skills`, { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }
@@ -168,7 +168,7 @@ function AddCertificate({ row, onClose, onSaved }: { row: Row; onClose: () => vo
     const f = new FormData(e.currentTarget);
     const text = (k: string) => String(f.get(k) ?? '').trim();
     const parsed = AddCertificateRequest.safeParse({ name: text('name'), issuer: text('issuer'), number: text('number'), issuedOn: text('issuedOn'), expiresOn: text('expiresOn') });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     const body = new FormData();
     for (const [k, v] of Object.entries(parsed.data)) if (v !== undefined) body.append(k, String(v));
     const file = f.get('file');

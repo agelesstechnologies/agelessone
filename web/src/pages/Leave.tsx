@@ -3,7 +3,7 @@ import { Check, Plus, X } from 'lucide-react';
 import {
   ApplyLeaveRequest, LeaveAdjustmentRequest, type LeaveBalance, type LeaveReport, type LeaveRequestView, type LeaveType,
 } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { VoiceInput } from '../VoiceInput';
 import { addDays, dayLabel, todayIst, useLoad, useMyEmployments, uuidv7, words } from '../hooks';
@@ -113,7 +113,7 @@ function Apply({ onClose, onSaved }: { onClose: () => void; onSaved: () => void 
       publicId: requestId, employmentPublicId: jobId, leaveTypeCode: type, fromDate: d.get('fromDate'), toDate: d.get('toDate'),
       fromHalf: d.get('fromHalf'), toHalf: d.get('toHalf'), ...(reason ? { reason } : {}),
     });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { await api('/hrms/leave/requests', { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }
@@ -268,7 +268,7 @@ function Adjust({ onClose, onSaved }: { onClose: () => void; onSaved: () => void
       publicId: entryId, employmentPublicId: d.get('job'), leaveTypeCode: d.get('type'), year: Number(d.get('year')),
       entry: d.get('entry'), days: Number(d.get('days')), reason: String(d.get('reason') ?? '').trim(),
     });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setBusy(true); setError('');
     try { await api('/hrms/leave/ledger/adjustments', { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }

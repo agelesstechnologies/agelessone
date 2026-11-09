@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { CreateUserRequest } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { Modal, Notice } from '../ui';
 
 /**
@@ -17,7 +17,7 @@ export default function CreateLogin({ personPublicId, personName, onClose }: { p
     const f = new FormData(e.currentTarget);
     const phone = String(f.get('loginPhone') ?? '').trim();
     const parsed = CreateUserRequest.safeParse({ personPublicId, loginEmail: String(f.get('loginEmail') ?? '').trim(), loginPhone: phone || undefined });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { await api('/core/users', { method: 'POST', json: parsed.data }); setSentTo(parsed.data.loginEmail); }
     catch (err) { setError(errText(err)); }

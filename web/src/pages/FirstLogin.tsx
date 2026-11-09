@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Eye, EyeOff, LoaderCircle, MailCheck } from 'lucide-react';
 import { CompleteFirstLoginRequest, type CodeSent, type LoginResponse } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 
 /**
@@ -33,7 +33,7 @@ export default function FirstLogin() {
     e.preventDefault();
     if (password !== again) { setError('The two passwords are not the same'); return; }
     const parsed = CompleteFirstLoginRequest.safeParse({ code: hasEmail ? code : undefined, newPassword: password });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setBusy('save'); setError('');
     try { await adopt((await api<LoginResponse>('/auth/first-login', { method: 'POST', json: parsed.data })).token); }
     catch (err) { setError(errText(err)); setBusy(''); }

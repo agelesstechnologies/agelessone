@@ -3,7 +3,7 @@ import { Clock, LogIn, LogOut } from 'lucide-react';
 import {
   PunchRequest, type AttendanceRegister, type HistoryRow, type RebuildResult, type TodayAttendance, type WorkHours,
 } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { addDays, dayLabel, hm, timeIst, todayIst, useLoad, useMyEmployments, uuidv7, words } from '../hooks';
 import { ATTENDANCE } from '../permissions';
@@ -65,7 +65,7 @@ export function MyDay() {
     try {
       pending.current ??= uuidv7();
       const parsed = PunchRequest.safeParse({ publicId: pending.current, employmentPublicId, kind, occurredAt: new Date().toISOString(), ...(await position()) });
-      if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Check the punch');
+      if (!parsed.success) throw new Error(formError(parsed.error, 'Check the punch'));
       await api('/hrms/attendance/punches', { method: 'POST', json: parsed.data });
       pending.current = null;
       setOk(kind === 'in' ? 'You are punched in.' : 'You are punched out.');

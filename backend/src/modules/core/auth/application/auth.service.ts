@@ -75,11 +75,11 @@ export class AuthService {
       payload = await this.jwt.verifyAsync<TokenPayload>(token);
     } catch (err) {
       if ((err as Error).name === 'TokenExpiredError') throw new AppError('AUTH_EXPIRED', 401, 'Your sign-in has expired; sign in again');
-      throw new AppError('AUTH_INVALID', 401, 'Sign in again');
+      throw new AppError('AUTH_INVALID', 401, 'Your session has ended. Please sign in again.');
     }
     const user = await this.repo.findUser(payload.tid, payload.sub);
     if (!user || !this.mayUse(user) || !issuedAfterPasswordChange(payload.iat, user.passwordChangedAt)) {
-      throw new AppError('AUTH_INVALID', 401, 'Sign in again');
+      throw new AppError('AUTH_INVALID', 401, 'Your session has ended. Please sign in again.');
     }
     const grants = await this.repo.grantsInForce(user.tenantId, user.personId, todayIst());
     return {
@@ -90,7 +90,7 @@ export class AuthService {
 
   async me(ctx: RequestContext): Promise<Me> {
     const user = await this.repo.findUser(ctx.tenantId, ctx.userPublicId);
-    if (!user) throw new AppError('AUTH_INVALID', 401, 'Sign in again');
+    if (!user) throw new AppError('AUTH_INVALID', 401, 'Your session has ended. Please sign in again.');
     return {
       person: { publicId: user.personPublicId, displayName: user.personName },
       user: { publicId: user.publicId, loginPhone: user.loginPhone, loginEmail: user.loginEmail, mustChangePassword: user.mustChangePassword },
@@ -102,7 +102,7 @@ export class AuthService {
   /** Every older token stops working; the answer is a fresh token so the caller stays signed in. */
   async changePassword(ctx: RequestContext, req: ChangePasswordRequest): Promise<LoginResponse> {
     const user = await this.repo.findUser(ctx.tenantId, ctx.userPublicId);
-    if (!user) throw new AppError('AUTH_INVALID', 401, 'Sign in again');
+    if (!user) throw new AppError('AUTH_INVALID', 401, 'Your session has ended. Please sign in again.');
     if (!(await bcrypt.compare(req.currentPassword, user.passwordHash))) {
       throw new AppError('AUTH_WRONG_PASSWORD', 400, 'The current password is not correct');
     }
@@ -168,7 +168,7 @@ export class AuthService {
 
   private async signedInUser(ctx: RequestContext): Promise<UserRow> {
     const user = await this.repo.findUser(ctx.tenantId, ctx.userPublicId);
-    if (!user) throw new AppError('AUTH_INVALID', 401, 'Sign in again');
+    if (!user) throw new AppError('AUTH_INVALID', 401, 'Your session has ended. Please sign in again.');
     return user;
   }
 
@@ -205,8 +205,8 @@ export class AuthService {
   private async useCode(user: UserRow, purpose: 'first_login' | 'reset', code: string | undefined): Promise<void> {
     const row = await this.repo.latestCode(user.id, purpose);
     const problem = codeProblem(row, new Date());
-    if (problem === 'missing' || problem === 'used') throw new AppError('AUTH_CODE_NEEDED', 400, 'Ask for a code first');
-    if (problem === 'expired') throw new AppError('AUTH_CODE_EXPIRED', 400, 'This code has expired; ask for a new one');
+    if (problem === 'missing' || problem === 'used') throw new AppError('AUTH_CODE_NEEDED', 400, 'Ask for a sign-in code first (Send code), then enter it here.');
+    if (problem === 'expired') throw new AppError('AUTH_CODE_EXPIRED', 400, 'This code has expired (codes last 10 minutes). Ask for a new one.');
     if (problem === 'too_many_tries') throw new AppError('AUTH_CODE_TOO_MANY_TRIES', 400, 'Too many wrong codes; ask for a new one');
     if (!code || !sameHash(row!.codeHash, hashCode(code, user.publicId, requireEnv('JWT_SECRET')))) {
       await this.repo.countWrongTry(row!.id);
@@ -216,7 +216,7 @@ export class AuthService {
   }
 
   private wrongCode(): AppError {
-    return new AppError('AUTH_CODE_INVALID', 400, 'That code is not right');
+    return new AppError('AUTH_CODE_INVALID', 400, 'That code is not right. Check the 6 digits, or ask for a new code.');
   }
 
   /** A login works only while it is active and the person is active (an inactive person has no active job). */

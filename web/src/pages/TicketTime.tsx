@@ -4,7 +4,7 @@ import {
   AdjustTimeRequest, DailyUpdateRequest, TicketPunchInRequest, TicketPunchOutRequest,
   type DailyUpdate, type DayAllocation, type MissingUpdate, type RunningTicket, type TicketPunchResult, type TicketSummary,
 } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { addDays, dayLabel, hm, timeIst, todayIst, useLoad, uuidv7 } from '../hooks';
 import { PersonPicker } from '../JobPicker';
@@ -40,7 +40,7 @@ function Running() {
   }
   function punchIn() {
     const parsed = TicketPunchInRequest.safeParse({ items: [...picked].map((ticketPublicId) => ({ publicId: uuidv7(), ticketPublicId })) });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Choose at least one ticket'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Choose at least one ticket')); return; }
     void call('/tickets/punch-in', parsed.data);
   }
   function punchOut(ids?: string[]) {
@@ -84,7 +84,7 @@ export function TicketUpdates({ ticketId, label, onClose }: { ticketId: string; 
     const form = e.currentTarget;
     const f = new FormData(form);
     const parsed = DailyUpdateRequest.safeParse({ publicId: id, note: String(f.get('note')).trim(), percentComplete: Number(f.get('percent')) });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     const files = f.getAll('files').filter((x): x is File => x instanceof File && x.size > 0);
     if (files.length > 5) { setError('At most 5 files'); return; }
     setSaving(true); setError('');
@@ -169,7 +169,7 @@ function Adjust({ a, onClose, onSaved }: { a: DayAllocation; onClose: () => void
     const f = new FormData(e.currentTarget);
     const changes = a.rows.map((r) => ({ ticketPublicId: r.ticket.publicId, minutes: Math.round(Number(f.get(`m_${r.ticket.publicId}`)) || 0) })).filter((c) => c.minutes !== 0);
     const parsed = AdjustTimeRequest.safeParse({ personPublicId: a.person.publicId, date: a.date, reason: String(f.get('reason')).trim(), changes });
-    if (!parsed.success) { setError(changes.length ? parsed.error.issues[0]?.message ?? 'Check the form' : 'Enter minutes for at least one ticket'); return; }
+    if (!parsed.success) { setError(changes.length ? formError(parsed.error, 'Check the form') : 'Enter minutes for at least one ticket'); return; }
     try { await api('/tickets/time/adjustments', { method: 'POST', json: parsed.data }); onSaved(); } catch (err) { setError(errText(err)); }
   }
   return <Modal title="Adjust ticket time" subtitle={`${a.person.displayName} · ${dayLabel(a.date)}. Minutes: + adds, − takes away.`} onClose={onClose}><form onSubmit={submit}>
