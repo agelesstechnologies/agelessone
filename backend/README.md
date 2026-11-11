@@ -235,6 +235,7 @@ One PostgreSQL database, one schema per module: `core`, `hrms`, `tickets`. Chang
 | Demo HR (`…0004`) | AE-D003 | `demo.hr@example.com` | HR (all); also Payroll (all) |
 | Demo Admin (`…0005`) | ATPL-D002 | `demo.admin@example.com` | System admin (all) |
 | Demo CEO (`…0006`) | AE-D004 | `demo.ceo@example.com` | CEO (team): last approver, own requests need no approval; also Payroll Approver (all) and Management (all) |
+| Demo Accountant (`…0007`) | ATPL-D004 | `demo.accountant@example.com` | Accountant (own): an Employee plus the Accounts maker (drafts ledger mappings, asks to reopen a month) |
 
 ATPL departments: Designing `ATD`, Software Development `ATS`, Hardware & IoT `ATH`, CGI Content Development `ATC`,
 HR & Accounts `ATHR` (no heads yet); 13 ATPL designations (Designer … Accounts Executive). No skills are seeded.

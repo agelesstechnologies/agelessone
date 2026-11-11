@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Activity, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, CircleHelp, ClipboardCheck, Crown, LayoutDashboard, LoaderCircle, Lock, LogOut, Menu, SlidersHorizontal, Users, Wallet, X } from 'lucide-react';
+import { Activity, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, CircleHelp, ClipboardCheck, Crown, LayoutDashboard, Landmark, LoaderCircle, Lock, LogOut, Menu, SlidersHorizontal, Users, Wallet, X } from 'lucide-react';
 import { AuthProvider, useAuth } from './auth';
 import { ATTENDANCE, EXPENSES, LEAVE, MANAGEMENT, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
+import Accounts from './pages/Accounts';
 import Approvals from './pages/Approvals';
 import Attendance from './pages/Attendance';
 import CeoDashboard from './pages/CeoDashboard';
@@ -18,9 +19,11 @@ import Policies from './pages/Policies';
 import Skills from './pages/Skills';
 import Tickets from './pages/Tickets';
 import { Modal } from './ui';
+import { api } from './api';
+import type { AccountsAccess } from '@ageless/shared';
 
-type PageKey = 'overview' | 'ceo' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies';
-interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | 'manage'; show: (can: (p: string) => boolean, others: boolean, scopeOf: (p: string) => string | null) => boolean }
+type PageKey = 'overview' | 'ceo' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies' | 'accounts';
+interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | 'manage'; show: (can: (p: string) => boolean, others: boolean, scopeOf: (p: string) => string | null, accountsView: boolean) => boolean }
 
 /** Every menu item lists the permission that shows it; the backend still checks each request. */
 const NAV: NavItem[] = [
@@ -33,6 +36,7 @@ const NAV: NavItem[] = [
   { key: 'calendar', label: 'Calendar', icon: <CalendarRange size={18} />, section: 'workspace', show: (can) => can(PEOPLE.view) },
   { key: 'approvals', label: 'Approvals', icon: <ClipboardCheck size={18} />, section: 'workspace', show: (can) => can(LEAVE.approve) || can(EXPENSES.approve) || can(ATTENDANCE.approve) },
   { key: 'payroll', label: 'Payroll', icon: <Wallet size={18} />, section: 'workspace', show: (can) => can(PAYROLL.payslip) || can(PAYROLL.prepare) || can(PAYROLL.approve) },
+  { key: 'accounts', label: 'Accounts', icon: <Landmark size={18} />, section: 'workspace', show: (_can, _others, _scopeOf, accountsView) => accountsView },
   { key: 'skills', label: 'Skills', icon: <Award size={18} />, section: 'workspace', show: (can) => can(SKILLS.view) || can(SKILLS.manage) },
   { key: 'tickets', label: 'Tickets', icon: <Ticket size={18} />, section: 'workspace', show: (can) => can(TICKETS.view) || can(TICKETS.work) || can(TICKETS.manage) || can(TICKET_TYPES.view) || can(TICKETS.numbering) },
   { key: 'organisation', label: 'Organisation', icon: <Network size={18} />, section: 'workspace', show: (can, others) => others && (can(PEOPLE.manageEmployments) || can(PEOPLE.managePositions) || can(PEOPLE.view)) },
@@ -50,6 +54,9 @@ function Shell() {
   const [page, setPage] = useState<PageKey>(pageFromHash);
   const [mobileNav, setMobileNav] = useState(false);
   const [confirmOut, setConfirmOut] = useState(false);
+  // Accounts roles can come from the interim policy (HR, CEO), so the backend says who may see the section.
+  const [accountsView, setAccountsView] = useState(false);
+  useEffect(() => { api<AccountsAccess>('/accounts/access').then((a) => setAccountsView(a.view)).catch(() => setAccountsView(false)); }, []);
   const go = useCallback((p: string) => { window.location.hash = p; setMobileNav(false); }, []);
   useEffect(() => {
     const onHash = () => setPage(pageFromHash());
@@ -58,7 +65,7 @@ function Shell() {
   }, []);
   if (!me) return null;
 
-  const items = NAV.filter((n) => n.show(can, seesOthers, scopeOf));
+  const items = NAV.filter((n) => n.show(can, seesOthers, scopeOf, accountsView));
   // A page the person may not open (typed in the address bar) falls back to the overview.
   const current = items.find((n) => n.key === page) ?? items[0]!;
   const role = me.roles[0]?.name ?? 'No role';
@@ -93,6 +100,7 @@ function Shell() {
         {current.key === 'calendar' && <Calendar />}
         {current.key === 'approvals' && <Approvals />}
         {current.key === 'payroll' && <Payroll />}
+        {current.key === 'accounts' && <Accounts />}
         {current.key === 'skills' && <Skills />}
         {current.key === 'organisation' && <Organisation />}
         {current.key === 'tickets' && <Tickets />}

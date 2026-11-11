@@ -8,6 +8,7 @@ import { useAuth } from '../auth';
 const DEMO_PASSWORD = 'demo-pass-1';
 const DEMO = [
   { role: 'Employee', login: 'demo.engineer@example.com' },
+  { role: 'Accountant', login: 'demo.accountant@example.com' },
   { role: 'Supervisor', login: 'demo.supervisor@example.com' },
   { role: 'HR', login: 'demo.hr@example.com' },
   { role: 'CEO', login: 'demo.ceo@example.com' },
@@ -40,14 +41,7 @@ export default function Login() {
   }
 
   return <div className="login-page">
-    <aside className="login-hero">
-      <div className="login-brand"><div className="login-mark">a<span>.</span></div><div><b>ageless</b><small>PEOPLE PLATFORM</small></div></div>
-      <div className="login-pitch">
-        <h2>Everything your day at work needs, in one place.</h2>
-        <ul>{FEATURES.map((f) => <li key={f.text}><span>{f.icon}</span>{f.text}</li>)}</ul>
-      </div>
-      <small className="login-foot">© 2026 Ageless Universe</small>
-    </aside>
+    <aside className="login-hero"><img className="login-logo" src="/nlogo.png" alt="Ageless" /></aside>
 
     <main className="login-main">
       <form className="login-form" onSubmit={submit} noValidate>

@@ -23,6 +23,8 @@ const people = [
   { n: 4, display: 'Demo HR', full: 'Demo HR Four', company: 'AE', code: 'AE-D003', phone: null, email: 'demo.hr@example.com', role: 'hr', scope: 'all' },
   { n: 5, display: 'Demo Admin', full: 'Demo Admin Five', company: 'ATPL', code: 'ATPL-D002', phone: null, email: 'demo.admin@example.com', role: 'system_admin', scope: 'all', grantedBy: 4 },
   { n: 6, display: 'Demo CEO', full: 'Demo CEO Six', company: 'AE', code: 'AE-D004', phone: null, email: 'demo.ceo@example.com', role: 'ceo', scope: 'team' },
+  // An employee (own records) who also holds Accounts executive at scope all (see extraRoles).
+  { n: 7, display: 'Demo Accountant', full: 'Demo Accountant Seven', company: 'ATPL', code: 'ATPL-D004', phone: null, email: 'demo.accountant@example.com', role: 'employee', scope: 'own' },
 ];
 
 // Roles for tenant 1 and their permissions (the permission list itself comes from migration 0005).
@@ -60,7 +62,9 @@ const roles = [
     'hrms.private.view', 'hrms.private.reveal', 'payroll.payslip.own', 'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage', 'tickets.time.adjust'] },
 ];
 // Second roles: Demo HR runs payroll, Demo CEO approves it and has Management access (granted by Demo Admin).
-const extraRoles = [{ n: 214, person: 4, role: 'payroll' }, { n: 216, person: 6, role: 'payroll_approver' }, { n: 226, person: 6, role: 'management' }];
+const extraRoles = [{ n: 214, person: 4, role: 'payroll' }, { n: 216, person: 6, role: 'payroll_approver' }, { n: 226, person: 6, role: 'management' },
+  // Accounts permissions only count at scope all, so the accountant holds Accounts executive as a second role.
+  { n: 227, person: 7, role: 'accounts_executive' }];
 
 const client = new pg.Client({ connectionString: url.toString() });
 await client.connect();

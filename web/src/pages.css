@@ -2,8 +2,9 @@
 .boot{min-height:100vh;display:flex;align-items:center;justify-content:center;gap:10px;color:#737580}
 
 /* sign in */
-.login-page{min-height:100vh;display:grid;grid-template-columns:minmax(360px,44%) 1fr;background:#f7f8fa}
-.login-hero{background:radial-gradient(120% 80% at 0% 0%,#0f2747 0%,transparent 60%),linear-gradient(160deg,#030d28 0%,#0b1727 100%);color:#e2e8f0;padding:44px 52px;display:flex;flex-direction:column;justify-content:space-between;gap:40px;position:relative;overflow:hidden}
+.login-page{min-height:100vh;display:grid;grid-template-columns:minmax(360px,52%) 1fr;background:#f7f8fa}
+.login-hero{background:url("/hero-park.png") center / cover no-repeat;color:#e2e8f0;padding:44px 52px;display:flex;flex-direction:column;justify-content:space-between;gap:40px;position:relative;overflow:hidden}
+.login-logo{position:absolute;top:36px;left:40px;width:min(110px,32%);height:auto;object-fit:contain;z-index:1}
 .login-hero::after{content:'';position:absolute;right:-120px;bottom:-120px;width:340px;height:340px;border-radius:50%;border:56px solid #f5a10014}
 .login-brand{display:flex;align-items:center;gap:12px}
 .login-mark{height:42px;width:42px;border-radius:12px;background:#fff;color:#0b1727;font:800 30px/1 Manrope;display:grid;place-items:center;letter-spacing:-3px;padding:0 4px 6px 0}
@@ -335,3 +336,19 @@ th.num,td.num{text-align:right;font-variant-numeric:tabular-nums;padding-right:1
 @media(max-width:560px){.stats{grid-template-columns:1fr}}
 /* a table footer directly under an edge-to-edge table lines up with the first column */
 :not(.panel-body)>.table-wrap+.table-footer{padding-left:20px;padding-right:20px}
+
+/* Accounts: ledger keys with no Tally ledger yet */
+.row-warn td{background:#fff6f4}
+/* dark sign-in panel */
+.login-page,.login-main{background:#050505}
+.login-form h1,.login-form label{color:#fff}
+.login-lead,.login-help{color:#c4c7ce}
+.login-form input{background:#171717;border-color:#3b3b3b;color:#fff}
+.login-form input::placeholder{color:#a3a3a3}
+.password-field .reveal{color:#c4c7ce}
+.password-field .reveal:hover{background:#292929;color:#fff}
+.login-form .demo-box{border-color:#333}
+.login-form .demo-box .outline-btn{background:#111;border-color:#444;color:#fff}
+.login-form .demo-box .outline-btn:hover{background:#222}
+.login-form .demo-box small{color:#f5a100}
+.login-submit{background:#f5a100;color:#111}
