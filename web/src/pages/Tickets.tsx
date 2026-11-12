@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Plus } from 'lucide-react';
 import {
   ApproveReassignRequest, CreateTicketRequest, NumberSeriesRequest, ReasonRequest,
@@ -10,7 +10,7 @@ import { dayLabel, uuidv7, useLoad, useMyEmployments } from '../hooks';
 import JobPicker, { PersonPicker } from '../JobPicker';
 import { TICKET_TYPES, TICKETS } from '../permissions';
 import { Badge, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs } from '../ui';
-import TicketDetail, { STATUS_TONE, statusLabel } from './TicketDetail';
+import TicketPage, { STATUS_TONE, statusLabel } from './TicketDetail';
 import TicketReports from './TicketReports';
 import TicketTime from './TicketTime';
 import TicketTypes from './TicketTypes';
@@ -18,6 +18,13 @@ import TicketTypes from './TicketTypes';
 type TabKey = 'mine' | 'all' | 'time' | 'reassign' | 'reports' | 'types' | 'numbers';
 const COMPANIES = [{ code: 'AE', name: 'Ageless Entertainments' }, { code: 'ATPL', name: 'Ageless Technologies' }];
 const STATUSES = ['open', 'assigned', 'in_progress', 'on_hold', 'completed', 'cancelled'];
+
+/** The ticket in the address (#tickets/<id>), if one is open. */
+const ticketInHash = () => /^#tickets\/([0-9a-f-]{36})/i.exec(window.location.hash)?.[1] ?? null;
+/** Open a ticket as its own page; the browser's back (or the page's back arrow) returns to where the person came from. */
+export const openTicket = (publicId: string) => { window.location.hash = `tickets/${publicId}`; };
+/** The tab to show again when coming back from a ticket. */
+let lastTab: TabKey | null = null;
 
 export default function Tickets() {
   const { can, scopeOf } = useAuth();
@@ -35,11 +42,21 @@ export default function Tickets() {
     ...(types ? [{ key: 'types' as const, label: 'Ticket types' }] : []),
     ...(can(TICKETS.numbering) ? [{ key: 'numbers' as const, label: 'Numbering' }] : []),
   ];
-  const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'types');
+  const [tab, setTabState] = useState<TabKey>(lastTab && tabs.some((x) => x.key === lastTab) ? lastTab : tabs[0]?.key ?? 'types');
+  const setTab = (k: TabKey) => { lastTab = k; setTabState(k); };
   const [creating, setCreating] = useState(false);
   const [version, setVersion] = useState(0);
+  const [openId, setOpenId] = useState(ticketInHash);
+  useEffect(() => {
+    const onHash = () => setOpenId(ticketInHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  if (openId) {
+    return <TicketPage id={openId} onBack={() => { if (window.history.length > 1) window.history.back(); else window.location.hash = 'tickets'; }} />;
+  }
   return <>
-    <PageHead eyebrow="TICKETS" title="Tickets" subtitle="Service work: who does what, for how long, and what is left."
+    <PageHead eyebrow="OPERATIONS • TICKETS" title="Tickets" subtitle="Service work: who does what, for how long, and what is left."
       action={createsTickets ? <button className="primary-btn" onClick={() => setCreating(true)}><Plus size={16} /> New ticket</button> : undefined} />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'mine' && <TicketList key={`m${version}`} mine />}
@@ -57,7 +74,6 @@ function TicketList({ mine }: { mine?: boolean }) {
   const [status, setStatus] = useState('');
   const [company, setCompany] = useState('');
   const [overdue, setOverdue] = useState(false);
-  const [open, setOpen] = useState<string | null>(null);
   const path = mine ? `/tickets/mine${status ? `?status=${status}` : ''}`
     : `/tickets?${new URLSearchParams({ limit: '200', ...(status && { status }), ...(company && { company }), ...(overdue && { overdue: 'true' }) })}`;
   const q = useLoad(() => api<TicketSummary[]>(path), [path]);
@@ -73,13 +89,12 @@ function TicketList({ mine }: { mine?: boolean }) {
       {q.error && <Notice>{q.error}</Notice>}
       {q.loading && !q.data ? <Loading /> : !q.data?.length ? <Empty title="No tickets" /> :
         <div className="table-wrap"><table><thead><tr><th>NUMBER</th><th>TITLE</th><th>TYPE</th><th>STATUS</th><th>PRIORITY</th><th>ASSIGNEE</th><th>DUE</th></tr></thead>
-          <tbody>{q.data.map((t) => <tr key={t.publicId} className="link-row" onClick={() => setOpen(t.publicId)}>
+          <tbody>{q.data.map((t) => <tr key={t.publicId} className="link-row" onClick={() => openTicket(t.publicId)}>
             <td><b>{t.number}</b></td><td>{t.title}{t.site && <small className="sub">{t.site}</small>}</td><td>{t.type.name}</td>
             <td><Badge tone={STATUS_TONE[t.status] ?? 'gray'}>{statusLabel(t.status)}</Badge></td>
             <td>{t.priority}</td><td>{t.primaryAssignee?.person.displayName ?? '—'}</td>
             <td>{t.dueDate ? dayLabel(t.dueDate) : '—'}{t.overdue && <> <Badge tone="red">overdue</Badge></>}</td></tr>)}</tbody></table></div>}
     </div>
-    {open && <TicketDetail id={open} onClose={() => setOpen(null)} onChanged={q.reload} />}
   </Panel>;
 }
 

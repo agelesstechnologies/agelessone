@@ -8,7 +8,7 @@ import { leaveRequests } from '../../hrms/leave/schema';
 import { personSkills, skills } from '../../hrms/skills/schema';
 import {
   numberSeries, reassignRequests, ticketAssignees, ticketAttachments, ticketChecklistResults, ticketEvents, ticketLinks, tickets,
-  ticketExternalStaff, ticketSignoffs, ticketTypes,
+  ticketExternalAttendance, ticketExternalStaff, ticketSignoffs, ticketTypes,
 } from '../schema';
 
 export type TicketRow = typeof tickets.$inferSelect;
@@ -87,6 +87,19 @@ export class TicketsRepository {
     if (ids.length === 0) return new Map();
     const rows = await conn.select({ id: persons.id, publicId: persons.publicId, displayName: persons.displayName }).from(persons).where(inArray(persons.id, ids));
     return new Map(rows.map((r) => [r.id, { publicId: r.publicId, displayName: r.displayName }]));
+  }
+
+  /** Names of people by publicId (unknown ones are left out). */
+  async personNames(conn: Conn, tenantId: number, publicIds: string[]): Promise<Map<string, string>> {
+    if (publicIds.length === 0) return new Map();
+    const rows = await conn.select({ publicId: persons.publicId, displayName: persons.displayName }).from(persons)
+      .where(and(eq(persons.tenantId, tenantId), inArray(persons.publicId, publicIds)));
+    return new Map(rows.map((r) => [r.publicId, r.displayName]));
+  }
+
+  async company(conn: Conn, legalEntityId: number): Promise<{ code: string; name: string }> {
+    const [row] = await conn.select({ code: legalEntities.code, name: legalEntities.name }).from(legalEntities).where(eq(legalEntities.id, legalEntityId));
+    return row;
   }
 
   async skillRef(conn: Conn, id: number): Promise<{ publicId: string; name: string }> {
@@ -271,6 +284,22 @@ export class TicketsRepository {
       .orderBy(desc(ticketAssignees.isPrimary), asc(ticketAssignees.id));
   }
 
+  /** Everyone ever assigned (current and taken off), in the order they were assigned. */
+  async assigneeHistory(conn: Conn, ticketId: number) {
+    const ender = alias(persons, 'ender');
+    return conn.select({
+      employmentPublicId: employments.publicId, employeeCode: employments.employeeCode, personPublicId: persons.publicId, personName: persons.displayName,
+      isPrimary: ticketAssignees.isPrimary, assignedAt: ticketAssignees.assignedAt, assignerName: assigner.displayName,
+      endedAt: ticketAssignees.endedAt, enderName: ender.displayName,
+    }).from(ticketAssignees)
+      .innerJoin(employments, eq(employments.id, ticketAssignees.employmentId))
+      .innerJoin(persons, eq(persons.id, employments.personId))
+      .innerJoin(assigner, eq(assigner.id, ticketAssignees.assignedBy))
+      .leftJoin(ender, eq(ender.id, ticketAssignees.endedBy))
+      .where(eq(ticketAssignees.ticketId, ticketId))
+      .orderBy(asc(ticketAssignees.id));
+  }
+
   async insertAssignee(tx: Tx, v: typeof ticketAssignees.$inferInsert): Promise<void> {
     await tx.insert(ticketAssignees).values(v);
   }
@@ -415,12 +444,54 @@ export class TicketsRepository {
       id: ticketExternalStaff.id, publicId: ticketExternalStaff.publicId, name: ticketExternalStaff.name, phone: ticketExternalStaff.phone,
       agency: ticketExternalStaff.agency, trade: ticketExternalStaff.trade, fromDate: ticketExternalStaff.fromDate, toDate: ticketExternalStaff.toDate,
       photoPath: ticketExternalStaff.photoPath, photoType: ticketExternalStaff.photoType, addedAt: ticketExternalStaff.addedAt,
-      addedByPublicId: addedBy.publicId, addedByName: addedBy.displayName,
+      addedById: ticketExternalStaff.addedBy, addedByPublicId: addedBy.publicId, addedByName: addedBy.displayName,
     }).from(ticketExternalStaff).innerJoin(addedBy, eq(addedBy.id, ticketExternalStaff.addedBy))
       .where(eq(ticketExternalStaff.ticketId, ticketId)).orderBy(ticketExternalStaff.fromDate, ticketExternalStaff.id);
   }
 
   async endExternalStaff(tx: Tx, id: number, toDate: string): Promise<void> {
     await tx.update(ticketExternalStaff).set({ toDate }).where(eq(ticketExternalStaff.id, id));
+  }
+
+  // ---- external staff attendance ----
+
+  /** The record holding this publicId, in any tenant (to tell a resend from a clash). */
+  async externalAttendanceByPublicId(conn: Conn, publicId: string) {
+    const [row] = await conn.select({ tenantId: ticketExternalAttendance.tenantId, externalStaffId: ticketExternalAttendance.externalStaffId,
+      workDate: ticketExternalAttendance.workDate }).from(ticketExternalAttendance).where(eq(ticketExternalAttendance.publicId, publicId));
+    return row;
+  }
+
+  /** One worker's record for one work date. */
+  async externalAttendanceDay(conn: Conn, externalStaffId: number, workDate: string) {
+    const [row] = await conn.select().from(ticketExternalAttendance)
+      .where(and(eq(ticketExternalAttendance.externalStaffId, externalStaffId), eq(ticketExternalAttendance.workDate, workDate)));
+    return row;
+  }
+
+  async insertExternalAttendance(tx: Tx, v: typeof ticketExternalAttendance.$inferInsert): Promise<number> {
+    const [row] = await tx.insert(ticketExternalAttendance).values(v).returning({ id: ticketExternalAttendance.id });
+    return row.id;
+  }
+
+  async updateExternalAttendance(tx: Tx, id: number, patch: Partial<typeof ticketExternalAttendance.$inferInsert>): Promise<void> {
+    await tx.update(ticketExternalAttendance).set(patch).where(eq(ticketExternalAttendance.id, id));
+  }
+
+  /** A ticket's attendance records between two work dates (or one record, or all), newest day first, then by the worker's name. */
+  async externalAttendance(conn: Conn, ticketId: number, by: { from: string; to: string } | { id: number } | 'all') {
+    const recorder = alias(persons, 'recorder');
+    const updater = alias(persons, 'updater');
+    const a = ticketExternalAttendance;
+    return conn.select({
+      publicId: a.publicId, workDate: a.workDate, status: a.status, timeIn: a.timeIn, timeOut: a.timeOut, note: a.note,
+      recordedAt: a.recordedAt, updatedAt: a.updatedAt, staffPublicId: ticketExternalStaff.publicId, staffName: ticketExternalStaff.name,
+      recorderPublicId: recorder.publicId, recorderName: recorder.displayName, updaterPublicId: updater.publicId, updaterName: updater.displayName,
+    }).from(a)
+      .innerJoin(ticketExternalStaff, eq(ticketExternalStaff.id, a.externalStaffId))
+      .innerJoin(recorder, eq(recorder.id, a.recordedBy))
+      .leftJoin(updater, eq(updater.id, a.updatedBy))
+      .where(and(eq(a.ticketId, ticketId), by === 'all' ? undefined : 'id' in by ? eq(a.id, by.id) : and(gte(a.workDate, by.from), lte(a.workDate, by.to))))
+      .orderBy(desc(a.workDate), asc(ticketExternalStaff.name), asc(a.id));
   }
 }

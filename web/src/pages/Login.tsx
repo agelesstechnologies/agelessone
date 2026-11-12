@@ -9,6 +9,8 @@ const DEMO_PASSWORD = 'demo-pass-1';
 const DEMO = [
   { role: 'Employee', login: 'demo.engineer@example.com' },
   { role: 'Supervisor', login: 'demo.supervisor@example.com' },
+  { role: 'Manager', login: 'demo.manager@example.com' },
+  { role: 'Department head', login: 'demo.head@example.com' },
   { role: 'HR', login: 'demo.hr@example.com' },
   { role: 'CEO', login: 'demo.ceo@example.com' },
   { role: 'System admin', login: 'demo.admin@example.com' },
@@ -131,6 +133,6 @@ function ForgotPassword({ initialLogin, onBack }: { initialLogin: string; onBack
       {sentNote && <button type="button" className="link-btn" disabled={busy !== ''} onClick={() => void send()}>Send a new code</button>}
       <button type="button" className="link-btn" onClick={onBack}>Back to sign in</button>
     </div>
-    <p className="login-help">No login yet? Ask your supervisor or HR to create one for you.</p>
+    <p className="login-help">No login yet? Ask your manager or HR to create one for you.</p>
   </form>;
 }

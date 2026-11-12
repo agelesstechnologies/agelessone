@@ -153,7 +153,7 @@ function AddJob({ person, onClose, onDone }: Step & { person: PersonDetail }) {
     <label>Department code <span className="optional">optional</span><input id="aj-department" name="department" maxLength={6} /></label>
     <label>Engagement<select id="aj-type" name="type"><option value="permanent">Permanent</option><option value="probation">Probation</option><option value="contract">Contract</option><option value="intern">Intern</option><option value="external">External</option></select></label>
     <label>Joined<input id="aj-joined" name="joined" type="date" required defaultValue={todayIst()} /></label>
-    <label className="span-two">Manager public ID <span className="optional">optional</span><input id="aj-manager" name="manager" placeholder="Supervisor UUID" /></label>
+    <label className="span-two">Manager public ID <span className="optional">optional</span><input id="aj-manager" name="manager" placeholder="Manager UUID" /></label>
   </Form>;
 }
 
@@ -170,7 +170,7 @@ function EditJob({ job, onClose, onDone }: Step & { job: Job }) {
   }}>
     <label>Designation<input id="ej-designation" name="designation" maxLength={80} defaultValue={job.designation ?? ''} /></label>
     <label>Department code<input id="ej-department" name="department" maxLength={6} defaultValue={job.department?.code ?? ''} /></label>
-    <label className="span-two">Manager public ID<input id="ej-manager" name="manager" defaultValue={job.manager?.publicId ?? ''} placeholder="Supervisor UUID" /></label>
+    <label className="span-two">Manager public ID<input id="ej-manager" name="manager" defaultValue={job.manager?.publicId ?? ''} placeholder="Manager UUID" /></label>
     {!job.isPrimary && <label className="span-two check-row"><input name="primary" type="checkbox" /> Make this the primary employment</label>}
   </Form>;
 }

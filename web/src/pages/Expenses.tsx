@@ -21,7 +21,7 @@ export default function Expenses() {
   ];
   const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'mine');
   return <>
-    <PageHead eyebrow="HRMS • EXPENSES" title="Expenses" subtitle="Claim what you spent, approve your team's claims, and see totals." />
+    <PageHead eyebrow="ACCOUNTS • EXPENSES" title="Expenses" subtitle="Claim what you spent, approve your team's claims, and see totals." />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'mine' && <MyClaims />}
     {tab === 'approve' && <Approvals />}

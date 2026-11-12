@@ -15,7 +15,7 @@ const COMPANIES = [{ code: 'AE', name: 'Ageless Entertainments' }, { code: 'ATPL
  * another code instead, e.g. when bringing over existing staff.
  */
 export default function AddPerson({ onClose, onCreated }: { onClose: () => void; onCreated: (publicId: string) => void }) {
-  // HR: any company. A supervisor or department head: the companies they work in
+  // HR: any company. A manager or department head: the companies they work in
   const { scopeOf, can } = useAuth();
   const mine = useMyEmployments();
   const myCodes = new Set(mine.jobs.map((j) => j.company.code));
@@ -29,7 +29,7 @@ export default function AddPerson({ onClose, onCreated }: { onClose: () => void;
   const [manager, setManager] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  // a login is created with the person when the caller may create logins (HR / System admin, or a supervisor for their team)
+  // a login is created with the person when the caller may create logins (HR / System admin, or a manager / department head for their team)
   const canLogin = can(USERS.manage) || can(USERS.team);
   const [giveLogin, setGiveLogin] = useState(canLogin);
   const [loginEmail, setLoginEmail] = useState('');

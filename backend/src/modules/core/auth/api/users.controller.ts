@@ -16,7 +16,7 @@ export class UsersController {
   constructor(@Inject(UsersService) private readonly service: UsersService) {}
 
   @Doc({ summary: 'Create a login (email required, phone optional) with a temporary password; the person sets their own at the first sign-in', response: CreatedId,
-    description: 'core.users.manage (scope all): anyone. core.users.team (Supervisor, department head): someone you manage or in a department you head; that login gets the Employee role.' })
+    description: 'core.users.manage (scope all): anyone. core.users.team (Manager, department head): someone you manage or in a department you head; that login gets the Employee role.' })
   @Permission(MANAGE, TEAM) @Post('users')
   createUser(@Ctx() ctx: RequestContext, @Body(new ZodValidationPipe(CreateUserRequest)) body: CreateUserRequest) {
     return this.service.createUser(ctx, body);

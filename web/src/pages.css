@@ -413,3 +413,79 @@ td:empty::after{content:'—';color:#c3c9d3}
 .detail-section>.chip-row{margin-top:10px;margin-bottom:12px}
 .ext-staff>span:first-child{display:flex;flex-direction:column;gap:3px;color:#4d4e57}
 .ext-staff small{font-size:9px}
+/* external staff attendance: the last two weeks under each worker; Present / Half day / Absent buttons in the mark form */
+.ext-worker{border-top:1px solid #eef1f5}
+.ext-worker>.detail-row{border-top:0}
+.xa-days{display:flex;flex-direction:column;gap:5px;padding:0 2px 10px}
+.xa-day{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:12px;color:#4d4e57}
+.xa-date{min-width:96px;color:#6b7380}
+.xa-note{color:#737580;font-style:italic;word-break:break-word}
+.xa-status{display:flex;gap:8px}
+.xa-status .outline-btn{flex:1;justify-content:center;height:38px;font-size:12.5px}
+.xa-status .outline-btn.on{border-color:#f5a100;background:#fff6e5;color:#b37400;font-weight:700}
+/* ticket page (#tickets/<id>): Froid-style card, tile grid and big buttons; works from phone to desktop */
+.ticket-page{max-width:760px;margin:0 auto}
+.tp-bar{display:grid;grid-template-columns:40px 1fr 40px;align-items:center;margin:-6px 0 14px}
+.tp-bar h1{font:700 19px Manrope;text-align:center;color:#1c2b3c;margin:0}
+.tp-bar .icon-button{color:#b37400;height:40px;width:40px;border-radius:10px}
+.tp-bar .icon-button:hover{background:#fff6e5}
+.tp-card{background:#fff;border:1px solid #eceef2;border-radius:14px;padding:16px 18px;margin-bottom:14px;box-shadow:0 2px 6px #1c2b3c0d}
+.tp-card h3{font:700 13px Manrope;margin:14px 0 8px}
+.tp-card h3:first-child{margin-top:0}
+.tp-title{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.tp-number{font:800 17px Manrope;color:#1c2b3c;display:block}
+.tp-sub{font-size:11.5px;color:#8a8c96}
+.tp-badges{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.tp-name{font:700 16px Manrope;margin:12px 0 2px;color:#1c2b3c}
+.tp-type{font-size:12px;color:#b37400;font-weight:600;margin:0 0 10px}
+.tp-rows{margin:0;border-top:1px solid #f0f2f5}
+.tp-row{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid #f0f2f5;font-size:13px}
+.tp-row:last-child{border-bottom:0}
+.tp-row dt{display:flex;align-items:center;gap:8px;color:#7b7d88}
+.tp-row dd{margin:0;color:#2c2e36;word-break:break-word}
+.tp-row-icon{color:#d08a00;display:grid;place-items:center}
+.tp-people{display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+.tp-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+.tp-tile{position:relative;background:#fff;border:1px solid #eceef2;border-radius:14px;padding:16px 8px 13px;display:flex;flex-direction:column;
+  align-items:center;gap:9px;font:600 12.5px 'DM Sans';color:#2c2e36;box-shadow:0 2px 6px #1c2b3c0d;cursor:pointer}
+.tp-tile:hover{border-color:#ffcf74;background:#fffdf7}
+.tp-tile-icon{height:46px;width:46px;border-radius:50%;background:#fff3da;color:#c07c00;display:grid;place-items:center}
+.tp-tile small{position:absolute;top:8px;right:9px;background:#eef1f5;color:#5d606b;border-radius:9px;padding:1px 7px;font-size:10.5px}
+.tp-actions{display:flex;flex-direction:column;gap:10px;margin:4px 0 14px}
+.tp-big{width:100%;height:48px;border-radius:24px;font-size:14px;font-weight:700;justify-content:center}
+.tp-warn{border:1.5px solid #f3c27a;background:#fff8ec;color:#c4610e;cursor:pointer}
+.tp-warn:hover{background:#fff1da}
+.tp-out{border:0;background:#1c2b3c;color:#fff;cursor:pointer;display:inline-flex;align-items:center}
+.tp-manage{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 14px;border:1px dashed #e2e5eb;border-radius:12px;background:#fbfcfd}
+.tp-manage-label{font-size:10px;font-weight:700;letter-spacing:.8px;color:#9a9ca6;text-transform:uppercase;margin-right:4px}
+.tp-hint{text-align:center;margin:8px 0 2px}
+.tp-totals{display:flex;flex-direction:column;gap:3px;background:#f7f9fb;border-radius:10px;padding:10px 12px;margin:12px 0 4px;font-size:12px;color:#5d606b}
+.tp-totals b{color:#1c2b3c}
+.tp-sub-head{text-align:center;color:#7b7d88;font:500 12.5px 'DM Sans'!important;margin:16px 0 10px!important}
+.tp-log{border:1px solid #eceef2;border-radius:10px;padding:10px 12px;margin-bottom:9px;font-size:12.5px;line-height:1.6;color:#3c3e46;box-shadow:0 1px 3px #1c2b3c0a}
+.tp-log b{color:#1c2b3c}
+.tp-log-top{display:flex;justify-content:space-between;gap:8px}
+.tp-hours{color:#2f8a5b;font-weight:600}
+.tp-notes{display:flex;flex-direction:column;gap:9px;margin-bottom:12px}
+.tp-note{border:1px solid #eceef2;border-radius:10px;padding:10px 12px}
+.tp-note-top{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:11.5px;color:#8a8c96}
+.tp-note-top b{color:#b37400;font-size:12.5px}
+.tp-pct{margin-left:auto;background:#eaf7f0;color:#3f8d67;border-radius:9px;padding:1px 7px}
+.tp-note p{margin:6px 0 2px;font-size:13px;color:#2c2e36;white-space:pre-wrap}
+.ticket-page .detail-row{font-size:12.5px}
+@media(max-width:560px){
+  .tp-row{grid-template-columns:118px 1fr;font-size:12.5px}
+  .tp-tiles{gap:9px}
+  .tp-tile{padding:13px 4px 11px;font-size:11.5px}
+  .tp-tile-icon{height:40px;width:40px}
+  .tp-card{padding:14px}
+}
+/* sidebar: HRMS drop-down group (People, Attendance, Leave, Calendar, Skills) */
+.nav-group-wrap{display:grid;gap:4px}
+.nav-group{height:40px;width:100%;display:flex;align-items:center;gap:11px;padding:0 10px;border:0;border-radius:7px;background:transparent;color:#e2e8f0;font:500 12px 'DM Sans';cursor:pointer;text-align:left}
+.nav-group svg{color:#94a3b8}
+.nav-group:hover{background:#ffffff12}
+.nav-group.has-active{color:#fff;font-weight:700}.nav-group.has-active svg{color:var(--brand)}
+.nav-chevron{margin-left:auto;transition:transform .15s}.nav-chevron.open{transform:rotate(180deg)}
+.nav-sub{display:grid;gap:4px;margin:0 0 2px 18px;padding-left:8px;border-left:1px solid #ffffff1f}
+.nav-sub a{height:36px}

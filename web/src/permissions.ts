@@ -4,7 +4,7 @@ export const PEOPLE = {
   reviewContacts: 'hrms.contacts.review', manageEmployments: 'hrms.employments.manage', updateEmployments: 'hrms.employments.update', managePositions: 'hrms.positions.manage',
 } as const;
 export const PRIVATE = { view: 'hrms.private.view', reveal: 'hrms.private.reveal', manage: 'hrms.private.manage' } as const;
-export const TICKETS = { view: 'tickets.view', work: 'tickets.work', manage: 'tickets.manage', create: 'tickets.create', site: 'tickets.site', numbering: 'tickets.numbering.manage', timeAdjust: 'tickets.time.adjust' } as const;
+export const TICKETS = { view: 'tickets.view', work: 'tickets.work', manage: 'tickets.manage', create: 'tickets.create', site: 'tickets.site', numbering: 'tickets.numbering.manage', timeAdjust: 'tickets.time.adjust', report: 'tickets.report' } as const;
 export const TICKET_TYPES = { view: 'tickets.types.view', manage: 'tickets.types.manage' } as const;
 export const ATTENDANCE = { punch: 'hrms.attendance.punch', view: 'hrms.attendance.view', rebuild: 'hrms.attendance.rebuild', approve: 'hrms.attendance.approve', lockMonth: 'hrms.month.lock', unlockMonth: 'hrms.month.unlock' } as const;
 export const PAYROLL = { prepare: 'payroll.prepare', approve: 'payroll.approve', payslip: 'payroll.payslip.own' } as const;
@@ -45,6 +45,7 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'core.policies.manage': 'Manage company policies',
   'core.users.manage': 'Manage logins and roles',
   'tickets.site': 'Run the site of own tickets (requirements, external staff, hold)',
+  'tickets.report': 'Download the full ticket report (PDF)',
 };
 
 export const SCOPE_LABELS = { own: 'Own records', team: 'Own team', all: 'Everyone' } as const;

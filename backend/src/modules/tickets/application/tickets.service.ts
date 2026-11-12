@@ -13,7 +13,7 @@ import { TicketRow, TicketsRepository, Visibility } from '../infrastructure/tick
 import { checkDetails, FieldDef } from '../domain/type-details';
 import { missingForCompletion } from '../domain/completion';
 import { isFinished, Move, nextStatus, Status } from '../domain/lifecycle';
-import { Caller, canComplete, canCreate, canManage, canRunSite, canView, canWork, Relation } from '../domain/ticket-access';
+import { Caller, canComplete, canCreate, canManage, canReport, canRunSite, canView, canWork, Relation } from '../domain/ticket-access';
 import { TICKETS } from '../domain/permissions';
 
 export type Warning = { code: string; message: string; employmentPublicId?: string };
@@ -67,7 +67,7 @@ export class TicketsService {
 
   async get(ctx: RequestContext, publicId: string): Promise<TicketDetail> {
     const { t } = await this.load(this.db, ctx, publicId, 'view');
-    return this.detail(this.db, t.id);
+    return this.detail(this.db, ctx, t.id);
   }
 
   // ---- creating and changing ----
@@ -78,7 +78,7 @@ export class TicketsService {
       const tenant = await this.repo.tenantOfTicket(req.publicId);
       if (tenant === ctx.tenantId) {
         const { t } = await this.load(this.db, ctx, publicId, 'view');
-        return { ticket: await this.detail(this.db, t.id), created: false };
+        return { ticket: await this.detail(this.db, ctx, t.id), created: false };
       }
       if (tenant !== undefined) throw new AppError('TICKETS_DUPLICATE_ID', 409, 'This publicId is already used');
     }
@@ -113,7 +113,7 @@ export class TicketsService {
         if (planned.rows.length) await this.applyAssignees(tx, ctx.personId, await this.repo.ticketById(tx, t.id), planned.rows);
         return t.id;
       });
-      return { ticket: await this.detail(this.db, id, planned.warnings), created: true };
+      return { ticket: await this.detail(this.db, ctx, id, planned.warnings), created: true };
     } catch (err) {
       if (violatedConstraint(err) === 'tickets_public_id_unique') return this.create(ctx, req); // the same request twice at once
       throw err;
@@ -152,7 +152,7 @@ export class TicketsService {
         await this.repo.updateTicket(tx, t.id, patch);
         await this.event(tx, ctx.personId, t, 'details_updated', { changed });
       }
-      return this.detail(tx, t.id);
+      return this.detail(tx, ctx, t.id);
     });
   }
 
@@ -172,7 +172,7 @@ export class TicketsService {
       await this.applyAssignees(tx, ctx.personId, t, planned.rows);
       return t.id;
     });
-    return this.detail(this.db, id, warnings);
+    return this.detail(this.db, ctx, id, warnings);
   }
 
   /** assigned → in_progress. The first ticket punch-in calls this too. */
@@ -212,7 +212,7 @@ export class TicketsService {
       if (type.code === 'qc') await this.reworkIfFailed(tx, ctx, t);
       return t.id;
     });
-    return this.detail(this.db, id);
+    return this.detail(this.db, ctx, id);
   }
 
   // ---- number series (HR) ----
@@ -248,13 +248,7 @@ export class TicketsService {
     const t = await this.repo.findTicket(conn, ctx.tenantId, publicId, lock);
     if (!t) throw new AppError('TICKETS_NOT_FOUND', 404, 'Unknown ticket');
     const caller = this.caller(ctx);
-    const assignees = await this.repo.currentAssignees(conn, t.id);
-    const mine = assignees.find((a) => a.personId === ctx.personId);
-    const rel: Relation = {
-      headsDepartment: (await this.repo.departmentHead(conn, t.departmentId)) === ctx.personId,
-      supervises: t.supervisorPersonId === ctx.personId, created: t.createdBy === ctx.personId,
-      assignee: mine !== undefined, primary: mine?.isPrimary ?? false,
-    };
+    const rel = await this.relation(conn, ctx, t);
     if (!canView(caller, rel)) throw new AppError('TICKETS_NOT_FOUND', 404, 'Unknown ticket');
     if (!CHECK[check](caller, rel)) {
       const why = { view: '', work: 'Only its assignees, its department head or admin can work on this ticket',
@@ -266,7 +260,7 @@ export class TicketsService {
 
   caller(ctx: RequestContext): Caller {
     return { view: ctx.permissions[TICKETS.view], work: ctx.permissions[TICKETS.work], manage: ctx.permissions[TICKETS.manage],
-      create: ctx.permissions[TICKETS.create], site: ctx.permissions[TICKETS.site], management: isManagement(ctx) };
+      create: ctx.permissions[TICKETS.create], site: ctx.permissions[TICKETS.site], report: ctx.permissions[TICKETS.report], management: isManagement(ctx) };
   }
 
   requireUnfinished(t: TicketRow): void {
@@ -330,14 +324,15 @@ export class TicketsService {
     });
   }
 
-  /** The full view of a ticket. */
-  async detail(conn: Conn, ticketId: number, warnings: Warning[] = []): Promise<TicketDetail> {
+  /** The full view of a ticket, with what the caller (ctx) may do that the web shows as a button (canDownloadReport). */
+  async detail(conn: Conn, ctx: RequestContext, ticketId: number, warnings: Warning[] = []): Promise<TicketDetail> {
     const t = await this.repo.ticketById(conn, ticketId);
     const [summary, type, assignees, checklist, attachments, signoffs, links, events, reassigns] = await Promise.all([
       this.repo.summary(conn, ticketId), this.repo.typeVersion(conn, t.typeId), this.repo.currentAssignees(conn, ticketId),
       this.repo.latestChecklist(conn, ticketId), this.repo.attachments(conn, ticketId), this.repo.signoffs(conn, ticketId),
       this.repo.links(conn, ticketId), this.repo.events(conn, ticketId), this.repo.reassignRequests(conn, t.tenantId, { ticketId }),
     ]);
+    const rel = await this.relation(conn, ctx, t, assignees);
     const persons = await this.personRefs(conn, [t.createdBy, t.headApprovedBy]);
     const skill = t.requiredSkillId === null ? null : await this.skillRef(conn, t.requiredSkillId);
     const items = type.checklistItems as string[];
@@ -364,6 +359,17 @@ export class TicketsService {
       reassignRequests: reassigns.map(toReassign),
       missingForCompletion: isFinished(t.status as Status) ? [] : await this.missing(conn, t, type),
       warnings,
+      canDownloadReport: canReport(this.caller(ctx), rel),
+    };
+  }
+
+  /** How the caller relates to the ticket: heads its department, supervises or created it, is a (primary) assignee. */
+  private async relation(conn: Conn, ctx: RequestContext, t: TicketRow, current?: AssigneeRow[]): Promise<Relation> {
+    const mine = (current ?? await this.repo.currentAssignees(conn, t.id)).find((a) => a.personId === ctx.personId);
+    return {
+      headsDepartment: (await this.repo.departmentHead(conn, t.departmentId)) === ctx.personId,
+      supervises: t.supervisorPersonId === ctx.personId, created: t.createdBy === ctx.personId,
+      assignee: mine !== undefined, primary: mine?.isPrimary ?? false,
     };
   }
 
@@ -386,7 +392,7 @@ export class TicketsService {
       await this.event(tx, ctx.personId, t, action, { from: t.status, to, ...details });
       return t.id;
     });
-    return this.detail(this.db, id);
+    return this.detail(this.db, ctx, id);
   }
 
   private wrongStatus(t: TicketRow, mv: Move): AppError {

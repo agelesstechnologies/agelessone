@@ -2,15 +2,16 @@ import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Put, Query
 import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import {
-  AddExternalStaffRequest, ApproveReassignRequest, AssignTicketRequest, AttachmentRequest, EndExternalStaffRequest, ExternalStaff, ChecklistResultRequest, CreateTicketRequest, LinkTicketRequest,
-  MyTicketsQuery, NumberSeries, NumberSeriesRequest, ReasonRequest, ReassignmentRequest, ReassignRequestsQuery, SignoffRequest, TicketDetail,
-  TicketsQuery, TicketSummary, UpdateTicketRequest,
+  AddExternalStaffRequest, ApproveReassignRequest, AssignTicketRequest, AttachmentRequest, EndExternalStaffRequest, ExternalAttendance, ExternalAttendanceQuery,
+  ExternalStaff, ChecklistResultRequest, CreateTicketRequest, LinkTicketRequest, MyTicketsQuery, NumberSeries, NumberSeriesRequest, ReasonRequest,
+  ReassignmentRequest, ReassignRequestsQuery, RecordExternalAttendanceRequest, SignoffRequest, TicketDetail, TicketsQuery, TicketSummary, UpdateTicketRequest,
 } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../platform/http/zod-validation.pipe';
 import { Ctx, Permission, RequestContext, SignedIn } from '../../../platform/http/request-context';
 import { Doc } from '../../../platform/http/doc';
 import { TicketsService } from '../application/tickets.service';
 import { MAX_TICKET_FILE_BYTES, TicketUpload, TicketWorkService } from '../application/ticket-work.service';
+import { TicketFullReportService } from '../application/ticket-full-report.service';
 import { TICKETS } from '../domain/permissions';
 
 const PublicIdParam = new ZodValidationPipe(z.string().uuid());
@@ -29,6 +30,7 @@ export class TicketsController {
   constructor(
     @Inject(TicketsService) private readonly service: TicketsService,
     @Inject(TicketWorkService) private readonly work: TicketWorkService,
+    @Inject(TicketFullReportService) private readonly report: TicketFullReportService,
   ) {}
 
   @Doc({ summary: 'My tickets: the ones I am currently assigned to', response: z.array(TicketSummary) })
@@ -177,6 +179,27 @@ export class TicketsController {
     return this.work.endExternalStaff(ctx, publicId, staffId, body);
   }
 
+  @Doc({ summary: "The outside workers' daily attendance on this ticket (default the last 31 days; at most 92)", response: z.array(ExternalAttendance),
+    description: 'Anyone who may see the ticket. Newest day first, then by name. Range too long or reversed: 400 TICKETS_EXTERNAL_ATTENDANCE_RANGE.' })
+  @Permission(...SEE) @Get(':publicId/external-staff/attendance')
+  externalAttendance(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string,
+    @Query(new ZodValidationPipe(ExternalAttendanceQuery)) q: ExternalAttendanceQuery) {
+    return this.work.externalAttendance(ctx, publicId, q);
+  }
+
+  @Doc({ summary: "Record or correct an outside worker's attendance for one work day (present, half day, absent; optional times and note)",
+    response: ExternalAttendance,
+    description: 'The person who added the worker, while they still run this ticket\'s site work, or the ticket\'s managers (department head, Manager, '
+      + 'admin user, Management); anyone else 403 TICKETS_FORBIDDEN. One record per worker and day: sending a recorded day again corrects it; the same '
+      + 'values sent again (a resend) change nothing. Days: within the worker\'s days on site, not after today (IST), at most '
+      + 'tickets.external_attendance.backdate_days back (policy, default 7); not on a cancelled ticket. Errors: 400 TICKETS_EXTERNAL_ATTENDANCE_FUTURE, '
+      + '_BEFORE_START, _AFTER_END, _TOO_OLD; 409 TICKETS_EXTERNAL_ATTENDANCE_TICKET_CANCELLED; 409 TICKETS_DUPLICATE_ID.' })
+  @Permission(TICKETS.manage, TICKETS.site) @Put(':publicId/external-staff/:staffId/attendance')
+  recordExternalAttendance(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string, @Param('staffId', PublicIdParam) staffId: string,
+    @Body(new ZodValidationPipe(RecordExternalAttendanceRequest)) body: RecordExternalAttendanceRequest) {
+    return this.work.recordExternalAttendance(ctx, publicId, staffId, body);
+  }
+
   @Doc({ summary: "An outside worker's photo", file: true })
   @Permission(...SEE) @Get(':publicId/external-staff/:staffId/photo')
   async externalStaffPhoto(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string,
@@ -184,6 +207,18 @@ export class TicketsController {
     const f = await this.work.externalStaffPhoto(ctx, publicId, staffId);
     res.setHeader('Content-Type', f.type);
     res.setHeader('Content-Disposition', `inline; filename="${f.name}"`);
+    res.send(f.data);
+  }
+
+  @Doc({ summary: 'The full report of one ticket as a PDF: everything in it, photos included', file: true,
+    description: 'tickets.report: the department head, the Manager who created or supervises the ticket, or Management (any ticket). Anyone else who '
+      + 'sees the ticket: 403 TICKETS_FORBIDDEN; unknown or not visible: 404 TICKETS_NOT_FOUND. A file named <number>-report.pdf; each download is '
+      + 'logged in the ticket history (report_downloaded).' })
+  @Permission(TICKETS.report) @Get(':publicId/report.pdf')
+  async fullReport(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string, @Res() res: FileReply) {
+    const f = await this.report.pdf(ctx, publicId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${f.name}"`);
     res.send(f.data);
   }
 

@@ -243,7 +243,7 @@ export class LeaveService {
   /**
    * For a period: submitted and approved requests touching it, and per person and job the approved days inside the
    * period by leave type (a request crossing the period counts only its days inside) and the current balance by type.
-   * HR sees everyone, a Supervisor themselves and their team.
+   * HR sees everyone, a Manager themselves and their team.
    */
   async report(ctx: RequestContext, q: LeaveReportQuery): Promise<LeaveReport> {
     const scope = ctx.permissions[LEAVE.report];

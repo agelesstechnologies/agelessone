@@ -38,6 +38,10 @@ export const POLICIES = {
     value: z.enum(['equal']), default: 'equal' as 'equal',
     description: 'How time is shared between tickets running at the same moment: equal = each of n tickets gets 1/n of that period',
   },
+  'tickets.external_attendance.backdate_days': {
+    value: z.number().int().min(0).max(92), default: 7,
+    description: 'How many days back an outside worker\'s attendance on a ticket may be recorded or corrected (0: today only)',
+  },
   'payroll.lop_basis': {
     value: z.enum(['calendar_days', 'fixed_30']), default: 'calendar_days' as 'calendar_days' | 'fixed_30',
     description: 'Days a monthly salary is divided by for loss of pay and part months: calendar days of the month, or always 30',

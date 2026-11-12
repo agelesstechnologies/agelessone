@@ -26,7 +26,7 @@ export default function Payroll() {
   ];
   const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'mine');
   return <>
-    <PageHead eyebrow="HRMS • PAYROLL" title="Payroll" subtitle="Your payslips, and monthly salary runs for each company." />
+    <PageHead eyebrow="ACCOUNTS • PAYROLL" title="Payroll" subtitle="Your payslips, and monthly salary runs for each company." />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'mine' && <MyPayslips />}
     {tab === 'runs' && <Runs />}

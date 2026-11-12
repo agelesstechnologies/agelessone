@@ -7,6 +7,8 @@ export interface Caller {
   create?: Scope;
   /** tickets.site (on-site Supervisor): run the site work of the tickets you supervise (not assign, cancel or create) */
   site?: Scope;
+  /** tickets.report (Manager, Management): the full report of a ticket as a PDF */
+  report?: Scope;
   /** role Management (CEO): everything, every company */
   management: boolean;
 }
@@ -43,6 +45,15 @@ export function canRunSite(c: Caller, r: Relation): boolean {
 }
 
 /**
+ * Record or correct an outside worker's daily attendance: the person who added the worker, while they still run this
+ * ticket's site work (its on-site supervisor or a manager), or the ticket's managers (department head, the Manager who
+ * created or supervises it, scope all, Management). Not another supervisor, nor an assignee who did not add them.
+ */
+export function canRecordExternalAttendance(c: Caller, r: Relation, addedTheWorker: boolean): boolean {
+  return canManage(c, r) || (addedTheWorker && canRunSite(c, r));
+}
+
+/**
  * Who creates a ticket: the head of its department (holding tickets.manage or tickets.create), or a holder of
  * tickets.create (Manager) with an active job in the ticket's company, for any of its departments. Management (CEO),
  * Admin user and on-site supervisors do not create tickets, unless they head that department.
@@ -62,6 +73,16 @@ export function canView(c: Caller, r: Relation): boolean {
 /** Start, checklist answers, files, sign-off, daily updates: the managers, the on-site supervisor, or an assignee with tickets.work. */
 export function canWork(c: Caller, r: Relation): boolean {
   return canRunSite(c, r) || (c.work !== undefined && r.assignee);
+}
+
+/**
+ * The full report of the ticket (PDF): a holder of tickets.report who is Management or holds it with scope all (any
+ * ticket), or who manages this ticket (department head, the Manager who created or supervises it). Never the on-site
+ * supervisor, an assignee, HR or the admin user (they do not hold tickets.report).
+ */
+export function canReport(c: Caller, r: Relation): boolean {
+  if (c.report === undefined) return false;
+  return c.management || c.report === 'all' || canManage(c, r);
 }
 
 /** Completing: the managers, the on-site supervisor, or the primary assignee. */

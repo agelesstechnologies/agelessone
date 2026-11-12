@@ -5,13 +5,16 @@ import { api, errText } from '../api';
 import { useLoad } from '../hooks';
 import { Badge, Notice } from '../ui';
 
-/** What each role reaches: Employee their own records, Supervisor and CEO their team, everyone else the whole tenant. */
-const SCOPE: Record<string, 'own' | 'team' | 'all'> = { employee: 'own', supervisor: 'team', ceo: 'team' };
+/**
+ * What each role reaches: Employee their own records; Manager and CEO their team; Supervisor (on site only) team, for
+ * the tickets they supervise; everyone else the whole tenant.
+ */
+const SCOPE: Record<string, 'own' | 'team' | 'all'> = { employee: 'own', manager: 'team', supervisor: 'team', ceo: 'team' };
 const REACH = { own: 'own records', team: 'their team', all: 'everyone' };
 
 /**
- * System admin, on a person's profile: their login and roles. Give a role (e.g. Supervisor for someone who will lead a
- * team in Ageless Technologies) or end one. Nobody gives a role to themselves.
+ * System admin, on a person's profile: their login and roles. Give a role (e.g. Manager for someone who will lead a
+ * team in Ageless Technologies, Supervisor for someone who runs site work) or end one. Nobody gives a role to themselves.
  */
 export default function PersonRoles({ personPublicId }: { personPublicId: string }) {
   const access = useLoad(() => api<PersonAccess>(`/core/people/${personPublicId}/access`), [personPublicId]);

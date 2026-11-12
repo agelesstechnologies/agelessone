@@ -6,12 +6,12 @@ import { AppModule } from '../../../app.module';
 import { createTestApp, DEMO, signIn } from '../../../test/create-app';
 
 // Fictional data only. Names and codes get a unique suffix so tests never collide.
-const SUPERVISOR = DEMO.supervisor.publicId; // seeded 'Demo Supervisor'
+const MANAGER = DEMO.manager.publicId; // seeded 'Demo Manager'
 const tag = () => randomUUID().slice(0, 8).toUpperCase();
 const newPerson = (t: string, over: { phone?: string; company?: string; code?: string } = {}) => ({
   displayName: `Test Person ${t}`,
   contacts: [{ kind: 'phone', value: over.phone ?? '+91 00000 00000', label: 'personal' }, { kind: 'email', value: `test.${t}@example.com` }],
-  employment: { legalEntityCode: over.company ?? 'AE', employeeCode: over.code ?? `T-${t}`, engagementType: 'permanent', joinedOn: '2026-01-05', designation: 'Technician', managerPublicId: SUPERVISOR },
+  employment: { legalEntityCode: over.company ?? 'AE', employeeCode: over.code ?? `T-${t}`, engagementType: 'permanent', joinedOn: '2026-01-05', designation: 'Technician', managerPublicId: MANAGER },
 });
 
 describe('HRMS people API', () => {
@@ -83,7 +83,7 @@ describe('HRMS people API', () => {
     ]));
     expect(res.body.employments).toEqual([expect.objectContaining({
       company: { code: 'AE', name: 'Ageless Entertainments' }, employeeCode: `T-${t}`, engagementType: 'permanent',
-      status: 'active', isPrimary: true, designation: 'Technician', manager: { publicId: SUPERVISOR, displayName: 'Demo Supervisor' },
+      status: 'active', isPrimary: true, designation: 'Technician', manager: { publicId: MANAGER, displayName: 'Demo Manager' },
     })]);
     expect(JSON.stringify(res.body)).not.toMatch(/"id"|personId|legalEntityId|managerPersonId/);
   });

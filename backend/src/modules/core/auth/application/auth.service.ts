@@ -1,11 +1,11 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import {
   ChangePasswordRequest, CodeSent, CompleteFirstLoginRequest, ForgotPasswordRequest, ForgotPasswordResponse, LoginRequest, LoginResponse, Me,
   ResetWithCodeRequest,
 } from '@ageless/shared';
-import { maskEmail, sendMail } from '../../../../platform/mailer';
+import { mailFailure, maskEmail, sendMail } from '../../../../platform/mailer';
 import { sendSms, showCodesInApp } from '../../../../platform/sms';
 import { AppError } from '../../../../platform/http/app-error';
 import { RequestContext } from '../../../../platform/http/request-context';
@@ -24,6 +24,7 @@ type UserRow = NonNullable<Awaited<ReturnType<AuthRepository['findUser']>>>;
 @Injectable()
 export class AuthService {
   private dummyHash?: Promise<string>;
+  private readonly logger = new Logger('AuthService');
 
   constructor(
     @Inject(AuthRepository) private readonly repo: AuthRepository,
@@ -174,7 +175,8 @@ export class AuthService {
 
   /**
    * A new code replaces older ones of the same purpose (only the newest is checked). At most 3 an hour per login. Sent by
-   * email and by SMS, to whichever the login has; with DEV_SHOW_CODES (development only) the answer carries the code.
+   * email and by SMS / WhatsApp, to whichever the login has; a failed one is logged and the other is enough. When none could
+   * be sent: 503 AUTH_CODE_NOT_SENT. With DEV_SHOW_CODES (development only) the answer carries the code.
    */
   private async sendCode(user: UserRow, purpose: 'first_login' | 'reset'): Promise<CodeSent> {
     const now = new Date();
@@ -187,17 +189,27 @@ export class AuthService {
     const what = purpose === 'first_login' ? 'finish setting up your Ageless sign-in' : 'set your Ageless password';
     const sentTo: string[] = [];
     if (user.loginEmail) {
-      await sendMail({
-        to: user.loginEmail, subject: `Your Ageless code: ${code}`,
-        text: `Hello ${user.personName},\n\nUse this code to ${what}:\n\n    ${code}\n\nIt works for 10 minutes. If you did not ask for it, `
-          + 'ignore this email and tell HR.\n\nAgeless People Platform',
-      });
-      sentTo.push(maskEmail(user.loginEmail));
+      try {
+        await sendMail({
+          to: user.loginEmail, subject: `Your Ageless code: ${code}`,
+          text: `Hello ${user.personName},\n\nUse this code to ${what}:\n\n    ${code}\n\nIt works for 10 minutes. If you did not ask for it, `
+            + 'ignore this email and tell HR.\n\nAgeless People Platform',
+        });
+        sentTo.push(maskEmail(user.loginEmail));
+      } catch (err) {
+        this.logger.warn(`Sign-in code email not sent (login ${user.publicId}): ${mailFailure(err)}`);   // never the server's text: it can hold the address
+      }
     }
     if (user.loginPhone) {
-      await sendSms({ to: user.loginPhone, text: `${code} is your Ageless code to ${what}. Valid 10 minutes. Do not share it.` });
-      sentTo.push(`the phone ending ${user.loginPhone.replace(/\D/g, '').slice(-4)}`);
+      try {
+        await sendSms({ to: user.loginPhone, text: `${code} is your Ageless code to ${what}. Valid 10 minutes. Do not share it.`, code });
+        sentTo.push(`the phone ending ${user.loginPhone.replace(/\D/g, '').slice(-4)}`);
+      } catch (err) {
+        this.logger.warn(`Sign-in code message not sent (login ${user.publicId}): ${(err as Error).message}`);
+      }
     }
+    // one way that worked is enough; with none the person must know (the code row stays, unused, and expires)
+    if (sentTo.length === 0) throw new AppError('AUTH_CODE_NOT_SENT', 503, 'Could not send the code right now; try again in a few minutes or ask HR');
     return { sentTo: sentTo.join(' and '), expiresAt: expiresAt.toISOString(), ...(showCodesInApp() && { devCode: code }) };
   }
 

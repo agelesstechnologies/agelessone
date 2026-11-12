@@ -7,7 +7,7 @@ The NestJS API and the PostgreSQL database. Read the root `CLAUDE.md` first; its
 - `pnpm db:generate -- --name <what_changed>` — create a migration from schema changes
 - `pnpm db:migrate` — apply pending migrations to the database in `backend/.env`
 - `pnpm db:reset` — empty a development database and rebuild it (refuses non-dev databases)
-- `pnpm db:seed` — add fictional starter data (tenant 1, AE and ATPL, roles, five demo people with logins); safe to run again
+- `pnpm db:seed` — add fictional starter data (tenant 1, AE and ATPL, roles, eight demo people with logins, see `backend/README.md`); safe to run again
 - `pnpm boundaries` — check the module boundary rules below
 - Settings: copy `backend/.env.example` to `backend/.env` (`DATABASE_URL`, `TEST_DATABASE_URL`, `PORT`, `JWT_SECRET`).
 - Tests use their own database `TEST_DATABASE_URL` (`ageless_test`), reset, migrated and seeded before every `pnpm test`.

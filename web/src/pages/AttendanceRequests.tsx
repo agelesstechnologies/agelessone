@@ -68,7 +68,7 @@ export function MyRequests() {
   </Panel>;
 }
 
-/** Corrections and overtime waiting for the supervisor. */
+/** Corrections and overtime waiting for the manager. */
 export function RequestApprovals() {
   const q = useRows('to-approve');
   const [rejecting, setRejecting] = useState<Row | null>(null);

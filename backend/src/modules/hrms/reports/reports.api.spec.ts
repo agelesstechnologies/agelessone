@@ -20,12 +20,12 @@ function parseCsv(text: string) {
 
 describe('HRMS reports and month lock', () => {
   let app: INestApplication;
-  let hr: Auth, admin: Auth, sup: Auth;
+  let hr: Auth, admin: Auth, mgr: Auth;
   let db: pg.Client;
   const http = () => request(app.getHttpServer());
   const staff = async (company = 'AE') => {
     const s = await newStaff(app, hr, admin, [company]);
-    await http().patch(`/api/hrms/employments/${s.jobs[company]}`).set(hr).send({ managerPublicId: DEMO.supervisor.publicId }).expect(200);
+    await http().patch(`/api/hrms/employments/${s.jobs[company]}`).set(hr).send({ managerPublicId: DEMO.manager.publicId }).expect(200);
     return s;
   };
   const punch = (s: Staff, kind: 'in' | 'out', at: string) =>
@@ -33,7 +33,7 @@ describe('HRMS reports and month lock', () => {
 
   beforeAll(async () => {
     app = await createTestApp(AppModule);
-    [hr, admin, sup] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.supervisor].map((d) => signIn(app, d.login)));
+    [hr, admin, mgr] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.manager].map((d) => signIn(app, d.login)));
     db = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await db.connect();
   });
@@ -128,7 +128,7 @@ describe('HRMS reports and month lock', () => {
       // Fri 27 Jun – Tue 1 Jul 2025: Sat 28 (4th Saturday) and Sun 29 are off → June has Fri 27 and Mon 30, July has Tue 1
       const leave = await http().post('/api/hrms/leave/requests').set(s.auth).send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'EL', fromDate: '2025-06-27', toDate: '2025-07-01' });
       expect(leave.body.days).toBe(3);
-      await http().post(`/api/hrms/leave/requests/${leave.body.publicId}/approve`).set(sup).expect(200);
+      await http().post(`/api/hrms/leave/requests/${leave.body.publicId}/approve`).set(mgr).expect(200);
 
       const q = { company: 'AE', from: '2025-06-01', to: '2025-06-30' };
       const screen = (await http().get('/api/hrms/leave/report').query(q).set(hr)).body;

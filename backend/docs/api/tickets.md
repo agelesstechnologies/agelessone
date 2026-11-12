@@ -148,6 +148,7 @@ writes a timeline event** in the same transaction.
 | Department head (role Supervisor, `tickets.manage` team) | create tickets for a department they head; run (as admin user) tickets of a department they head, or tickets they supervise |
 | Staff (`tickets.work`, own) | see and work on tickets they are a current assignee of: start, checklist, files, sign-off, daily updates, ask for reassignment; complete only as primary |
 | HR (`tickets.view`, all) | view every ticket; set the number series (`tickets.numbering.manage`) |
+| Manager / department head, Management (`tickets.report`) | download the **full report (PDF)** of a ticket they manage (Management: any ticket) |
 
 A ticket the caller may not see answers `404 TICKETS_NOT_FOUND` (it is not revealed); one they see but may not change
 answers `403 TICKETS_FORBIDDEN`. Nobody but Management adds themselves as an assignee (`403 TICKETS_SELF_ASSIGN`).
@@ -233,7 +234,31 @@ The summary plus `description`, `details`, `projectId`, `holdReason`, `cancelRea
 (`{ by, at }` or null), `createdBy`, `typeRules` (the version's fields, completion rules, checklist items), `assignees`
 (current; primary first), `checklist` (every item with its newest answer or null), `attachments`, `signoffs`, `links`
 (`{ direction: "to" | "from", kind, ticket }`), `timeline` (oldest first: `{ action, actor, at, details }`; actor null =
-the system), `reassignRequests`, `missingForCompletion` (what completion still needs; empty when ready) and `warnings`.
+the system), `reassignRequests`, `missingForCompletion` (what completion still needs; empty when ready), `warnings` and
+`canDownloadReport` (the caller may download the full report, below; every answer that carries the detail has it).
+
+### Full ticket report (PDF) — `GET /tickets/:id/report.pdf`
+Everything inside one ticket as an A4 PDF, photos included: `application/pdf`, attachment `<number>-report.pdf`.
+- **Who**: permission `tickets.report` (roles Manager and Management, migration 0037), and for this ticket: the
+  **department head**, the **Manager who created or supervises it**, or **Management** (the CEO; scope all: any ticket).
+  Without the permission (assignees, on-site supervisors, HR, admin user): `403 FORBIDDEN`; a Manager who sees the
+  ticket but does not manage it (e.g. only assigned to it): `403 TICKETS_FORBIDDEN`; unknown or not visible:
+  `404 TICKETS_NOT_FOUND`.
+- **Contents**, one section each: the ticket (company, number, title, type and version, department, status, priority,
+  scheduled / due / created / started / completed, customer, site, supervisor, description, who generated it and when);
+  assignees (current, primary first, and those taken off) and reassignment requests with their decisions; the type's
+  fields with their values (money as `Rs 1,23,456.50`, people and files by name) and what completion still needs; the
+  checklist with answers; time (counted minutes per person and the total, every ticket punch with how it ended, the timer
+  and the punch-in place that was confirmed to the person, reviewers' adjustments); daily updates and notes; every file
+  (who, when), each JPEG / PNG photo drawn scaled to the page (a PDF file is listed only); the customer's sign-off with
+  the photo of the signed sheet, and the head approval; linked tickets; outside workers (agency, trade, phone, days on
+  site, who added them, a small photo) with their attendance; the full history in words. Lists run **oldest first**;
+  times are IST; page footer `Ticket <number> - page X of Y`.
+- A file missing on disk shows "file not found", a damaged picture "the image could not be shown"; the rest of the report
+  is still made. The standard PDF fonts have no rupee sign, so amounts say `Rs`.
+- Each download writes the event `report_downloaded` (who, when) to the ticket's history.
+- Built with pdfkit (`platform/report-pdf.ts`: tables, rows, photos, page numbers); the ticket's sections are
+  `tickets/domain/ticket-report.ts` (pure, unit-tested).
 
 ### Update details — `PATCH /tickets/:id`
 `tickets.manage` for this ticket. Any of `title`, `description`, `priority`, `customerId`, `site`, `supervisorPublicId`,
@@ -295,6 +320,35 @@ Assignees (`tickets.work`) and managers, while the ticket is not completed or ca
 `POST /tickets/:id/head-approval` — the department head, the supervisor or Management, **never an assignee** of the
 ticket (`403 TICKETS_SELF_APPROVAL`). Approving again changes nothing. Event `head_approved`.
 
+### External staff (outside workers) and their attendance
+Contractor or agency workers on the ticket's site (`tickets.ticket_external_staff`). Supervisors are on site only: they
+add no people to the company, but they add outside workers to their tickets and keep those workers' daily attendance.
+
+- `GET /tickets/:id/external-staff` — anyone who sees the ticket; earliest first. Each worker has
+  `canRecordAttendance`: whether the caller may mark their attendance (false on a cancelled ticket).
+- `POST /tickets/:id/external-staff` — multipart: `publicId` (resend: stored once), `name`, optional `phone`, `agency`,
+  `trade`, `fromDate`, optional `toDate`, optional `photo` (JPEG, PNG). The ticket's on-site supervisor or its managers.
+  Event `external_staff_added`. `POST /tickets/:id/external-staff/:staffId/end` `{ "toDate": "YYYY-MM-DD" }` sets
+  their last day (event `external_staff_ended`); `GET …/:staffId/photo` gives the photo.
+- **Attendance** (`tickets.ticket_external_attendance`): one record per worker per work date (IST): `present`,
+  `half_day` or `absent`, optional time in / out and a note (up to 200 characters).
+  - `PUT /tickets/:id/external-staff/:staffId/attendance`
+    `{ "publicId": "uuid", "workDate": "2026-11-10", "status": "present", "timeIn": "09:00", "timeOut": "17:30", "note": "optional" }`
+    — times are IST clock times (24-hour) on that date, stored as UTC; `absent` has no times; time out after time in.
+    Sending a day already recorded **corrects** it (same record, `updatedBy` / `updatedAt` set, event
+    `external_attendance_changed` with the previous and new status and times); a new day logs `external_attendance_recorded`.
+    The same values sent again change nothing (a resend). Answer `200`: the record, with `minutes` when both times are given.
+  - Who: **the person who added the worker**, while they still run this ticket's site work (its on-site supervisor or a
+    manager), or **the ticket's managers** (department head, the Manager who created or supervises it, admin user,
+    Management). Another supervisor, or an assignee who did not add the worker: `403 TICKETS_FORBIDDEN`.
+  - Which days: within the worker's days on site (`400 TICKETS_EXTERNAL_ATTENDANCE_BEFORE_START` / `_AFTER_END`), not
+    after today (`_FUTURE`), at most `tickets.external_attendance.backdate_days` days back (policy, default 7;
+    `_TOO_OLD`). Not on a cancelled ticket (`409 TICKETS_EXTERNAL_ATTENDANCE_TICKET_CANCELLED`); a completed ticket is
+    fine, so the last day can be filled in. A `publicId` already used for another record: `409 TICKETS_DUPLICATE_ID`.
+  - `GET /tickets/:id/external-staff/attendance?from=&to=` — anyone who sees the ticket; default the last 31 days up to
+    today, at most 92 days (`400 TICKETS_EXTERNAL_ATTENDANCE_RANGE`). Newest day first, then by name.
+- The worker's phone number is never written to the timeline or the logs.
+
 ### Links — `POST /tickets/:id/links`
 Managers. `{ "toTicketPublicId": "uuid", "kind": "follows" | "rework_of" }` (default `follows`). Both tickets must be of
 the same company (`400 TICKETS_LINK_OTHER_COMPANY`; the database refuses it too); `follows` needs the same project
@@ -321,7 +375,9 @@ Admin user and Management can also change assignees directly with `PUT /tickets/
 `created`, `details_updated`, `assignees_changed`, `started`, `held`, `resumed`, `completed`, `cancelled`, `reopened`,
 `checklist_answered`, `attachment_added`, `signoff_added`, `daily_update`, `head_approved`, `linked`, `rework_created`,
 `rework_skipped`, `reassign_requested`, `reassign_approved`, `reassign_rejected`, `time_started`, `time_stopped`
-(`details.reason`: `manual`, `day_punch_out`, `unfinished`; actor null when the system stopped it), `time_adjusted`.
+(`details.reason`: `manual`, `day_punch_out`, `unfinished`; actor null when the system stopped it), `time_adjusted`,
+`external_staff_added`, `external_staff_ended`, `external_attendance_recorded`, `external_attendance_changed`,
+`report_downloaded` (the full report PDF was downloaded).
 
 ### Ticket errors (besides those above)
 | Status | Code | When |

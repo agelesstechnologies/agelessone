@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   AdjustTimeRequest, AllocationQuery, DailyUpdate, DailyUpdateRequest, DayAllocation, MissingUpdate, MissingUpdatesQuery, PunchNotice, RunningTicket,
-  TicketField, TicketPunchConfirmation, TicketPunchInRequest, TicketPunchOutRequest, TicketPunchResult,
+  TicketField, TicketPunchConfirmation, TicketPunchInRequest, TicketPunchOutRequest, TicketPunchResult, type TicketTimelog, type TicketTimelogs,
 } from '@ageless/shared';
 import { DB, Db, Tx, violatedConstraint } from '../../../platform/db/db.module';
 import { AppError } from '../../../platform/http/app-error';
@@ -237,6 +237,23 @@ export class TicketTimeService {
       if (violatedConstraint(err) === 'ticket_daily_updates_one_per_day') throw new AppError('TICKETS_UPDATE_EXISTS', 409, `You already gave the update for ${date}`);
       throw err;
     }
+  }
+
+  /** Everyone's ticket punches on one ticket (who, when, where) and the counted time per person: whoever may see the ticket. */
+  async ticketTimelogs(ctx: RequestContext, ticketPublicId: string): Promise<TicketTimelogs> {
+    const { t } = await this.tickets.load(this.db, ctx, ticketPublicId, 'view');
+    const [logs, totals] = await Promise.all([this.repo.ticketTimelogs(this.db, t.id), this.repo.ticketMinutesByPerson(this.db, t.id)]);
+    return {
+      logs: logs.map((l) => ({
+        publicId: l.publicId, person: { publicId: l.personPublicId, displayName: l.displayName }, employeeCode: l.employeeCode,
+        startedAt: l.startedAt.toISOString(), endedAt: l.endedAt?.toISOString() ?? null,
+        endReason: (l.endReason as TicketTimelog['endReason']) ?? null,
+        timerMinutes: l.endedAt && l.endReason !== 'unfinished' ? Math.round((l.endedAt.getTime() - l.startedAt.getTime()) / 60_000) : null,
+        address: l.address ?? null,
+      })),
+      totals: totals.map((x) => ({ person: { publicId: x.personPublicId, displayName: x.displayName }, minutes: x.minutes })),
+      totalMinutes: totals.reduce((s, x) => s + x.minutes, 0),
+    };
   }
 
   async dailyUpdates(ctx: RequestContext, ticketPublicId: string): Promise<DailyUpdate[]> {

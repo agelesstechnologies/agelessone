@@ -21,12 +21,12 @@ const letters = (n: number) => Array.from({ length: n }, () => String.fromCharCo
 
 describe('HRMS management access, approvals inbox and dashboard', () => {
   let app: INestApplication;
-  let hr: Auth, admin: Auth, sup: Auth, ceo: Auth;
+  let hr: Auth, admin: Auth, mgr: Auth, ceo: Auth;
   let db: pg.Client;
   const http = () => request(app.getHttpServer());
   const staff = (companies?: string[]) => newStaff(app, hr, admin, companies);
-  const managedBySupervisor = async (s: Staff, company = 'AE') =>
-    http().patch(`/api/hrms/employments/${s.jobs[company]}`).set(hr).send({ managerPublicId: DEMO.supervisor.publicId }).expect(200);
+  const managedByManager = async (s: Staff, company = 'AE') =>
+    http().patch(`/api/hrms/employments/${s.jobs[company]}`).set(hr).send({ managerPublicId: DEMO.manager.publicId }).expect(200);
   const applyLeave = (auth: Auth, employmentPublicId: string, date: string, extra: Record<string, unknown> = {}) =>
     http().post('/api/hrms/leave/requests').set(auth).send({ employmentPublicId, leaveTypeCode: 'EL', fromDate: date, toDate: date, ...extra });
   const leaveAct = (auth: Auth, id: string, action: 'approve' | 'reject', body: Record<string, unknown> = {}) =>
@@ -39,7 +39,7 @@ describe('HRMS management access, approvals inbox and dashboard', () => {
 
   beforeAll(async () => {
     app = await createTestApp(AppModule);
-    [hr, admin, sup, ceo] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.supervisor, DEMO.ceo].map((d) => signIn(app, d.login)));
+    [hr, admin, mgr, ceo] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.manager, DEMO.ceo].map((d) => signIn(app, d.login)));
     db = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await db.connect();
   });
@@ -89,9 +89,9 @@ describe('HRMS management access, approvals inbox and dashboard', () => {
   describe('Management decisions', () => {
     it('Management approves any pending request; it is recorded as management and shows in their inbox', async () => {
       const s = await staff();
-      await managedBySupervisor(s);
+      await managedByManager(s);
       const leave = await applyLeave(s.auth, s.jobs.AE, addDays(DAY, 14));
-      expect(leave.body.approver.publicId).toBe(DEMO.supervisor.publicId); // named approver: the supervisor
+      expect(leave.body.approver.publicId).toBe(DEMO.manager.publicId); // named approver: the manager
       const expense = await claim(s.auth, s.jobs.AE, 2500);
 
       const inbox = await http().get('/api/hrms/approvals/mine').set(ceo);
@@ -111,7 +111,7 @@ describe('HRMS management access, approvals inbox and dashboard', () => {
 
       // the named approver is recorded as approver
       const next = await applyLeave(s.auth, s.jobs.AE, addDays(DAY, 15));
-      expect((await leaveAct(sup, next.body.publicId, 'approve')).body.decidedAs).toBe('approver');
+      expect((await leaveAct(mgr, next.body.publicId, 'approve')).body.decidedAs).toBe('approver');
     });
 
     it("Management (not the CEO role) can't approve their own request, which waits for an approver", async () => {
@@ -129,7 +129,7 @@ describe('HRMS management access, approvals inbox and dashboard', () => {
   describe('private details', () => {
     it('are masked for HR and Management, hidden from others, and shown in full only by an audited reveal', async () => {
       const s = await staff();
-      await managedBySupervisor(s);
+      await managedByManager(s);
       const set = await http().put(`/api/hrms/people/${s.personId}/private`).set(hr).send({ aadhaar: '9999 8888 7777', pan: 'abcde1234f' });
       expect(set.status).toBe(200);
       expect(set.body).toEqual({ masked: true, aadhaar: 'XXXX XXXX 7777', pan: 'XXXXXX234F', bankAccounts: [] });
@@ -137,7 +137,7 @@ describe('HRMS management access, approvals inbox and dashboard', () => {
 
       expect((await http().get(`/api/hrms/people/${s.personId}`).set(hr)).body.private).toMatchObject({ masked: true, aadhaar: 'XXXX XXXX 7777' });
       expect((await http().get(`/api/hrms/people/${s.personId}`).set(ceo)).body.private).toMatchObject({ masked: true, pan: 'XXXXXX234F' });
-      expect((await http().get(`/api/hrms/people/${s.personId}`).set(sup)).body.private).toBeNull(); // their manager, but no private access
+      expect((await http().get(`/api/hrms/people/${s.personId}`).set(mgr)).body.private).toBeNull(); // their manager, but no private access
 
       expect((await http().post(`/api/hrms/people/${s.personId}/private/reveal`).set(hr)).status).toBe(403);
       expect(await audit('private.revealed', s.personId)).toHaveLength(0);
@@ -157,27 +157,29 @@ describe('HRMS management access, approvals inbox and dashboard', () => {
   });
 
   describe('dashboard', () => {
-    it('a supervisor sees only their team; HR sees everyone', async () => {
-      // a fresh department with one of the supervisor's people and one other person
+    it('a manager sees only their team; HR sees everyone', async () => {
+      // a fresh department with one of the manager's people and one other person
       const prefix = letters(5);
       await http().post('/api/hrms/departments').set(hr).send({ company: 'AE', name: `Dashboard test ${prefix}`, codePrefix: prefix }).expect(201);
       const [mine, other] = await Promise.all([staff(), staff()]);
-      await managedBySupervisor(mine);
+      await managedByManager(mine);
       for (const s of [mine, other]) await http().patch(`/api/hrms/employments/${s.jobs.AE}`).set(hr).send({ departmentCode: prefix }).expect(200);
 
-      const supView = await http().get('/api/hrms/dashboard').set(sup);
-      expect(supView.status).toBe(200);
-      expect(supView.body.scope).toMatchObject({ visibility: 'team', company: 'all' });
-      expect(supView.body.totals).toMatchObject({ openPositions: null, openTickets: null, documentsExpiring: null });
-      expect(supView.body.departments.find((d: { code: string }) => d.code === prefix)).toMatchObject({ company: 'AE', headcount: 1 });
+      const mgrView = await http().get('/api/hrms/dashboard').set(mgr);
+      expect(mgrView.status).toBe(200);
+      expect(mgrView.body.scope).toMatchObject({ visibility: 'team', company: 'all' });
+      expect(mgrView.body.totals).toMatchObject({ openPositions: null, openTickets: null, documentsExpiring: null });
+      expect(mgrView.body.departments.find((d: { code: string }) => d.code === prefix)).toMatchObject({ company: 'AE', headcount: 1 });
 
       const hrView = await http().get('/api/hrms/dashboard').query({ company: 'AE' }).set(hr);
       expect(hrView.body.scope).toEqual({ visibility: 'all', company: 'AE', companies: ['AE'] });
       expect(hrView.body.departments.find((d: { code: string }) => d.code === prefix)).toMatchObject({ headcount: 2 });
-      expect(hrView.body.totals.employees).toBeGreaterThan(supView.body.totals.employees);
+      expect(hrView.body.totals.employees).toBeGreaterThan(mgrView.body.totals.employees);
 
       const tech = await staff();
       expect((await http().get('/api/hrms/dashboard').set(tech.auth)).status).toBe(403);
+      const sup = await signIn(app, DEMO.supervisor.login);
+      expect((await http().get('/api/hrms/dashboard').set(sup)).status).toBe(403);   // on site only: no team view
       expect((await http().get('/api/hrms/dashboard').query({ company: 'NOPE' }).set(hr)).status).toBe(400);
     });
 

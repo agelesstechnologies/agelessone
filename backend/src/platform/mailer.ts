@@ -33,5 +33,15 @@ export async function sendMail(mail: Mail, env: NodeJS.ProcessEnv = process.env)
   console.log(`[mail to ${maskEmail(mail.to)}] ${mail.subject}\n${mail.text}`);
 }
 
+/**
+ * Why a send failed, safe to log: nodemailer's error code and the SMTP reply code only ("EENVELOPE, SMTP 550").
+ * Never the server's own text: it can repeat the full address.
+ */
+export function mailFailure(err: unknown): string {
+  const e = (err ?? {}) as { code?: unknown; responseCode?: unknown; name?: unknown };
+  const kind = typeof e.code === 'string' ? e.code : typeof e.name === 'string' ? e.name : 'unknown error';
+  return typeof e.responseCode === 'number' ? `${kind}, SMTP ${e.responseCode}` : kind;
+}
+
 /** Tests (EMAIL_PROVIDER=memory): emails sent so far, newest last. */
 export function sentMail(): readonly Mail[] { return memory; }

@@ -142,6 +142,7 @@ Supervisor = team, HR = all.
 | `payroll.prepare` | Salaries, bank details and payroll runs: prepare, adjust, mark paid; see them and their files |  |  | ✓ |  |  |  |  |  |  |
 | `tickets.manage` | Create and run tickets: scope all (admin user, Management) every ticket; otherwise a department head for their departments |  | ✓ |  |  |  | ✓ |  |  | ✓ |
 | `tickets.numbering.manage` | Set each company's ticket number prefix and next number |  |  |  |  | ✓ |  |  |  |  |
+| `tickets.report` | Download the full report of a ticket as a PDF (photos included): a ticket you manage (Manager role, department head: you head its department, created or supervise it) or any ticket (Management). Each download is logged in the ticket's history |  |  |  |  |  |  |  |  | ✓ |
 | `tickets.time.adjust` | Review ticket time: move a person's daily minutes between tickets with a reason (team: tickets of departments you head; all: every ticket). Never your own time |  | ✓ |  |  |  |  |  |  | ✓ |
 | `tickets.types.manage` | Ticket types: scope all (admin user, Management) manages every type, standard ones too; otherwise a department head manages the non-standard types their department owns |  | ✓ |  |  |  | ✓ |  |  | ✓ |
 | `tickets.types.view` | See ticket types (read only) | ✓ | ✓ |  |  | ✓ | ✓ |  | ✓ | ✓ |

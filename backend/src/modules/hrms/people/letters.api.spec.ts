@@ -11,7 +11,7 @@ const letters = () => Array.from({ length: 5 }, () => String.fromCharCode(65 + M
 
 describe('Employee codes in the form, and joining letters', () => {
   let app: INestApplication;
-  let hr: Auth, ceo: Auth, sup: Auth, tech: Auth;
+  let hr: Auth, ceo: Auth, mgr: Auth, sup: Auth, tech: Auth;
   let dept: { publicId: string; codePrefix: string };
   let job: string;
   const http = () => request(app.getHttpServer());
@@ -23,7 +23,7 @@ describe('Employee codes in the form, and joining letters', () => {
 
   beforeAll(async () => {
     app = await createTestApp(AppModule);
-    [hr, ceo, sup, tech] = await Promise.all([DEMO.hr, DEMO.ceo, DEMO.supervisor, DEMO.technician].map((d) => signIn(app, d.login)));
+    [hr, ceo, mgr, sup, tech] = await Promise.all([DEMO.hr, DEMO.ceo, DEMO.manager, DEMO.supervisor, DEMO.technician].map((d) => signIn(app, d.login)));
     const prefix = letters();
     dept = (await http().post('/api/hrms/departments').set(hr).send({ company: 'AE', name: `Letters ${tag()}`, codePrefix: prefix }).expect(201)).body;
   });
@@ -79,8 +79,8 @@ describe('Employee codes in the form, and joining letters', () => {
     expect((pdf.body as Buffer).toString('latin1')).toContain('(Adjusted for this person.)');
   });
 
-  it('only HR and Management: supervisors and employees get 403', async () => {
-    for (const who of [sup, tech]) {
+  it('only HR and Management: managers, supervisors and employees get 403', async () => {
+    for (const who of [mgr, sup, tech]) {
       expect((await http().get('/api/hrms/letter-templates/AE/joining').set(who)).status).toBe(403);
       expect((await http().get(`/api/hrms/employments/${job}/joining-letter`).set(who)).status).toBe(403);
       expect((await http().post(`/api/hrms/employments/${job}/joining-letters`).set(who).send({ title: 't', body: 'b' })).status).toBe(403);

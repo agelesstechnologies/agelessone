@@ -15,13 +15,13 @@ const HR_JOB = '00000000-0000-4000-8000-000000000104';
 
 describe('HRMS attendance corrections API', () => {
   let app: INestApplication;
-  let hr: Auth, admin: Auth, sup: Auth;
+  let hr: Auth, admin: Auth, mgr: Auth;
   let db: pg.Client;
   const http = () => request(app.getHttpServer());
-  /** A new employee managed by Demo Supervisor. */
+  /** A new employee managed by Demo Manager. */
   const staff = async () => {
     const s = await newStaff(app, hr, admin);
-    await http().patch(`/api/hrms/employments/${s.jobs.AE}`).set(hr).send({ managerPublicId: DEMO.supervisor.publicId }).expect(200);
+    await http().patch(`/api/hrms/employments/${s.jobs.AE}`).set(hr).send({ managerPublicId: DEMO.manager.publicId }).expect(200);
     return s;
   };
   const punch = async (auth: Auth, job: string, kind: 'in' | 'out', occurredAt: string) =>
@@ -33,7 +33,7 @@ describe('HRMS attendance corrections API', () => {
 
   beforeAll(async () => {
     app = await createTestApp(AppModule);
-    [hr, admin, sup] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.supervisor].map((d) => signIn(app, d.login)));
+    [hr, admin, mgr] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.manager].map((d) => signIn(app, d.login)));
     db = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await db.connect();
   });
@@ -53,20 +53,20 @@ describe('HRMS attendance corrections API', () => {
     const body = { publicId: id, employmentPublicId: s.jobs.AE, workDate: day, kind: 'missed_out', requestedOut: ist(day, '17:30'), reason: 'Forgot to punch out at the gate' };
     const created = await correct(s.auth, body);
     expect(created.status).toBe(201);
-    expect(created.body).toMatchObject({ publicId: id, status: 'submitted', kind: 'missed_out', approver: { publicId: DEMO.supervisor.publicId }, requestedBy: { publicId: s.personId } });
+    expect(created.body).toMatchObject({ publicId: id, status: 'submitted', kind: 'missed_out', approver: { publicId: DEMO.manager.publicId }, requestedBy: { publicId: s.personId } });
     expect((await correct(s.auth, body)).status).toBe(200); // resend
     expect((await http().get('/api/hrms/attendance/today').set(s.auth)).body.lastMissedPunchDate).toBeNull(); // a correction is open
-    const waiting = await http().get('/api/hrms/attendance/corrections/to-approve').set(sup);
+    const waiting = await http().get('/api/hrms/attendance/corrections/to-approve').set(mgr);
     expect(waiting.body.map((c: { publicId: string }) => c.publicId)).toContain(id);
 
-    const approved = await act(sup, id, 'approve');
+    const approved = await act(mgr, id, 'approve');
     expect(approved.status).toBe(200);
-    expect(approved.body).toMatchObject({ status: 'approved', decidedBy: { publicId: DEMO.supervisor.publicId } });
+    expect(approved.body).toMatchObject({ status: 'approved', decidedBy: { publicId: DEMO.manager.publicId } });
     const fixed = await dayOf(s, day);
     expect(fixed).toMatchObject({ status: 'present', workedMinutes: 510, absentDays: 0 });
     expect(fixed.punches.map((p: { kind: string; source: string; corrected: boolean }) => [p.kind, p.source, p.corrected]))
       .toEqual([['in', 'web', false], ['out', 'auto', true], ['out', 'correction', false]]);
-    expect((await act(sup, id, 'approve')).body.code).toBe('HRMS_CORRECTION_NOT_PENDING');
+    expect((await act(mgr, id, 'approve')).body.code).toBe('HRMS_CORRECTION_NOT_PENDING');
   });
 
   it('a wrong time is left out and replaced; the original punches stay stored and are marked corrected', async () => {
@@ -79,7 +79,7 @@ describe('HRMS attendance corrections API', () => {
     const c = await correct(s.auth, { employmentPublicId: s.jobs.AE, workDate: day, kind: 'wrong_time', punchIdsToExclude: [wrongOut.publicId],
       requestedOut: ist(day, '18:00'), reason: 'The gate reader stamped the wrong time' });
     expect(c.status).toBe(201);
-    await act(sup, c.body.publicId, 'approve').expect(200);
+    await act(mgr, c.body.publicId, 'approve').expect(200);
 
     const fixed = await dayOf(s, day);
     expect(fixed).toMatchObject({ status: 'present', workedMinutes: 540 });
@@ -108,7 +108,7 @@ describe('HRMS attendance corrections API', () => {
     await punch(s.auth, s.jobs.AE, 'in', ist('2026-07-10', '09:00'));
     const c = await correct(s.auth, { employmentPublicId: s.jobs.AE, workDate: '2026-07-10', kind: 'missed_out', requestedOut: ist('2026-07-10', '17:00'), reason: 'Forgot to punch out' });
     await lock('2026-07-10');
-    const late = await act(sup, c.body.publicId, 'approve');
+    const late = await act(mgr, c.body.publicId, 'approve');
     expect([late.status, late.body.code]).toEqual([409, 'HRMS_DAY_LOCKED']);
   });
 
@@ -123,13 +123,13 @@ describe('HRMS attendance corrections API', () => {
     const self = await act(hr, own.body.publicId, 'approve');
     expect([self.status, self.body.code]).toEqual([403, 'HRMS_SELF_APPROVAL']);
 
-    // a supervisor files for a team member: the correction goes past them (to HR), and they cannot approve it
+    // a manager files for a team member: the correction goes past them (to HR), and they cannot approve it
     const s = await staff();
     await punch(s.auth, s.jobs.AE, 'in', ist('2026-07-14', '09:00'));
-    const filed = await correct(sup, { employmentPublicId: s.jobs.AE, workDate: '2026-07-14', kind: 'missed_out', requestedOut: ist('2026-07-14', '18:00'), reason: 'Saw them leave at six' });
+    const filed = await correct(mgr, { employmentPublicId: s.jobs.AE, workDate: '2026-07-14', kind: 'missed_out', requestedOut: ist('2026-07-14', '18:00'), reason: 'Saw them leave at six' });
     expect(filed.status).toBe(201);
-    expect(filed.body).toMatchObject({ person: { publicId: s.personId }, requestedBy: { publicId: DEMO.supervisor.publicId }, approver: { publicId: DEMO.hr.publicId } });
-    expect((await act(sup, filed.body.publicId, 'approve')).body.code).toBe('HRMS_SELF_APPROVAL');
+    expect(filed.body).toMatchObject({ person: { publicId: s.personId }, requestedBy: { publicId: DEMO.manager.publicId }, approver: { publicId: DEMO.hr.publicId } });
+    expect((await act(mgr, filed.body.publicId, 'approve')).body.code).toBe('HRMS_SELF_APPROVAL');
     await act(hr, filed.body.publicId, 'approve').expect(200);
   });
 
@@ -145,8 +145,8 @@ describe('HRMS attendance corrections API', () => {
     expect((await act(s.auth, first.body.publicId, 'cancel')).body.status).toBe('cancelled');
     const third = await correct(s.auth, body);
     expect(third.status).toBe(201);
-    expect((await act(sup, third.body.publicId, 'reject')).status).toBe(400); // a reason is needed
-    expect((await act(sup, third.body.publicId, 'reject', { reason: 'Gate log shows 15:00' })).body).toMatchObject({ status: 'rejected', decisionReason: 'Gate log shows 15:00' });
+    expect((await act(mgr, third.body.publicId, 'reject')).status).toBe(400); // a reason is needed
+    expect((await act(mgr, third.body.publicId, 'reject', { reason: 'Gate log shows 15:00' })).body).toMatchObject({ status: 'rejected', decisionReason: 'Gate log shows 15:00' });
     const mine = await http().get('/api/hrms/attendance/corrections/mine').set(s.auth);
     expect(mine.body.map((c: { status: string }) => c.status).sort()).toEqual(['cancelled', 'rejected']);
   });

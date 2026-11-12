@@ -80,7 +80,7 @@ export function HBars({ rows, unit = '', max }: { rows: { label: string; value: 
   </div>)}</div>;
 }
 
-/** Dashboard graphs for people who may see the HRMS dashboard (supervisor: own team; HR / Management: everyone). */
+/** Dashboard graphs for people who may see the HRMS dashboard (manager: own team; HR / Management: everyone). */
 export function OverviewCharts({ company, month }: { company?: string; month?: string } = {}) {
   const query = new URLSearchParams({ ...(company ? { company } : {}), ...(month ? { month } : {}) }).toString();
   const d = useLoad(() => api<Dashboard>(`/hrms/dashboard${query ? `?${query}` : ''}`), [query]);

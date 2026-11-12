@@ -22,4 +22,6 @@ export const TICKETS = {
   numbering: 'tickets.numbering.manage',
   /** review ticket time: team = tickets of departments you head; all = every ticket (Management). Never your own */
   timeAdjust: 'tickets.time.adjust',
+  /** the full report of one ticket as a PDF (migration 0037): Manager / department head for tickets they manage; all (Management) any ticket */
+  report: 'tickets.report',
 } as const;

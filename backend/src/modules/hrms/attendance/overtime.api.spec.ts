@@ -15,13 +15,13 @@ const HR_JOB = '00000000-0000-4000-8000-000000000104';
 
 describe('HRMS overtime API', () => {
   let app: INestApplication;
-  let hr: Auth, admin: Auth, sup: Auth;
+  let hr: Auth, admin: Auth, mgr: Auth;
   let db: pg.Client;
   const http = () => request(app.getHttpServer());
-  /** A new employee managed by Demo Supervisor. */
+  /** A new employee managed by Demo Manager. */
   const staff = async () => {
     const s = await newStaff(app, hr, admin);
-    await http().patch(`/api/hrms/employments/${s.jobs.AE}`).set(hr).send({ managerPublicId: DEMO.supervisor.publicId }).expect(200);
+    await http().patch(`/api/hrms/employments/${s.jobs.AE}`).set(hr).send({ managerPublicId: DEMO.manager.publicId }).expect(200);
     return s;
   };
   const work = async (s: Staff, date: string, from: string, to: string) => {
@@ -40,7 +40,7 @@ describe('HRMS overtime API', () => {
 
   beforeAll(async () => {
     app = await createTestApp(AppModule);
-    [hr, admin, sup] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.supervisor].map((d) => signIn(app, d.login)));
+    [hr, admin, mgr] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.manager].map((d) => signIn(app, d.login)));
     db = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await db.connect();
   });
@@ -59,12 +59,12 @@ describe('HRMS overtime API', () => {
     const id = randomUUID();
     const r = await ask(s.auth, s.jobs.AE, '2026-07-28', 120, { publicId: id });
     expect(r.status).toBe(201);
-    expect(r.body).toMatchObject({ publicId: id, minutes: 120, status: 'submitted', approver: { publicId: DEMO.supervisor.publicId }, requestedBy: { publicId: s.personId } });
+    expect(r.body).toMatchObject({ publicId: id, minutes: 120, status: 'submitted', approver: { publicId: DEMO.manager.publicId }, requestedBy: { publicId: s.personId } });
     expect((await ask(s.auth, s.jobs.AE, '2026-07-28', 120, { publicId: id })).status).toBe(200); // resend
-    expect((await http().get('/api/hrms/attendance/overtime/to-approve').set(sup)).body.map((x: { publicId: string }) => x.publicId)).toContain(id);
+    expect((await http().get('/api/hrms/attendance/overtime/to-approve').set(mgr)).body.map((x: { publicId: string }) => x.publicId)).toContain(id);
 
-    const approved = await act(sup, id, 'approve');
-    expect(approved.body).toMatchObject({ status: 'approved', decidedBy: { publicId: DEMO.supervisor.publicId } });
+    const approved = await act(mgr, id, 'approve');
+    expect(approved.body).toMatchObject({ status: 'approved', decidedBy: { publicId: DEMO.manager.publicId } });
     expect(await dayOf(s, '2026-07-28')).toMatchObject({ extraMinutes: 60, approvedOvertimeMinutes: 60 });
     expect(await hoursOf(s, '2026-07-28', '2026-07-28')).toMatchObject({ workedMinutes: 540, extraMinutes: 60, approvedOvertimeMinutes: 60 });
 
@@ -77,11 +77,11 @@ describe('HRMS overtime API', () => {
     const future = addDays(todayIst(), 10);
     const planned = await ask(s.auth, s.jobs.AE, future, 60);
     expect(planned.status).toBe(201);
-    expect((await act(sup, planned.body.publicId, 'approve')).status).toBe(200); // no work day yet: nothing to rebuild
+    expect((await act(mgr, planned.body.publicId, 'approve')).status).toBe(200); // no work day yet: nothing to rebuild
 
     // approved before any punch of the day: the day picks it up when it is built
     const before = await ask(s.auth, s.jobs.AE, '2026-07-29', 90);
-    await act(sup, before.body.publicId, 'approve').expect(200);
+    await act(mgr, before.body.publicId, 'approve').expect(200);
     await work(s, '2026-07-29', '09:00', '19:00');
     expect(await dayOf(s, '2026-07-29')).toMatchObject({ extraMinutes: 120, approvedOvertimeMinutes: 90 });
   });
@@ -94,9 +94,9 @@ describe('HRMS overtime API', () => {
     expect([self.status, self.body.code]).toEqual([403, 'HRMS_SELF_APPROVAL']);
 
     const s = await staff();
-    const filed = await ask(sup, s.jobs.AE, '2026-07-30', 60); // the supervisor asks for their team member
-    expect(filed.body).toMatchObject({ requestedBy: { publicId: DEMO.supervisor.publicId }, approver: { publicId: DEMO.hr.publicId } });
-    expect((await act(sup, filed.body.publicId, 'approve')).body.code).toBe('HRMS_SELF_APPROVAL');
+    const filed = await ask(mgr, s.jobs.AE, '2026-07-30', 60); // the manager asks for their team member
+    expect(filed.body).toMatchObject({ requestedBy: { publicId: DEMO.manager.publicId }, approver: { publicId: DEMO.hr.publicId } });
+    expect((await act(mgr, filed.body.publicId, 'approve')).body.code).toBe('HRMS_SELF_APPROVAL');
     expect((await act(hr, filed.body.publicId, 'reject')).status).toBe(400); // a reason is needed
     expect((await act(hr, filed.body.publicId, 'reject', { reason: 'Not needed that day' })).body.status).toBe('rejected');
   });
@@ -113,7 +113,7 @@ describe('HRMS overtime API', () => {
 
     const r = await ask(s.auth, s.jobs.AE, '2026-07-30', 60);
     await lock('2026-07-30');
-    const late = await act(sup, r.body.publicId, 'approve');
+    const late = await act(mgr, r.body.publicId, 'approve');
     expect([late.status, late.body.code]).toEqual([409, 'HRMS_DAY_LOCKED']);
   });
 });

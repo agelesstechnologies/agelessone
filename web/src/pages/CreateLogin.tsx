@@ -4,7 +4,7 @@ import { api, errText, formError } from '../api';
 import { Modal, Notice } from '../ui';
 
 /**
- * Create a login for a person (System admin: anyone; a supervisor or department head: their own team, who get the
+ * Create a login for a person (System admin: anyone; a manager or department head: their own team, who get the
  * Employee role). No password: a welcome email tells the person to set their own with a code sent to that email.
  */
 export default function CreateLogin({ personPublicId, personName, onClose }: { personPublicId: string; personName: string; onClose: () => void }) {

@@ -39,7 +39,7 @@ roles, and the HRMS **People** area), how to run it, and how to call every endpo
 | Policies | Company settings (day rules, leave balance check, overtime paid, sign-in hours) stored as versions: the newest version in force on a date wins, a company's own before the group default |
 | Expenses | Submit a claim on your own job with a receipt file; your claims; the manager approves (or a lower amount) or rejects; HR marks paid; report by company and dates |
 | Management | Role Management (the CEO, scope all): reads every HRMS record and payroll, decides any pending leave, expense, correction or overtime (recorded as `decided_as = management`), never their own. The CEO role's own requests need no approval (policy `hrms.approvals.auto_approve_roles`). Private details (Aadhaar, PAN, bank) masked; a reveal is audited |
-| Approvals inbox and dashboard | One list of everything I can decide, with counts per type; a monthly HRMS dashboard for a supervisor's team or (HR, Management) every company |
+| Approvals inbox and dashboard | One list of everything I can decide, with counts per type; a monthly HRMS dashboard for a manager's team or (HR, Management) every company |
 | Audit log | `core.audit_log`: decisions, auto-approvals, private-details changes and reveals (append-only; never the private values) |
 
 Tech: NestJS 10 · PostgreSQL 16+ · Drizzle ORM · Zod · JWT (`@nestjs/jwt`) · bcrypt · Vitest + Supertest · pnpm workspaces + Turborepo.
@@ -229,14 +229,16 @@ One PostgreSQL database, one schema per module: `core`, `hrms`, `tickets`. Chang
 
 | Person (`publicId`) | Job | Sign in with | Role (scope) |
 | --- | --- | --- | --- |
-| Demo Supervisor (`…0001`) | AE-D001 | `+91 00000 00001` or `demo.supervisor@example.com` | Supervisor (team) |
-| Demo Technician (`…0002`) | AE-D002, reports to Demo Supervisor | `+91 00000 00002` | Employee (own) |
+| Demo Supervisor (`…0001`) | AE-D001; also ATPL-D003 (so they can supervise tickets in both companies) | `+91 00000 00001` or `demo.supervisor@example.com` | Supervisor (team): on site only - site work of the tickets they supervise; can't add people, create logins or approve |
+| Demo Technician (`…0002`) | AE-D002, reports to Demo Manager | `+91 00000 00002` | Employee (own) |
 | Demo Engineer (`…0003`) | ATPL-D001 | `demo.engineer@example.com` | Employee (own) |
 | Demo HR (`…0004`) | AE-D003 | `demo.hr@example.com` | HR (all); also Payroll (all) |
 | Demo Admin (`…0005`) | ATPL-D002 | `demo.admin@example.com` | System admin (all) |
 | Demo CEO (`…0006`) | AE-D004 | `demo.ceo@example.com` | CEO (team): last approver, own requests need no approval; also Payroll Approver (all) and Management (all) |
+| Demo Head (`…0008`) | ATPL-D004, Senior Designer, **head of Designing** | `+91 00000 00008` or `demo.head@example.com` | Manager (team): approves Demo Manager and anyone in Designing without a manager; creates and approves Designing tickets |
+| Demo Manager (`…0009`) | ATPL-D005, Designer in Designing, reports to Demo Head; also AE-D005 (second job in AE) | `+91 00000 00009` or `demo.manager@example.com` | Manager (team): leads the AE team (Demo Technician reports to them): approves the people who report to them, adds people and creates their logins; their own requests go to Demo Head |
 
-ATPL departments: Designing `ATD`, Software Development `ATS`, Hardware & IoT `ATH`, CGI Content Development `ATC`,
+ATPL departments: Designing `ATD` (head: Demo Head), Software Development `ATS`, Hardware & IoT `ATH`, CGI Content Development `ATC`,
 HR & Accounts `ATHR` (no heads yet); 13 ATPL designations (Designer … Accounts Executive). No skills are seeded.
 
 `…0001` means `00000000-0000-4000-8000-000000000001`. Tenant `1`, companies `AE` (Ageless Entertainments) and
@@ -245,14 +247,15 @@ Weekly off for both companies: every Sunday and the 2nd and 4th Saturday, from 2
 Policies (group defaults, version 1 from 2025-04-01, until HR confirms): `core.auth.session_hours` 12,
 `hrms.attendance.full_day_minutes` 480, `hrms.attendance.half_day_minutes` 240, `hrms.attendance.max_open_punch_hours` 16,
 `hrms.leave.balance_check` false, `hrms.overtime.payable` false, `hrms.attendance.auto_punch_out_hours` 8.
-Demo jobs: `…0101` Supervisor, `…0102` Technician, `…0103` Engineer, `…0104` HR, `…0105` Admin, `…0106` CEO.
+Demo jobs: `…0101` Supervisor, `…0102` Technician, `…0103` Engineer, `…0104` HR, `…0105` Admin, `…0106` CEO,
+`…0107` Supervisor (ATPL), `…0108` Head, `…0109` Manager, `…0110` Manager (AE).
 
 **Roles and permissions** (seeded for tenant 1)
 
-| Permission | Employee | Supervisor | HR | System admin |
+| Permission | Employee | Manager | HR | System admin |
 | --- | --- | --- | --- | --- |
 | `hrms.people.view` — view people, contacts, jobs | ✓ | ✓ | ✓ | ✓ |
-| `hrms.people.create` — create people | | | ✓ | |
+| `hrms.people.create` — create people | | ✓ (a company they work in) | ✓ | |
 | `hrms.people.update` — rename, change status | | | ✓ | |
 | `hrms.contacts.manage` — add / end contacts | | | ✓ | |
 | `hrms.contacts.review` — who shares a number | | | ✓ | |
@@ -266,10 +269,15 @@ Demo jobs: `…0101` Supervisor, `…0102` Technician, `…0103` Engineer, `…0
 | `hrms.attendance.punch` — punch, today, my history | ✓ | ✓ | ✓ | |
 | `hrms.attendance.view` — register, work hours | | ✓ (self + team) | ✓ | |
 | `hrms.attendance.rebuild` — recalculate work days | | | ✓ | ✓ |
+| `tickets.report` — full ticket report (PDF) | | ✓ (tickets they manage) | | |
+
+Management (the CEO) also holds `tickets.report`, for any ticket.
 
 The **scope** comes from the role assignment: **own** = only yourself; **team** = yourself (view only) plus the people
 whose active job lists you as manager; **all** = everyone in the tenant. A sixth role, Admin user, exists with no
-permissions yet (it arrives with service tickets).
+permissions yet (it arrives with service tickets). The **Supervisor** role is on site only: the Employee's own
+self-service plus the site work of the tickets they supervise (`tickets.site`); it adds no people, creates no logins
+and approves nothing (a Manager or department head leads the team).
 
 ---
 
@@ -458,7 +466,7 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:3000/api/hrms/people?se
 | E8 | `GET /api/hrms/expenses/report` | Totals by status and category | `hrms.expenses.report` (all) | 200 |
 
 "person" means the full person view from #3. "(all)" means the permission must have scope all; elsewhere the scope is
-checked against the person (a Supervisor may do #9 for their team, but not for themselves). Shapes live in
+checked against the person (a Manager may do #9 for their team, but not for themselves). Shapes live in
 `shared/src/core/auth.ts`, `shared/src/hrms/people.ts`, `shared/src/hrms/attendance.ts`, `shared/src/hrms/calendar.ts`, `shared/src/hrms/leave.ts` and `shared/src/hrms/expenses.ts`.
 
 ### A1. Sign in — `POST /api/auth/login`
@@ -495,7 +503,7 @@ person's existing tokens stop working. Errors: `CORE_USER_NOT_FOUND`.
 
 ### U3. Give a role — `POST /api/core/role-assignments`
 Body: `{ "personPublicId": "…", "roleCode": "supervisor", "scope": "team", "validFrom": "2026-11-03", "validTo": "2027-03-31" }`
-— role codes: `employee`, `supervisor`, `hr`, `admin_user`, `system_admin`; scope `own` / `team` / `all`;
+— role codes: `employee`, `manager`, `supervisor`, `hr`, `admin_user`, `system_admin`; scope `own` / `team` / `all`;
 `validFrom` defaults to today (IST), `validTo` optional. Answer `201 { "publicId": "<assignment id>" }`.
 Errors: `CORE_SELF_GRANT` (yourself), `CORE_UNKNOWN_ROLE`, `CORE_PERSON_NOT_FOUND`.
 
@@ -514,6 +522,23 @@ shapes and built-in defaults are listed in `shared/src/core/policies.ts` (`POLIC
   adds the next version (leave out `company` for the group default). The caller is recorded as approver.
 
 The backend reads them with `CoreFacade.getPolicy(tenantId, key, companyId, date)` (attendance per job's company and date).
+Ticket keys: `tickets.time.split` (`equal`) and `tickets.external_attendance.backdate_days` (default 7: how many days back an
+outside worker's attendance on a ticket may be recorded or corrected).
+
+### Tickets — external staff and their attendance
+Outside workers (contractor or agency staff) are added to a ticket by its on-site supervisor or its managers; the
+person who added a worker (while they still run the site work) or the ticket's managers mark that worker's attendance:
+one record per worker per work date (IST), `present` / `half_day` / `absent`, optional time in / out and a short note.
+`PUT /api/tickets/:publicId/external-staff/:staffId/attendance` records or corrects a day;
+`GET /api/tickets/:publicId/external-staff/attendance?from=&to=` lists them. Rules and errors: `backend/docs/api/tickets.md`
+(External staff).
+
+### Tickets — full report (PDF)
+`GET /api/tickets/:publicId/report.pdf` gives everything inside one ticket as a PDF with the photos drawn in it
+(`<number>-report.pdf`). Permission `tickets.report` (migration `0037_ticket_report_permission`): the department head, the
+Manager who created or supervises the ticket, or Management for any ticket; the ticket detail's `canDownloadReport`
+tells the web whether to show the button. Each download is logged in the ticket's history (`report_downloaded`).
+Contents and rules: `backend/docs/api/tickets.md` (Full ticket report).
 
 The complete People reference (with departments, positions, joining and offer letters) is `backend/docs/api/people.md`.
 
@@ -589,7 +614,7 @@ Contacts: current first (primary first), then ended ones. Employments: primary f
       "employeeCode": "AE-0101", "engagementType": "permanent", "status": "active", "isPrimary": true,
       "joinedOn": "2026-01-05", "exitOn": null, "exitReason": null,
       "department": { "code": "ATS", "name": "Software Development" }, "designation": "Developer", "hasOfferLetter": false,
-      "manager": { "publicId": "00000000-0000-4000-8000-000000000001", "displayName": "Demo Supervisor" } }
+      "manager": { "publicId": "00000000-0000-4000-8000-000000000009", "displayName": "Demo Manager" } }
   ],
   "private": { "masked": true, "aadhaar": "XXXX XXXX 7777", "pan": "XXXXXX234F", "bankAccounts": [] }
 }
@@ -641,7 +666,7 @@ Body — any of:
 | `designation` | new text, or `null` to clear |
 | `isPrimary` | `true` only: makes this job primary and removes primary from the person's other job, in one transaction |
 
-A Supervisor may do this for the people they manage (not for their own job); HR for everyone.
+A Manager may do this for the people they manage (not for their own job); HR for everyone.
 Answer: the updated person. Errors: `VALIDATION` (empty body), `HRMS_SELF_MANAGER`, `HRMS_MANAGER_NOT_FOUND`,
 `HRMS_EMPLOYMENT_NOT_ACTIVE` (making an exited job primary), `HRMS_EMPLOYMENT_NOT_FOUND`, `FORBIDDEN`.
 
@@ -697,7 +722,7 @@ what approved overtime requests allow, never more than `extraMinutes`.
 ### T4. Daily register — `GET /api/hrms/attendance/register?date=2026-11-03&company=AE`
 Everyone with an active job (in that company, or all) and their day. No work day means `absent` on a working day,
 `weekly_off` or `holiday` otherwise; today is live. A short stint on a weekly off or holiday also shows as that day, not `absent`.
-Supervisors see themselves and the people they manage; HR sees everyone. Answer `{ date, company, rows, summary, totals }`
+Managers see themselves and the people they manage; HR sees everyone. Answer `{ date, company, rows, summary, totals }`
 where each row is a history row plus `person`, `summary` counts rows per status and `totals` adds up `leaveDays` and
 `absentDays`. Each row has `leaveDays` and `absentDays` (0, 0.5 or 1) and `workedOnLeave`:
 
@@ -734,7 +759,7 @@ filed it. Errors: `HRMS_DAY_LOCKED` (409), `HRMS_CORRECTION_OPEN` (409, the day 
 ### K4–K6. Approve, reject, cancel
 - **Approve** (no body): in one transaction the wrong punches get an exclusion, the requested times are added as punches
   (`source: "correction"`, allowed by the order rule even in the past), and the day is rebuilt. Nobody approves a
-  correction about themselves or filed by them (`HRMS_SELF_APPROVAL`, 403); a Supervisor only when named as approver.
+  correction about themselves or filed by them (`HRMS_SELF_APPROVAL`, 403); a Manager only when named as approver.
   `HRMS_DAY_LOCKED` if the day was locked meanwhile.
 - **Reject**: `{ "reason": "Gate log shows 15:00" }`. **Cancel**: no body; the person or whoever filed it.
 - Only a submitted correction can be decided or cancelled (`HRMS_CORRECTION_NOT_PENDING`, 409).
@@ -753,7 +778,7 @@ Extra time is paid as overtime only when approved.
 ### C1. A job's calendar — `GET /api/hrms/calendar?employment=…&from=2026-11-01&to=2026-11-30`
 Each date: `{ date, kind: "working" | "weekly_off" | "holiday", holiday, optionalHoliday }` (at most 366 days). The
 person's own weekly-off rule wins over the company's; a holiday wins over a weekly off; an optional (restricted) holiday
-stays a working day and is named in `optionalHoliday`. You see your own jobs; a Supervisor their team's; HR everyone's.
+stays a working day and is named in `optionalHoliday`. You see your own jobs; a Manager their team's; HR everyone's.
 Attendance work days and the leave-day count both take holidays and weekly offs from here.
 
 ### C2. Holidays — `GET /api/hrms/holidays?company=AE&year=2026`
@@ -802,13 +827,13 @@ this job already covers a date — another company's job may), `HRMS_LEAVE_NO_WO
 
 ### L4–L5. My requests, requests to approve
 `GET /api/hrms/leave/requests/mine?status=` (newest first). `GET /api/hrms/leave/requests/to-approve`: submitted requests
-naming you as approver (Supervisor), or everyone else's (HR, Management).
+naming you as approver (Manager), or everyone else's (HR, Management).
 Every decided request (leave, expense, correction, overtime) shows `decidedAs`: `approver` (the named approver, or for
 expenses the job's manager), `hr`, `management` or `no_approval_required`. It is set by the server only; a request body
 cannot choose it.
 
 ### L6–L8. Approve, reject, cancel
-- **Approve** (no body): never your own (`HRMS_SELF_APPROVAL`, 403); a Supervisor only when named as approver. In one
+- **Approve** (no body): never your own (`HRMS_SELF_APPROVAL`, 403); a Manager only when named as approver. In one
   transaction: `taken` ledger rows (negative, one per year the leave touches), status `approved`, and the work days rebuilt —
   a working day on leave shows `leave` (a day worked in full, or half worked beside half a day of leave, shows `present`).
 - **Reject**: `{ "reason": "Busy week" }` (required).
@@ -824,7 +849,7 @@ a reason is required. HR only, and never on their own balance.
 ### L10. Report — `GET /api/hrms/leave/report?company=AE&from=2026-12-01&to=2026-12-31`
 Submitted and approved requests that touch the dates (`rows`), `approvedDaysByType`, and `people`: per person and job the
 approved days **inside the period** by leave type (`takenByType`) and the current balance by type (`balanceByType`).
-HR sees everyone; a Supervisor themselves and the people they manage. `producedAt`; `&format=csv`: one line per
+HR sees everyone; a Manager themselves and the people they manage. `producedAt`; `&format=csv`: one line per
 person, job and leave type.
 
 ### M1–M3. Month lock — `/api/hrms/month-locks`
@@ -864,7 +889,7 @@ A certificate past its date shows as `expired` at once and cannot be verified (`
    Each shows company, month, status and when it was produced. Everyone: `GET /api/payroll/payslips/mine`.
 
 Only the roles **Payroll** (`payroll.prepare`) and **Payroll Approver** (`payroll.approve`) see salaries, bank details and
-runs; supervisors and employees get 403. No salary components or statutory calculations yet: PF, ESI, PT and TDS are
+runs; managers, supervisors and employees get 403. No salary components or statutory calculations yet: PF, ESI, PT and TDS are
 entered as deductions.
 
 ### E1. Expense categories — `GET /api/hrms/expenses/categories`
@@ -915,7 +940,7 @@ Submitted claims on jobs whose **manager is you** (never your own), oldest first
 
 ### E5. Approve — `POST /api/hrms/expenses/:publicId/approve`
 Body: `{}` to approve the claimed amount, or `{ "approvedAmountPaise": 42000 }` for less. Who may: the manager of the
-claim's job (Supervisor, scope team) or anyone with scope all (HR) — **never the claimant**. Sets `status: approved`,
+claim's job (Manager, scope team) or anyone with scope all (HR) — **never the claimant**. Sets `status: approved`,
 `approvedBy`, `approvedAt`, `approvedAmountPaise`.
 Errors: `HRMS_SELF_APPROVAL`, `FORBIDDEN` (not your team), `HRMS_APPROVED_TOO_HIGH`, `HRMS_CLAIM_NOT_PENDING`,
 `HRMS_CLAIM_PAID`, `HRMS_CLAIM_NOT_FOUND`.
@@ -956,7 +981,7 @@ Anyone signed in. One list, oldest first, of every submitted leave, expense, cor
 `ticketReassignment` is `null` until the service tickets module exists.
 
 ### M2. Dashboard — `GET /api/hrms/dashboard?company=all&month=2026-11`
-Permission `hrms.dashboard.view`: team (Supervisor: you and the people you manage) or all (HR, Management). `company`:
+Permission `hrms.dashboard.view`: team (Manager: you and the people you manage) or all (HR, Management). `company`:
 `all` (default; every company you may see) or a code (`FORBIDDEN` outside your companies, `HRMS_UNKNOWN_COMPANY`);
 `month` defaults to this month (IST). The answer has `asOf`, `month`, `scope { visibility, company, companies }` and:
 - `totals`: employees, active, joiners this month, on probation, on leave today, open positions (`null` for team
@@ -1037,17 +1062,17 @@ API tests sign in as the seeded demo people with `signIn(app, DEMO.hr.login)` fr
 | `hrms/people/organisation.api.spec.ts` | ATPL departments and designations; codes per prefix (imports counted, ATH vs ATHR); transfer keeps the code; joining person can't punch, apply or claim until activated; offer letter; position planned → open → filled; department head approves |
 | `platform/csv.spec.ts`, `hrms/attendance/domain/months.spec.ts`, `hrms/people/domain/employee-codes.spec.ts`, `hrms/skills/domain/certificates.spec.ts` | CSV escaping and rupees; months in a range; next employee code; certificate expiry |
 | `platform/http/openapi.api.spec.ts` | every route has `@Doc`; the OpenAPI document has request and answer shapes, security and path parameters; real answers match the documented shapes |
-| `payroll/payroll.api.spec.ts` | no run before the month is locked; LOP for 2 absent days; mid-month joiner; adjustments change net pay (resend once, too-large deduction refused); recalculation keeps them; self-approval refused; approved run can't change (API and database); paid needs a reference; register and bank files; own payslip only; supervisor and employee see no salaries |
+| `payroll/payroll.api.spec.ts` | no run before the month is locked; LOP for 2 absent days; mid-month joiner; adjustments change net pay (resend once, too-large deduction refused); recalculation keeps them; self-approval refused; approved run can't change (API and database); paid needs a reference; register and bank files; own payslip only; manager, supervisor and employee see no salaries |
 | `payroll/domain/pay.spec.ts`, `format.spec.ts` | LOP in 30- and 31-day months, joiner, leaver, half day, fixed 30 basis, net pay; rupee formatting |
 | `src/app.api.spec.ts` | health without a token; 400 `VALIDATION` format; 401 `AUTH_MISSING` |
-| `core/auth/auth.api.spec.ts` | sign-in by phone (any format) and email; same answer for wrong password and unknown login; `me`; missing / broken / expired token; routes without an access rule are closed; password change and reset end older tokens; a person with no active job loses access; employee, supervisor, HR and admin limits; new login + role, ending a role; login phone/email taken; no self-grant |
+| `core/auth/auth.api.spec.ts` | sign-in by phone (any format) and email; same answer for wrong password and unknown login; `me`; missing / broken / expired token; routes without an access rule are closed; password change and reset end older tokens; a person with no active job loses access; employee, manager, on-site supervisor (adds nobody, no logins, no approvals), HR and admin limits; new login + role, ending a role; login phone/email taken; no self-grant |
 | `core/auth/domain/login.spec.ts` | login parsing, widest scope, token vs password change |
 | `core/policies/policies.api.spec.ts` | seeded default in force; built-in default before any version; new version from its date; company before group; newest version wins; resend; wrong value / unknown key / no permission refused; versions can't be changed |
 | `core/policies/domain/in-force.spec.ts` | which version is in force on a date |
 | `hrms/people/people.api.spec.ts` | create; shared phone allowed; duplicate active job and duplicate employee code refused (nothing saved); search by name and phone; view has contacts and jobs, no internal ids |
 | `hrms/people/contacts.api.spec.ts` | shared number lists both people; new primary replaces old; ended contact stays in history, no primary until another is set; rename and status change |
 | `hrms/people/employments.api.spec.ts` | job in another company; exiting one company keeps the other active and moves primary; last exit makes person inactive; make primary; manager/department/designation; exit date and state checks |
-| `hrms/expenses/expenses.api.spec.ts` | categories; submit with receipt file saved under uploads; someone else's job refused; amount must be whole paise > 0; receipt required by category; only JPEG/PNG/PDF by content; resend stored once; approval list for managers; approve claimed or lower amount, never higher; nobody decides their own claim; supervisor only for their team, HR for anyone; rejection needs a reason and is final; pay only approved, only with pay permission; paid claim can't change; database rules checked directly with SQL; report totals by company and dates, HR only |
+| `hrms/expenses/expenses.api.spec.ts` | categories; submit with receipt file saved under uploads; someone else's job refused; amount must be whole paise > 0; receipt required by category; only JPEG/PNG/PDF by content; resend stored once; approval list for managers; approve claimed or lower amount, never higher; nobody decides their own claim; manager only for their team, HR for anyone; on-site supervisor decides none; rejection needs a reason and is final; pay only approved, only with pay permission; paid claim can't change; database rules checked directly with SQL; report totals by company and dates, HR only |
 | `hrms/attendance/overtime.api.spec.ts` | extra time without approval is not overtime; approved overtime capped at the extra time, cancel takes it back; planned overtime (future date allowed, applied when the day is built); nobody decides their own or one they filed; locked day refused when asking and approving; work hours show worked, extra and approved separately |
 | `hrms/attendance/corrections.api.spec.ts` | missed punch-out fixed, day recalculated, punch-in unblocked, `lastMissedPunchDate`; wrong time left out and replaced, originals still stored and marked corrected, exclusions append-only; locked day refused (asking and approving); nobody decides their own or one they filed; one open correction per date, cancel and reject; validation |
 | `hrms/attendance/domain/corrections.spec.ts` | times on the IST date, punches to add, allowed steps |
@@ -1056,7 +1081,7 @@ API tests sign in as the seeded demo people with `signIn(app, DEMO.hr.login)` fr
 | `hrms/attendance/domain/day-summary.spec.ts` | minutes, first in / last out, missed punch, running today, extra time, approved overtime capped, weekly off / holiday not absent, open punch past the max hours, leave and absent days for every leave / work combination |
 | `hrms/calendar/calendar.api.spec.ts` | Sundays and 2nd / 4th Saturdays off (register shows `weekly_off`); person override wins and rebuilds a worked day; resend; overlap refused; a later rule ends the open one; holiday shows as `holiday` (register, history after rebuild, calendar); duplicate date; only HR changes; past holiday and holiday in an approved leave can't be removed; leave days skip weekly offs and holidays |
 | `hrms/calendar/domain/work-calendar.spec.ts` | nth Saturday, 5th weekday, person rule in force, no rule, holiday over weekly off, optional holiday |
-| `hrms/leave/leave.api.spec.ts` | types; overlap refused on one job, allowed in the other company; resend; own approval refused, supervisor only for their team; approve takes days and work days show `leave`, cancel gives them back and clears the days; started leave can't be cancelled; weekend and half days; dates with no working day refused; rejection needs a reason; cancel before approval; opening / adjustment rules; report for HR and supervisor; approver fallback (manager, HR, CEO; never yourself); balance-check policy per company and date; full day worked on full leave |
+| `hrms/leave/leave.api.spec.ts` | types; overlap refused on one job, allowed in the other company; resend; own approval refused, manager only for their team, on-site supervisor never; approve takes days and work days show `leave`, cancel gives them back and clears the days; started leave can't be cancelled; weekend and half days; dates with no working day refused; rejection needs a reason; cancel before approval; opening / adjustment rules; report for HR and manager; approver fallback (manager, HR, CEO; never yourself); balance-check policy per company and date; full day worked on full leave |
 | `hrms/leave/domain/requests.spec.ts` | days per year across the year end, fitting the parts to the saved days, which half of a date, balance check, allowed steps |
 | `hrms/leave/leave-days.spec.ts` | leave day count: single day, half days, holidays, weekends, year end, bad input |
 | `hrms/expenses/domain/claims.spec.ts` | receipt type from bytes, next allowed step, approved amount |

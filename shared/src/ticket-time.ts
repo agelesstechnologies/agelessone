@@ -110,3 +110,23 @@ export const AdjustTimeRequest = z.object({
     .min(1).max(20).refine((c) => new Set(c.map((x) => x.ticketPublicId)).size === c.length, 'Each ticket once'),
 });
 export type AdjustTimeRequest = z.infer<typeof AdjustTimeRequest>;
+
+/** GET /api/tickets/:publicId/timelogs: everyone's ticket punches on one ticket, newest first, and the time each person has on it. */
+export const TicketTimelog = z.object({
+  publicId: PublicId, person: PersonRef, employeeCode: z.string(),
+  startedAt: Instant, endedAt: Instant.nullable(),
+  /** manual (ticket punch-out), day_punch_out (stopped by the daily punch-out), unfinished (missed punch: counts no time) */
+  endReason: z.enum(['manual', 'day_punch_out', 'unfinished']).nullable(),
+  /** timer length in minutes (null while running); the counted time is shared between tickets run together, see totals */
+  timerMinutes: z.number().int().nullable(),
+  /** the address where the ticket punch-in was made, once looked up (never coordinates) */
+  address: z.string().nullable(),
+});
+export type TicketTimelog = z.infer<typeof TicketTimelog>;
+export const TicketTimelogs = z.object({
+  logs: z.array(TicketTimelog),
+  /** counted (shared) minutes per person on this ticket, adjustments included */
+  totals: z.array(z.object({ person: PersonRef, minutes: z.number().int() })),
+  totalMinutes: z.number().int(),
+});
+export type TicketTimelogs = z.infer<typeof TicketTimelogs>;

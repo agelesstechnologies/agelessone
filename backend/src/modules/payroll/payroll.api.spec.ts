@@ -22,7 +22,7 @@ function parseCsv(text: string) {
 
 describe('Payroll API', () => {
   let app: INestApplication;
-  let hr: Auth, admin: Auth, sup: Auth, ceo: Auth;
+  let hr: Auth, admin: Auth, mgr: Auth, sup: Auth, ceo: Auth;
   let db: pg.Client;
   let worker: Staff;               // full month, 2 working days absent
   let joinerJob: string;           // joined on 16 Nov
@@ -40,7 +40,7 @@ describe('Payroll API', () => {
 
   beforeAll(async () => {
     app = await createTestApp(AppModule);
-    [hr, admin, sup, ceo] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.supervisor, DEMO.ceo].map((d) => signIn(app, d.login)));
+    [hr, admin, mgr, sup, ceo] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.manager, DEMO.supervisor, DEMO.ceo].map((d) => signIn(app, d.login)));
     db = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await db.connect();
 
@@ -158,12 +158,13 @@ describe('Payroll API', () => {
     expect((await http().get(`/api/payroll/payslips/${others}/pdf`).set(hr)).status).toBe(200);
   });
 
-  it('salaries and runs are only for the payroll roles: a supervisor or an employee sees nothing', async () => {
+  it('salaries and runs are only for the payroll roles: a manager, a supervisor or an employee sees nothing', async () => {
     for (const path of ['/api/payroll/salaries', '/api/payroll/runs', '/api/payroll/bank-accounts', `/api/payroll/runs/${runId}`, `/api/payroll/runs/${runId}/register`]) {
-      expect((await http().get(path).set(sup)).status).toBe(403);
-      expect((await http().get(path).set(worker.auth)).status).toBe(403);
+      for (const who of [mgr, sup, worker.auth]) expect((await http().get(path).set(who)).status).toBe(403);
     }
-    expect((await http().post('/api/payroll/salaries').set(sup).send({ employmentPublicId: worker.jobs.ATPL, monthlyAmountPaise: 1, effectiveFrom: '2026-01-01' })).status).toBe(403);
+    for (const who of [mgr, sup]) {
+      expect((await http().post('/api/payroll/salaries').set(who).send({ employmentPublicId: worker.jobs.ATPL, monthlyAmountPaise: 1, effectiveFrom: '2026-01-01' })).status).toBe(403);
+    }
     const list = (await http().get('/api/payroll/salaries').query({ employment: worker.jobs.ATPL }).set(ceo)).body;
     expect(list).toEqual([expect.objectContaining({ monthlyAmountPaise: MONTHLY, effectiveFrom: '2025-04-01' })]);
     await expect(db.query('UPDATE payroll.salaries SET monthly_amount_paise = 1 WHERE public_id = $1', [list[0].publicId])).rejects.toThrow(/PAYROLL_APPEND_ONLY/);

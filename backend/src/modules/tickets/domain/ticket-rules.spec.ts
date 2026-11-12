@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { checkDetails } from './type-details';
 import { nextStatus } from './lifecycle';
 import { missingForCompletion, WorkDone } from './completion';
-import { canComplete, canCreate, canManage, canView, canWork } from './ticket-access';
+import { canComplete, canCreate, canManage, canReport, canView, canWork } from './ticket-access';
 
 const fields = [
   { key: 'vendor', label: 'Vendor', type: 'text', required: true },
@@ -91,6 +91,25 @@ describe('who may do what', () => {
     expect(canWork(hr, none)).toBe(false);
     expect(canManage({ view: 'all', work: undefined, manage: 'all', management: false }, none)).toBe(true);
     expect(canComplete({ view: undefined, work: undefined, manage: undefined, management: true }, none)).toBe(true);
+  });
+});
+
+describe('who downloads the full report (PDF)', () => {
+  const none = { headsDepartment: false, supervises: false, created: false, assignee: false, primary: false };
+  const manager = { view: 'team', work: 'team', manage: 'team', create: 'team', report: 'team', management: false } as const;
+  const ceo = { view: 'all', work: undefined, manage: 'all', report: 'all', management: true } as const;
+  it('a Manager: tickets they head, created or supervise; not one they only work on', () => {
+    expect(canReport(manager, { ...none, headsDepartment: true })).toBe(true);
+    expect(canReport(manager, { ...none, created: true })).toBe(true);
+    expect(canReport(manager, { ...none, supervises: true })).toBe(true);
+    expect(canReport(manager, { ...none, assignee: true, primary: true })).toBe(false);
+  });
+  it('Management any ticket; without tickets.report nobody (admin user, HR, on-site supervisor, staff)', () => {
+    expect(canReport(ceo, none)).toBe(true);
+    expect(canReport({ view: 'all', work: undefined, manage: 'all', management: false }, none)).toBe(false);          // admin user
+    expect(canReport({ view: 'all', work: undefined, manage: undefined, management: false }, none)).toBe(false);      // HR
+    expect(canReport({ view: 'team', work: 'team', manage: undefined, site: 'team', management: false }, { ...none, supervises: true })).toBe(false);
+    expect(canReport({ view: 'own', work: 'own', manage: undefined, management: false }, { ...none, assignee: true, primary: true })).toBe(false);
   });
 });
 

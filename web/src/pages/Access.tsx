@@ -9,7 +9,7 @@ import { PERMISSION_LABELS, SCOPE_LABELS, USERS } from '../permissions';
 import { Badge, Notice, PageHead, Panel } from '../ui';
 
 const ROLE_OPTIONS = [
-  ['employee', 'Employee'], ['supervisor', 'Supervisor'], ['hr', 'HR'], ['admin_user', 'Admin user'], ['system_admin', 'System admin'],
+  ['employee', 'Employee'], ['manager', 'Manager'], ['supervisor', 'Supervisor'], ['hr', 'HR'], ['admin_user', 'Admin user'], ['system_admin', 'System admin'],
 ] as const;
 
 export default function Access() {

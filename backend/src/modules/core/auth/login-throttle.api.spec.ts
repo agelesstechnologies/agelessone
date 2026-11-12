@@ -54,7 +54,7 @@ describe('Sign-in limits: per account and per IP, brief lockout', () => {
     expect((await login(s.login, PASSWORD, ip)).status).toBe(200);
     // a successful sign-in starts the count again: four more failures are only 401
     for (let i = 1; i <= 4; i++) expect((await login(s.login, 'wrong-pass-1', ip)).status).toBe(401);
-  });
+  }, 30_000); // 14 sign-ins (bcrypt each) plus a new staff member: give it time when the whole suite runs in parallel
 
   it('an unknown login locks the same way, so nothing tells whether an account exists', async () => {
     const ip = freshIp();

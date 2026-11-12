@@ -44,6 +44,18 @@ export function uuidv7(): string {
 }
 
 /** Work dates are IST calendar dates ('YYYY-MM-DD'). */
+/** The device's location for a punch, if the person allows it (a punch is accepted without it). Needs HTTPS or localhost. */
+export function devicePosition(): Promise<{ latitude?: number; longitude?: number; accuracyM?: number }> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) { resolve({}); return; }
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyM: Math.round(p.coords.accuracy) }),
+      () => resolve({}),
+      { timeout: 4000, maximumAge: 60_000 },
+    );
+  });
+}
+
 export const todayIst = (): string => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 export function addDays(date: string, n: number): string {
   const d = new Date(`${date}T00:00:00Z`);

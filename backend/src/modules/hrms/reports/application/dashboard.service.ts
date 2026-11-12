@@ -15,7 +15,7 @@ const CURRENT = new Set(['joining', 'active', 'notice']);
 const people = (jobs: Job[]) => new Set(jobs.map((j) => j.personId)).size;
 
 /**
- * The HRMS dashboard for one month: team visibility (supervisor: you and the people you manage) or all (HR,
+ * The HRMS dashboard for one month: team visibility (manager: you and the people you manage) or all (HR,
  * Management), over one company or every company the caller may see. Totals are as of now; attendance, leave and the
  * comparison are for the month (up to today). Things not built yet are null, never 0.
  */
@@ -30,7 +30,7 @@ export class DashboardService {
 
   async dashboard(ctx: RequestContext, q: DashboardQuery): Promise<Dashboard> {
     const scope = isManagement(ctx) ? 'all' : ctx.permissions[DASHBOARD.view];
-    if (scope !== 'all' && scope !== 'team') throw new AppError('FORBIDDEN', 403, 'The dashboard is for supervisors, HR and Management');
+    if (scope !== 'all' && scope !== 'team') throw new AppError('FORBIDDEN', 403, 'The dashboard is for managers, HR and Management');
     const v: Visibility = scope === 'all' ? { scope: 'all' } : { scope: 'team', personId: ctx.personId };
     const now = new Date();
     const today = todayIst(now);

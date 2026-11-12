@@ -4,7 +4,7 @@ import request from 'supertest';
 import { DEMO } from './create-app';
 
 // Fictional data only. Unique suffixes keep tests independent of each other.
-export const SUPERVISOR = DEMO.supervisor.publicId; // seeded 'Demo Supervisor'
+export const MANAGER = DEMO.manager.publicId; // seeded 'Demo Manager', who leads a team (supervisors are on site only)
 export const tag = () => randomUUID().slice(0, 8).toUpperCase();
 /** A made-up number in the 00000 range, unique per call. */
 export const fakePhone = () => `+91 00000 ${String(Math.floor(Math.random() * 100000)).padStart(5, '0')}`;

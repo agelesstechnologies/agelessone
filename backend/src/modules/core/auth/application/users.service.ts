@@ -25,7 +25,7 @@ export class UsersService {
 
   /**
    * A login with a temporary password (the person confirms an emailed code and sets their own at the first sign-in).
-   * core.users.manage (scope all): for anyone. core.users.team (Supervisor, department head): only for someone in their
+   * core.users.manage (scope all): for anyone. core.users.team (Manager, department head): only for someone in their
    * team (a job they manage, or in a department they head), never themselves; that login gets the Employee role (own).
    */
   async createUser(ctx: RequestContext, req: CreateUserRequest): Promise<{ publicId: string }> {

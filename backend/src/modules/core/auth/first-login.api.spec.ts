@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { INestApplication } from '@nestjs/common';
+import pg from 'pg';
 import request from 'supertest';
 import { AppModule } from '../../../app.module';
 import { createTestApp, DEMO, signIn } from '../../../test/create-app';
@@ -12,7 +13,8 @@ type Auth = Record<string, string>;
 
 describe('First sign-in and forgot password (codes by email); team logins', () => {
   let app: INestApplication;
-  let hr: Auth, admin: Auth, sup: Auth, tech: Auth;
+  let db: pg.Client;
+  let hr: Auth, admin: Auth, mgr: Auth, sup: Auth, tech: Auth;
   const http = () => request(app.getHttpServer());
   const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
   /** A person with a new login (temporary password, not yet set up); answers the login email. */
@@ -27,9 +29,11 @@ describe('First sign-in and forgot password (codes by email); team logins', () =
 
   beforeAll(async () => {
     app = await createTestApp(AppModule);
-    [hr, admin, sup, tech] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.supervisor, DEMO.technician].map((d) => signIn(app, d.login)));
+    [hr, admin, mgr, sup, tech] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.manager, DEMO.supervisor, DEMO.technician].map((d) => signIn(app, d.login)));
+    db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await db.connect();
   });
-  afterAll(async () => { await app?.close(); });
+  afterAll(async () => { await db?.end(); await app?.close(); });
 
   it('a new login only reaches "who am I" and the first-login steps until the person sets their own password', async () => {
     const { email } = await newLogin();
@@ -118,12 +122,47 @@ describe('First sign-in and forgot password (codes by email); team logins', () =
     expect((await http().post('/api/auth/login').send({ login: phone, password: 'mine-pass-1' })).status).toBe(200);
   });
 
+  describe('a code that cannot be sent (SMS_PROVIDER that fails)', () => {
+    afterEach(() => { vi.unstubAllEnvs(); });
+    /** A new login with an email, a phone and the temporary password; answers both. */
+    const loginWithPhone = async () => {
+      const personId = await peopleApi(app, hr).createPerson();
+      const phone = fakePhone();
+      const email = `fail.${tag().toLowerCase()}@example.com`;
+      await http().post('/api/core/users').set(admin).send({ personPublicId: personId, loginEmail: email, loginPhone: phone, password: TEMP_PASSWORD }).expect(201);
+      return { email, phone };
+    };
+
+    it('a failed message does not stop the email: the answer names only the email, and its code works', async () => {
+      const { email } = await loginWithPhone();
+      const temp = await signIn(app, email, TEMP_PASSWORD);
+      vi.stubEnv('SMS_PROVIDER', 'broken');                              // sendSms throws
+      const sent = await http().post('/api/auth/first-login/code').set(temp);
+      expect(sent.status).toBe(200);
+      expect(sent.body.sentTo).toMatch(/^fa\*\*\*@example\.com$/);        // no "phone ending …"
+      const done = await http().post('/api/auth/first-login').set(temp).send({ code: latestCode(email), newPassword: 'mine-pass-1' });
+      expect(done.status).toBe(200);
+    });
+
+    it('nothing sent: 503 AUTH_CODE_NOT_SENT; forgot password still gives its usual answer', async () => {
+      const { email, phone } = await loginWithPhone();
+      await db.query('UPDATE core.users SET login_email = NULL WHERE login_email = $1', [email]);   // phone only (the API always asks for an email)
+      const temp = await signIn(app, phone, TEMP_PASSWORD);
+      vi.stubEnv('SMS_PROVIDER', 'broken');
+      const sent = await http().post('/api/auth/first-login/code').set(temp);
+      expect([sent.status, sent.body.code]).toEqual([503, 'AUTH_CODE_NOT_SENT']);
+      const usual = await http().post('/api/auth/forgot-password').send({ login: `nobody.${tag()}@example.com` });
+      const asked = await http().post('/api/auth/forgot-password').send({ login: phone });
+      expect([asked.status, asked.body]).toEqual([200, usual.body]);
+    });
+  });
+
   it('System admin sees the roles to give and a person\'s login and roles; others cannot', async () => {
     const roles = (await http().get('/api/core/roles').set(admin)).body;
     expect(roles).toEqual(expect.arrayContaining([{ code: 'supervisor', name: 'Supervisor' }, { code: 'manager', name: 'Manager' }, { code: 'employee', name: 'Employee' }]));
     const access = (await http().get(`/api/core/people/${DEMO.supervisor.publicId}/access`).set(admin)).body;
     expect(access.login).toMatchObject({ loginEmail: 'demo.supervisor@example.com', isActive: true });
-    expect(access.roles.map((r: any) => r.code).sort()).toEqual(['manager', 'supervisor']);
+    expect(access.roles.map((r: any) => r.code)).toEqual(['supervisor']);   // on site only: no Manager role
     const none = (await http().get(`/api/core/people/${await peopleApi(app, hr).createPerson()}/access`).set(admin)).body;
     expect(none).toEqual({ login: null, roles: [] });
     expect((await http().get('/api/core/roles').set(sup)).status).toBe(403);
@@ -135,7 +174,7 @@ describe('First sign-in and forgot password (codes by email); team logins', () =
     expect([res.status, res.body.code]).toEqual([400, 'VALIDATION']);
   });
 
-  it('a supervisor adds people to any department of a company they work in, not to another company', async () => {
+  it('a manager adds people to any department of a company they work in, not to another company', async () => {
     const s = await newStaff(app, hr, admin, ['AE']);
     await http().post('/api/core/role-assignments').set(admin).send({ personPublicId: s.personId, roleCode: 'manager', scope: 'team' }).expect(201);
     const person = (company: string) => ({
@@ -146,9 +185,10 @@ describe('First sign-in and forgot password (codes by email); team logins', () =
     const other = await http().post('/api/hrms/people').set(s.auth).send(person('ATPL'));
     expect([other.status, other.body.code]).toEqual([403, 'HRMS_NOT_YOUR_COMPANY']);
     expect((await http().post('/api/hrms/people').set(tech).send(person('AE'))).status).toBe(403);   // employees cannot
+    expect((await http().post('/api/hrms/people').set(sup).send(person('AE'))).status).toBe(403);    // nor on-site supervisors
   });
 
-  it('a supervisor adds someone (no manager named: the supervisor manages them) and gives a login with no password; the employee sets their own', async () => {
+  it('a manager adds someone (no manager named: the manager manages them) and gives a login with no password; the employee sets their own', async () => {
     const s = await newStaff(app, hr, admin, ['AE']);
     await http().post('/api/core/role-assignments').set(admin).send({ personPublicId: s.personId, roleCode: 'manager', scope: 'team' }).expect(201);
     const name = `Newcomer ${tag()}`;
@@ -156,7 +196,7 @@ describe('First sign-in and forgot password (codes by email); team logins', () =
       displayName: name, contacts: [], employment: { legalEntityCode: 'AE', employeeCode: `T-${tag()}`, engagementType: 'permanent', joinedOn: '2026-01-05' },
     }).expect(201);
     const list = (await http().get('/api/hrms/people').query({ search: name }).set(s.auth)).body.items.map((p: any) => p.publicId);
-    expect(list).toEqual([added.body.publicId]);                                  // in the supervisor's team list at once
+    expect(list).toEqual([added.body.publicId]);                                  // in the manager's team list at once
 
     const email = `newcomer.${tag().toLowerCase()}@example.com`;
     await http().post('/api/core/users').set(s.auth).send({ personPublicId: added.body.publicId, loginEmail: email }).expect(201);
@@ -174,20 +214,24 @@ describe('First sign-in and forgot password (codes by email); team logins', () =
     expect((await http().get('/api/hrms/leave/types').set(bearer(set.body.token))).status).toBe(200);
   });
 
-  it('a supervisor creates a login for someone they manage (Employee role), not for others; employees cannot', async () => {
+  it('a manager creates a login for someone they manage (Employee role), not for others; employees and on-site supervisors cannot', async () => {
     const mine = await http().post('/api/hrms/people').set(hr).send({
       displayName: `Team ${tag()}`, contacts: [{ kind: 'phone', value: fakePhone() }],
-      employment: { legalEntityCode: 'AE', employeeCode: `T-${tag()}`, engagementType: 'permanent', joinedOn: '2026-01-05', managerPublicId: DEMO.supervisor.publicId },
+      employment: { legalEntityCode: 'AE', employeeCode: `T-${tag()}`, engagementType: 'permanent', joinedOn: '2026-01-05', managerPublicId: DEMO.manager.publicId },
     }).expect(201);
+    // the on-site supervisor creates no login, not even for the manager's team member
+    const bySup = await http().post('/api/core/users').set(sup).send({ personPublicId: mine.body.publicId, loginEmail: `s.${tag().toLowerCase()}@example.com`, password: TEMP_PASSWORD });
+    expect([bySup.status, bySup.body.code]).toEqual([403, 'FORBIDDEN']);
+
     const email = `team.${tag().toLowerCase()}@example.com`;
-    const created = await http().post('/api/core/users').set(sup).send({ personPublicId: mine.body.publicId, loginEmail: email, password: TEMP_PASSWORD });
+    const created = await http().post('/api/core/users').set(mgr).send({ personPublicId: mine.body.publicId, loginEmail: email, password: TEMP_PASSWORD });
     expect(created.status).toBe(201);
     const own = await finishFirstLogin(app, email, TEMP_PASSWORD, 'mine-pass-1');
     const me = (await http().get('/api/auth/me').set(own)).body;
     expect(me.roles).toEqual([expect.objectContaining({ code: 'employee', scope: 'own' })]);
 
     const stranger = await peopleApi(app, hr).createPerson();
-    const notMine = await http().post('/api/core/users').set(sup).send({ personPublicId: stranger, loginEmail: `x.${tag().toLowerCase()}@example.com`, password: TEMP_PASSWORD });
+    const notMine = await http().post('/api/core/users').set(mgr).send({ personPublicId: stranger, loginEmail: `x.${tag().toLowerCase()}@example.com`, password: TEMP_PASSWORD });
     expect([notMine.status, notMine.body.code]).toEqual([403, 'CORE_NOT_YOUR_TEAM']);
     expect((await http().post('/api/core/users').set(tech).send({ personPublicId: stranger, loginEmail: `y.${tag().toLowerCase()}@example.com`, password: TEMP_PASSWORD })).status).toBe(403);
   });
