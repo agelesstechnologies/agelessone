@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { Conn, DB, Db, Tx } from '../../../platform/db/db.module';
-import { persons } from '../../core/schema';
+import { persons, places } from '../../core/schema';
 import { departments, employments } from '../../hrms/people/schema';
 import {
   ticketAssignees, ticketAttachments, ticketDailyUpdates, tickets, ticketTimeAdjustments, ticketTimeAllocations, ticketTimelogs, ticketTypes,
@@ -78,6 +78,44 @@ export class TicketTimeRepository {
       .where(and(eq(employments.personId, personId), lt(ticketTimelogs.startedAt, to),
         closedOnly ? and(isNotNull(ticketTimelogs.endedAt), gt(ticketTimelogs.endedAt, from)) : or(isNull(ticketTimelogs.endedAt), gt(ticketTimelogs.endedAt, from))))
       .orderBy(asc(ticketTimelogs.startedAt), asc(ticketTimelogs.id));
+  }
+
+  /** Every ticket punch on one ticket (all people), newest first, with the punch-in address once looked up. */
+  async ticketTimelogs(conn: Conn, ticketId: number) {
+    return conn.select({
+      publicId: ticketTimelogs.publicId, startedAt: ticketTimelogs.startedAt, endedAt: ticketTimelogs.endedAt, endReason: ticketTimelogs.endReason,
+      personPublicId: persons.publicId, displayName: persons.displayName, employeeCode: employments.employeeCode, address: places.address,
+    }).from(ticketTimelogs)
+      .innerJoin(employments, eq(employments.id, ticketTimelogs.employmentId))
+      .innerJoin(persons, eq(persons.id, employments.personId))
+      .leftJoin(places, eq(places.id, ticketTimelogs.placeId))
+      .where(eq(ticketTimelogs.ticketId, ticketId))
+      .orderBy(desc(ticketTimelogs.startedAt), desc(ticketTimelogs.id));
+  }
+
+  /** Counted minutes per person on one ticket: the calculated daily allocations plus reviewers' adjustments. */
+  async ticketMinutesByPerson(conn: Conn, ticketId: number): Promise<{ personPublicId: string; displayName: string; minutes: number }[]> {
+    const rows = await conn.execute<{ person_public_id: string; display_name: string; minutes: string }>(sql`
+      SELECT p.public_id AS person_public_id, p.display_name, SUM(x.minutes) AS minutes FROM (
+        SELECT person_id, minutes FROM ${ticketTimeAllocations} WHERE ticket_id = ${ticketId}
+        UNION ALL
+        SELECT person_id, minutes FROM ${ticketTimeAdjustments} WHERE ticket_id = ${ticketId}
+      ) x JOIN ${persons} p ON p.id = x.person_id
+      GROUP BY p.public_id, p.display_name HAVING SUM(x.minutes) > 0 ORDER BY SUM(x.minutes) DESC`);
+    return rows.rows.map((r) => ({ personPublicId: r.person_public_id, displayName: r.display_name, minutes: Number(r.minutes) }));
+  }
+
+  /** Every reviewer's adjustment on one ticket (all people and days), in the order made. */
+  async ticketAdjustments(conn: Conn, ticketId: number) {
+    return conn.select({
+      workDate: ticketTimeAdjustments.workDate, minutes: ticketTimeAdjustments.minutes, reason: ticketTimeAdjustments.reason,
+      adjustedAs: ticketTimeAdjustments.adjustedAs, createdAt: ticketTimeAdjustments.createdAt,
+      personPublicId: owner.publicId, personName: owner.displayName, byName: adjuster.displayName,
+    }).from(ticketTimeAdjustments)
+      .innerJoin(owner, eq(owner.id, ticketTimeAdjustments.personId))
+      .innerJoin(adjuster, eq(adjuster.id, ticketTimeAdjustments.adjustedBy))
+      .where(eq(ticketTimeAdjustments.ticketId, ticketId))
+      .orderBy(asc(ticketTimeAdjustments.id));
   }
 
   // ---- allocations and adjustments ----

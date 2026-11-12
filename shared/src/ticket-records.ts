@@ -179,5 +179,90 @@ export const TicketDetail = TicketSummary.extend({
   /** what completion still needs (empty when it can be completed) */
   missingForCompletion: z.array(z.string()),
   warnings: z.array(TicketWarning),
+  /**
+   * The caller may download the full report (GET /api/tickets/:publicId/report.pdf): tickets.report and Management, or
+   * the department head / the Manager who created or supervises this ticket.
+   */
+  canDownloadReport: z.boolean(),
 });
 export type TicketDetail = z.infer<typeof TicketDetail>;
+
+// ---------------- external staff on a ticket ----------------
+
+const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
+const optionalText = (max: number) => z.preprocess((v) => (v === '' ? undefined : v), z.string().trim().min(1).max(max).optional());
+
+/** POST /api/tickets/:publicId/external-staff (multipart: these fields, and an optional `photo`, JPEG or PNG). */
+export const AddExternalStaffRequest = z.object({
+  publicId: z.preprocess((v) => (v === '' ? undefined : v), z.string().uuid().optional()),
+  name: z.string().trim().min(2, 'Give their name').max(100),
+  phone: optionalText(20),
+  agency: optionalText(100),     // the contractor or agency they come from
+  trade: optionalText(60),       // e.g. welder, electrician, helper
+  fromDate: dateOnly,
+  toDate: z.preprocess((v) => (v === '' ? undefined : v), dateOnly.optional()),
+}).refine((r) => !r.toDate || r.toDate >= r.fromDate, { message: 'The last day is before the first', path: ['toDate'] });
+export type AddExternalStaffRequest = z.infer<typeof AddExternalStaffRequest>;
+
+/** POST /api/tickets/:publicId/external-staff/:staffId/end: their last day on site. */
+export const EndExternalStaffRequest = z.object({ toDate: dateOnly });
+export type EndExternalStaffRequest = z.infer<typeof EndExternalStaffRequest>;
+
+export const ExternalStaff = z.object({
+  publicId: z.string().uuid(), name: z.string(), phone: z.string().nullable(), agency: z.string().nullable(), trade: z.string().nullable(),
+  fromDate: z.string(), toDate: z.string().nullable(), hasPhoto: z.boolean(),
+  addedBy: z.object({ publicId: z.string().uuid(), displayName: z.string() }), addedAt: z.string(),
+  /**
+   * The caller may record this worker's daily attendance: they added the worker and still run the ticket's site work,
+   * or they manage the ticket (department head, Manager, admin user, Management). False on a cancelled ticket.
+   */
+  canRecordAttendance: z.boolean(),
+});
+export type ExternalStaff = z.infer<typeof ExternalStaff>;
+
+// ---- their attendance: one record per worker per work date (IST) ----
+
+export const ExternalAttendanceStatus = z.enum(['present', 'half_day', 'absent']);
+export type ExternalAttendanceStatus = z.infer<typeof ExternalAttendanceStatus>;
+const blank = <T extends z.ZodTypeAny>(schema: T) => z.preprocess((v) => (v === '' || v === null ? undefined : v), schema.optional());
+const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM (24-hour)');
+
+/**
+ * PUT /api/tickets/:publicId/external-staff/:staffId/attendance — one worker's attendance for one work date (IST).
+ * Sending a day that is already recorded corrects it. timeIn / timeOut: optional IST clock times on that date.
+ */
+export const RecordExternalAttendanceRequest = z.object({
+  /** made on the device, so a resend is stored once */
+  publicId: z.string().uuid(),
+  workDate: isoDate,
+  status: ExternalAttendanceStatus,
+  timeIn: blank(clock),
+  timeOut: blank(clock),
+  note: blank(z.string().trim().min(1).max(200, 'Keep the note to 200 characters')),
+}).refine((r) => r.status !== 'absent' || (r.timeIn === undefined && r.timeOut === undefined), { message: 'An absent day has no time in or out', path: ['timeIn'] })
+  .refine((r) => r.timeIn === undefined || r.timeOut === undefined || r.timeOut > r.timeIn, { message: 'Time out must be after time in', path: ['timeOut'] });
+export type RecordExternalAttendanceRequest = z.infer<typeof RecordExternalAttendanceRequest>;
+
+/** GET /api/tickets/:publicId/external-staff/attendance?from=&to= — default the last 31 days up to today (IST); at most 92 days. */
+export const ExternalAttendanceQuery = z.object({ from: emptyToUndefined(isoDate), to: emptyToUndefined(isoDate) })
+  .refine((q) => !q.from || !q.to || q.from <= q.to, { message: 'from is after to', path: ['from'] });
+export type ExternalAttendanceQuery = z.infer<typeof ExternalAttendanceQuery>;
+
+export const ExternalAttendance = z.object({
+  publicId: PublicId,
+  staff: z.object({ publicId: PublicId, name: z.string() }),
+  workDate: DateOnly,
+  status: ExternalAttendanceStatus,
+  /** UTC instants (entered as IST clock times on the work date) */
+  timeIn: Instant.nullable(),
+  timeOut: Instant.nullable(),
+  /** from time in to time out, only when both are given */
+  minutes: z.number().int().nullable(),
+  note: z.string().nullable(),
+  recordedBy: PersonRef,
+  recordedAt: Instant,
+  /** the last correction, if any */
+  updatedBy: PersonRef.nullable(),
+  updatedAt: Instant.nullable(),
+});
+export type ExternalAttendance = z.infer<typeof ExternalAttendance>;

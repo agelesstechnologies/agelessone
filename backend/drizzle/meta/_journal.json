@@ -215,8 +215,64 @@
     {
       "idx": 30,
       "version": "7",
-      "when": 1794035707944,
-      "tag": "0030_accounts_foundation",
+      "when": 1794198757358,
+      "tag": "0030_joining_letters",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1794202009956,
+      "tag": "0031_login_codes_first_login",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794203099961,
+      "tag": "0032_supervisors_add_people",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794207724722,
+      "tag": "0033_leave_sick_earned_accrual",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794209691763,
+      "tag": "0034_manager_role_site_supervisor_external_staff",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794388205313,
+      "tag": "0035_supervisor_site_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794391440102,
+      "tag": "0036_ticket_external_attendance",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794392913797,
+      "tag": "0037_ticket_report_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794450116204,
+      "tag": "0038_accounts_foundation",
       "breakpoints": true
     }
   ]

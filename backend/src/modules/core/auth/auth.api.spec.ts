@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../../../app.module';
 import { createTestApp, DEMO, signIn } from '../../../test/create-app';
 import { fakePhone, peopleApi, tag } from '../../../test/people';
+import { finishFirstLogin, TEMP_PASSWORD } from '../../../test/staff';
 
 // A route with no access rule, to prove the guard closes it.
 @Controller('test/no-rule')
@@ -23,8 +24,9 @@ describe('Sign-in and roles', () => {
   async function newStaff(role?: { code: string; scope: string }) {
     const personId = await peopleApi(app, hr).createPerson();
     const login = `staff.${tag().toLowerCase()}@example.com`;
-    const user = await http().post('/api/core/users').set(admin).send({ personPublicId: personId, loginEmail: login, password: 'first-pass-1' });
+    const user = await http().post('/api/core/users').set(admin).send({ personPublicId: personId, loginEmail: login, password: TEMP_PASSWORD });
     expect(user.status).toBe(201);
+    await finishFirstLogin(app, login, TEMP_PASSWORD, 'first-pass-1');
     let assignment: string | undefined;
     if (role) {
       const a = await http().post('/api/core/role-assignments').set(admin).send({ personPublicId: personId, roleCode: role.code, scope: role.scope });
@@ -59,17 +61,30 @@ describe('Sign-in and roles', () => {
     });
 
     it('me shows the person, roles and permissions', async () => {
-      const sup = await signIn(app, DEMO.supervisor.login);
-      const res = await http().get('/api/auth/me').set(sup);
+      const mgr = await signIn(app, DEMO.manager.login);
+      const res = await http().get('/api/auth/me').set(mgr);
       expect(res.status).toBe(200);
-      expect(res.body.person).toEqual({ publicId: DEMO.supervisor.publicId, displayName: 'Demo Supervisor' });
-      expect(res.body.roles).toEqual([expect.objectContaining({ code: 'supervisor', scope: 'team' })]);
+      expect(res.body.person).toEqual({ publicId: DEMO.manager.publicId, displayName: 'Demo Manager' });
+      expect(res.body.roles).toEqual([expect.objectContaining({ code: 'manager', scope: 'team' })]);
       expect(res.body.permissions).toEqual({
-        'hrms.people.view': 'team', 'hrms.employments.update': 'team', 'hrms.expenses.submit': 'team', 'hrms.expenses.approve': 'team',
+        'hrms.people.view': 'team', 'hrms.people.create': 'team', 'hrms.employments.update': 'team', 'hrms.expenses.submit': 'team', 'hrms.expenses.approve': 'team',
         'hrms.attendance.punch': 'team', 'hrms.attendance.view': 'team', 'hrms.attendance.approve': 'team', 'hrms.leave.apply': 'team', 'hrms.leave.approve': 'team', 'hrms.leave.report': 'team',
         'hrms.skills.add': 'team', 'hrms.skills.verify': 'team', 'hrms.skills.view': 'team', 'hrms.dashboard.view': 'team', 'payroll.payslip.own': 'team',
         'tickets.types.view': 'team', 'tickets.types.manage': 'team',
-        'tickets.view': 'team', 'tickets.work': 'team', 'tickets.manage': 'team', 'tickets.create': 'team', 'tickets.time.adjust': 'team',
+        'tickets.view': 'team', 'tickets.work': 'team', 'tickets.manage': 'team', 'tickets.create': 'team', 'tickets.time.adjust': 'team', 'tickets.report': 'team',
+        'core.users.team': 'team',
+      });
+    });
+
+    it('the on-site supervisor holds only the Supervisor role: self-service plus the site work of their tickets', async () => {
+      const sup = await signIn(app, DEMO.supervisor.login);
+      const res = await http().get('/api/auth/me').set(sup);
+      expect(res.body.person).toEqual({ publicId: DEMO.supervisor.publicId, displayName: 'Demo Supervisor' });
+      expect(res.body.roles).toEqual([expect.objectContaining({ code: 'supervisor', scope: 'team' })]);
+      expect(res.body.permissions).toEqual({
+        'hrms.people.view': 'team', 'hrms.expenses.submit': 'team', 'hrms.attendance.punch': 'team', 'hrms.leave.apply': 'team',
+        'hrms.skills.add': 'team', 'hrms.skills.view': 'team', 'payroll.payslip.own': 'team',
+        'tickets.types.view': 'team', 'tickets.view': 'team', 'tickets.work': 'team', 'tickets.site': 'team',
       });
     });
   });
@@ -117,28 +132,51 @@ describe('Sign-in and roles', () => {
     it('an employee sees only themselves and changes nothing', async () => {
       const me = await signIn(app, DEMO.technician.login);
       expect(ids(await http().get('/api/hrms/people').set(me))).toEqual([DEMO.technician.publicId]);
-      expect((await http().get(`/api/hrms/people/${DEMO.supervisor.publicId}`).set(me)).status).toBe(403);
+      expect((await http().get(`/api/hrms/people/${DEMO.manager.publicId}`).set(me)).status).toBe(403);
       expect((await http().patch(`/api/hrms/people/${DEMO.technician.publicId}`).set(me).send({ displayName: 'X Y' })).status).toBe(403);
     });
 
-    it('a supervisor sees themselves and their team, and changes their team\'s jobs only', async () => {
-      const sup = await signIn(app, DEMO.supervisor.login);
-      // other test files create people managed by the supervisor at the same time, so check membership, not the exact list
-      const visible = ids(await http().get('/api/hrms/people?pageSize=100').set(sup));
-      expect(visible).toEqual(expect.arrayContaining([DEMO.supervisor.publicId, DEMO.technician.publicId]));
+    it('a manager sees themselves and their team, and changes their team\'s jobs only', async () => {
+      const mgr = await signIn(app, DEMO.manager.login);
+      // other test files create people managed by the manager at the same time, so check membership, not the exact list
+      const visible = ids(await http().get('/api/hrms/people?pageSize=100').set(mgr));
+      expect(visible).toEqual(expect.arrayContaining([DEMO.manager.publicId, DEMO.technician.publicId]));
       expect(visible).not.toContain(DEMO.engineer.publicId);
       expect(visible).not.toContain(DEMO.hr.publicId);
-      expect((await http().get(`/api/hrms/people/${DEMO.engineer.publicId}`).set(sup)).status).toBe(403);
+      expect(visible).not.toContain(DEMO.supervisor.publicId);
+      expect((await http().get(`/api/hrms/people/${DEMO.engineer.publicId}`).set(mgr)).status).toBe(403);
 
       const techJob = await peopleApi(app, hr).employmentIn(DEMO.technician.publicId, 'AE');
-      const change = await http().patch(`/api/hrms/employments/${techJob}`).set(sup).send({ designation: 'Senior Technician' });
+      const change = await http().patch(`/api/hrms/employments/${techJob}`).set(mgr).send({ designation: 'Senior Technician' });
       expect(change.status).toBe(200);
       expect(change.body.employments[0].designation).toBe('Senior Technician');
 
-      const ownJob = await peopleApi(app, hr).employmentIn(DEMO.supervisor.publicId, 'AE');
-      expect((await http().patch(`/api/hrms/employments/${ownJob}`).set(sup).send({ designation: 'Boss' })).status).toBe(403);
-      expect((await http().post(`/api/hrms/employments/${techJob}/exit`).set(sup).send({ exitOn: '2026-03-31', exitReason: 'Not allowed' })).status).toBe(403);
-      expect((await http().post('/api/hrms/people').set(sup).send({})).status).toBe(403);
+      const ownJob = await peopleApi(app, hr).employmentIn(DEMO.manager.publicId, 'AE');
+      expect((await http().patch(`/api/hrms/employments/${ownJob}`).set(mgr).send({ designation: 'Boss' })).status).toBe(403);
+      expect((await http().post(`/api/hrms/employments/${techJob}/exit`).set(mgr).send({ exitOn: '2026-03-31', exitReason: 'Not allowed' })).status).toBe(403);
+      expect((await http().post('/api/hrms/people').set(mgr).send({})).status).toBe(400);   // managers may add people (own company; first-login.api.spec)
+    });
+
+    it('an on-site supervisor adds nobody, creates no logins, changes no jobs and approves nothing', async () => {
+      const sup = await signIn(app, DEMO.supervisor.login);
+      expect(ids(await http().get('/api/hrms/people?pageSize=100').set(sup))).toEqual([DEMO.supervisor.publicId]);   // nobody reports to them
+
+      const added = await http().post('/api/hrms/people').set(sup).send({
+        displayName: `Site Hire ${tag()}`, contacts: [{ kind: 'phone', value: fakePhone() }],
+        employment: { legalEntityCode: 'AE', employeeCode: `T-${tag()}`, engagementType: 'permanent', joinedOn: '2026-01-05' },
+      });
+      expect([added.status, added.body.code]).toEqual([403, 'FORBIDDEN']);
+
+      const personId = await peopleApi(app, hr).createPerson();
+      const login = await http().post('/api/core/users').set(sup).send({ personPublicId: personId, loginEmail: `site.${tag().toLowerCase()}@example.com`, password: TEMP_PASSWORD });
+      expect([login.status, login.body.code]).toEqual([403, 'FORBIDDEN']);
+      expect((await http().get(`/api/core/people/${personId}/access`).set(admin)).body.login).toBeNull();   // nothing was created
+
+      const techJob = await peopleApi(app, hr).employmentIn(DEMO.technician.publicId, 'AE');
+      expect((await http().patch(`/api/hrms/employments/${techJob}`).set(sup).send({ designation: 'Site lead' })).status).toBe(403);
+      for (const inbox of ['/api/hrms/leave/requests/to-approve', '/api/hrms/expenses/to-approve', '/api/hrms/attendance/corrections/to-approve', '/api/hrms/attendance/overtime/to-approve']) {
+        expect((await http().get(inbox).set(sup)).status).toBe(403);
+      }
     });
 
     it('HR may do everything in People but cannot manage logins', async () => {
@@ -163,7 +201,7 @@ describe('Sign-in and roles', () => {
 
     it('refuses a login phone or email that another login uses, and a second login for a person', async () => {
       const personId = await peopleApi(app, hr).createPerson();
-      const taken = await http().post('/api/core/users').set(admin).send({ personPublicId: personId, loginPhone: '+91 00000 00001', password: 'first-pass-1' });
+      const taken = await http().post('/api/core/users').set(admin).send({ personPublicId: personId, loginPhone: '+91 00000 00001', loginEmail: `p.${tag().toLowerCase()}@example.com`, password: 'first-pass-1' });
       expect(taken.status).toBe(409);
       expect(taken.body.code).toBe('CORE_LOGIN_TAKEN');
       const second = await http().post('/api/core/users').set(admin).send({ personPublicId: DEMO.hr.publicId, loginEmail: `x.${tag().toLowerCase()}@example.com`, password: 'first-pass-1' });

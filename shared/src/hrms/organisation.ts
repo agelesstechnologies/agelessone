@@ -8,6 +8,9 @@ const prefix = z.string().trim().regex(/^[A-Z]{2,6}$/, '2 to 6 capital letters, 
 
 export const Department = z.object({ publicId: PublicId, company: z.string(), name: z.string(), codePrefix: z.string(), head: PersonRef.nullable() });
 export type Department = z.infer<typeof Department>;
+/** GET /api/hrms/departments/:publicId/next-employee-code — the code the next person would get (reserved only on save). */
+export const NextEmployeeCode = z.object({ department: PublicId, codePrefix: z.string(), code: z.string() });
+export type NextEmployeeCode = z.infer<typeof NextEmployeeCode>;
 /** GET /api/hrms/departments?company= */
 export const DepartmentsQuery = z.object({ company: emptyToUndefined(company) });
 export type DepartmentsQuery = z.infer<typeof DepartmentsQuery>;

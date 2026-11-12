@@ -14,13 +14,13 @@ const PDF = Buffer.from('%PDF-1.4\n% certificate\n');
 
 describe('HRMS skills and certificates API', () => {
   let app: INestApplication;
-  let hr: Auth, admin: Auth, sup: Auth, tech: Auth;
+  let hr: Auth, admin: Auth, mgr: Auth, tech: Auth;
   let db: pg.Client;
   const http = () => request(app.getHttpServer());
-  /** A new ATPL employee managed by Demo Supervisor. */
+  /** A new ATPL employee managed by Demo Manager. */
   const staff = async () => {
     const s = await newStaff(app, hr, admin, ['ATPL']);
-    await http().patch(`/api/hrms/employments/${s.jobs.ATPL}`).set(hr).send({ managerPublicId: DEMO.supervisor.publicId, departmentCode: 'ATS' }).expect(200);
+    await http().patch(`/api/hrms/employments/${s.jobs.ATPL}`).set(hr).send({ managerPublicId: DEMO.manager.publicId, departmentCode: 'ATS' }).expect(200);
     return s;
   };
   const newSkill = async (name = 'Node.js') => (await http().post('/api/hrms/skills').set(hr)
@@ -33,7 +33,7 @@ describe('HRMS skills and certificates API', () => {
 
   beforeAll(async () => {
     app = await createTestApp(AppModule);
-    [hr, admin, sup, tech] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.supervisor, DEMO.technician].map((d) => signIn(app, d.login)));
+    [hr, admin, mgr, tech] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.manager, DEMO.technician].map((d) => signIn(app, d.login)));
     db = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await db.connect();
   });
@@ -49,8 +49,8 @@ describe('HRMS skills and certificates API', () => {
     expect(added.status).toBe(201);
     expect(added.body).toMatchObject({ level: 'skilled', verifiedBy: null, skill: { code: skill.code } });
 
-    const verified = await http().post(`/api/hrms/person-skills/${added.body.publicId}/verify`).set(sup);
-    expect(verified.body).toMatchObject({ verifiedBy: { publicId: DEMO.supervisor.publicId } });
+    const verified = await http().post(`/api/hrms/person-skills/${added.body.publicId}/verify`).set(mgr);
+    expect(verified.body).toMatchObject({ verifiedBy: { publicId: DEMO.manager.publicId } });
     // a new level needs verifying again
     const raised = await http().post(`/api/hrms/people/${s.personId}/skills`).set(s.auth).send({ skillPublicId: skill.publicId, level: 'expert' });
     expect(raised.body).toMatchObject({ publicId: added.body.publicId, level: 'expert', verifiedBy: null });
@@ -71,9 +71,9 @@ describe('HRMS skills and certificates API', () => {
     const selfCert = await http().post(`/api/hrms/certificates/${cert.body.publicId}/verify`).set(hr);
     expect(selfCert.body.code).toBe('HRMS_SELF_VERIFICATION');
 
-    const stranger = await newStaff(app, hr, admin, ['ATPL']); // not in the supervisor's team
+    const stranger = await newStaff(app, hr, admin, ['ATPL']); // not in the manager's team
     const theirs = await http().post(`/api/hrms/people/${stranger.personId}/skills`).set(stranger.auth).send({ skillPublicId: skill.publicId, level: 'trainee' });
-    expect((await http().post(`/api/hrms/person-skills/${theirs.body.publicId}/verify`).set(sup)).status).toBe(403);
+    expect((await http().post(`/api/hrms/person-skills/${theirs.body.publicId}/verify`).set(mgr)).status).toBe(403);
   });
 
   it('certificates: file kept and checked, expiry list correct, the daily job marks expired ones', async () => {
@@ -94,10 +94,10 @@ describe('HRMS skills and certificates API', () => {
     expect(mine.map((c: { name: string; daysLeft: number }) => [c.name, c.daysLeft])).toEqual([['Electrical safety', 10], ['First aid', 30]]);
     expect(mine.map((c: { publicId: string }) => c.publicId)).not.toContain(later.body.publicId);
     expect(edge.status).toBe(201);
-    expect((await http().get('/api/hrms/certificates/expiring').set(sup)).status).toBe(403);
+    expect((await http().get('/api/hrms/certificates/expiring').set(mgr)).status).toBe(403);
 
     // file: the person and their manager may fetch it, others may not
-    expect((await http().get(`/api/hrms/certificates/${soon.body.publicId}/file`).set(sup)).headers['content-type']).toBe('application/pdf');
+    expect((await http().get(`/api/hrms/certificates/${soon.body.publicId}/file`).set(mgr)).headers['content-type']).toBe('application/pdf');
     expect((await http().get(`/api/hrms/certificates/${soon.body.publicId}/file`).set(tech)).status).toBe(403);
 
     // the date passes without the job having run: shown as expired at once, stored as expired by the job
@@ -105,13 +105,13 @@ describe('HRMS skills and certificates API', () => {
     const matrix = await http().get('/api/hrms/skills/matrix').query({ company: 'ATPL' }).set(hr);
     const row = matrix.body.rows.find((r: { person: { publicId: string } }) => r.person.publicId === s.personId);
     expect(row.certificates.find((c: { publicId: string }) => c.publicId === soon.body.publicId).status).toBe('expired');
-    expect((await http().post(`/api/hrms/certificates/${soon.body.publicId}/verify`).set(sup)).body.code).toBe('HRMS_CERTIFICATE_EXPIRED');
+    expect((await http().post(`/api/hrms/certificates/${soon.body.publicId}/verify`).set(mgr)).body.code).toBe('HRMS_CERTIFICATE_EXPIRED');
 
     const result = await app.get(SkillsService, { strict: false }).runDaily();
     expect(result.markedExpired).toBeGreaterThanOrEqual(1);
     const { rows } = await db.query('SELECT status FROM hrms.certificates WHERE public_id = $1', [soon.body.publicId]);
     expect(rows[0].status).toBe('expired');
 
-    expect((await http().post(`/api/hrms/certificates/${later.body.publicId}/verify`).set(sup)).body).toMatchObject({ status: 'verified' });
+    expect((await http().post(`/api/hrms/certificates/${later.body.publicId}/verify`).set(mgr)).body).toMatchObject({ status: 'verified' });
   });
 });

@@ -3,7 +3,7 @@ import {
   AddContactRequest, AddEmploymentRequest, ExitEmploymentRequest, UpdateEmploymentRequest, UpdatePersonRequest,
   type PersonDetail, type SharedContacts,
 } from '@ageless/shared';
-import { api, downloadFile, errText } from '../api';
+import { api, downloadFile, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { todayIst, useLoad } from '../hooks';
 import { PEOPLE, PRIVATE } from '../permissions';
@@ -120,7 +120,7 @@ const COMPANIES = <><option value="AE">AE · Ageless Entertainments</option><opt
 function EditPerson({ person, onClose, onDone }: Step & { person: PersonDetail }) {
   return <Form title="Edit person" submitLabel="Save" onClose={onClose} run={(d) => {
     const parsed = UpdatePersonRequest.safeParse({ displayName: text(d, 'name'), status: text(d, 'status') });
-    return parsed.success ? send('PATCH', `/hrms/people/${person.publicId}`, parsed.data, onDone) : parsed.error.issues[0]?.message ?? 'Check the form';
+    return parsed.success ? send('PATCH', `/hrms/people/${person.publicId}`, parsed.data, onDone) : formError(parsed.error, 'Check the form');
   }}>
     <label className="span-two">Full name<input id="ep-name" name="name" required minLength={2} maxLength={100} defaultValue={person.displayName} /></label>
     <label className="span-two">Status<select id="ep-status" name="status" defaultValue={person.status}><option value="active">Active</option><option value="inactive">Inactive</option><option value="exited">Exited</option></select></label>
@@ -130,7 +130,7 @@ function EditPerson({ person, onClose, onDone }: Step & { person: PersonDetail }
 function AddContact({ person, onClose, onDone }: Step & { person: PersonDetail }) {
   return <Form title="Add a contact" subtitle="A new primary replaces the current primary of that kind." submitLabel="Add contact" onClose={onClose} run={(d) => {
     const parsed = AddContactRequest.safeParse({ kind: text(d, 'kind'), value: text(d, 'value'), label: orUndef(text(d, 'label')), isPrimary: d.get('primary') === 'on' });
-    return parsed.success ? send('POST', `/hrms/people/${person.publicId}/contacts`, parsed.data, onDone) : parsed.error.issues[0]?.message ?? 'Check the form';
+    return parsed.success ? send('POST', `/hrms/people/${person.publicId}/contacts`, parsed.data, onDone) : formError(parsed.error, 'Check the form');
   }}>
     <label>Type<select id="ac-kind" name="kind"><option value="phone">Phone</option><option value="email">Email</option><option value="other">Other</option></select></label>
     <label>Label <span className="optional">optional</span><input id="ac-label" name="label" maxLength={40} placeholder="e.g. Home" /></label>
@@ -145,7 +145,7 @@ function AddJob({ person, onClose, onDone }: Step & { person: PersonDetail }) {
       legalEntityCode: text(d, 'company'), employeeCode: text(d, 'code'), engagementType: text(d, 'type'), joinedOn: text(d, 'joined'),
       departmentCode: orUndef(text(d, 'department')), designation: orUndef(text(d, 'designation')), managerPublicId: orUndef(text(d, 'manager')),
     });
-    return parsed.success ? send('POST', `/hrms/people/${person.publicId}/employments`, parsed.data, onDone) : parsed.error.issues[0]?.message ?? 'Check the form';
+    return parsed.success ? send('POST', `/hrms/people/${person.publicId}/employments`, parsed.data, onDone) : formError(parsed.error, 'Check the form');
   }}>
     <label>Company<select id="aj-company" name="company">{COMPANIES}</select></label>
     <label>Employee ID<input id="aj-code" name="code" required maxLength={20} /></label>
@@ -153,7 +153,7 @@ function AddJob({ person, onClose, onDone }: Step & { person: PersonDetail }) {
     <label>Department code <span className="optional">optional</span><input id="aj-department" name="department" maxLength={6} /></label>
     <label>Engagement<select id="aj-type" name="type"><option value="permanent">Permanent</option><option value="probation">Probation</option><option value="contract">Contract</option><option value="intern">Intern</option><option value="external">External</option></select></label>
     <label>Joined<input id="aj-joined" name="joined" type="date" required defaultValue={todayIst()} /></label>
-    <label className="span-two">Manager public ID <span className="optional">optional</span><input id="aj-manager" name="manager" placeholder="Supervisor UUID" /></label>
+    <label className="span-two">Manager public ID <span className="optional">optional</span><input id="aj-manager" name="manager" placeholder="Manager UUID" /></label>
   </Form>;
 }
 
@@ -166,11 +166,11 @@ function EditJob({ job, onClose, onDone }: Step & { job: Job }) {
     if (manager !== (job.manager?.publicId ?? '')) body.managerPublicId = manager || null;
     if (d.get('primary') === 'on') body.isPrimary = true;
     const parsed = UpdateEmploymentRequest.safeParse(body);
-    return parsed.success ? send('PATCH', `/hrms/employments/${job.publicId}`, parsed.data, onDone) : parsed.error.issues[0]?.message ?? 'Check the form';
+    return parsed.success ? send('PATCH', `/hrms/employments/${job.publicId}`, parsed.data, onDone) : formError(parsed.error, 'Check the form');
   }}>
     <label>Designation<input id="ej-designation" name="designation" maxLength={80} defaultValue={job.designation ?? ''} /></label>
     <label>Department code<input id="ej-department" name="department" maxLength={6} defaultValue={job.department?.code ?? ''} /></label>
-    <label className="span-two">Manager public ID<input id="ej-manager" name="manager" defaultValue={job.manager?.publicId ?? ''} placeholder="Supervisor UUID" /></label>
+    <label className="span-two">Manager public ID<input id="ej-manager" name="manager" defaultValue={job.manager?.publicId ?? ''} placeholder="Manager UUID" /></label>
     {!job.isPrimary && <label className="span-two check-row"><input name="primary" type="checkbox" /> Make this the primary employment</label>}
   </Form>;
 }
@@ -178,7 +178,7 @@ function EditJob({ job, onClose, onDone }: Step & { job: Job }) {
 function ExitJob({ job, onClose, onDone }: Step & { job: Job }) {
   return <Form title="Record an exit" subtitle={`${job.company.code} · ${job.employeeCode}`} submitLabel="Record exit" onClose={onClose} run={(d) => {
     const parsed = ExitEmploymentRequest.safeParse({ exitOn: text(d, 'on'), exitReason: text(d, 'reason') });
-    return parsed.success ? send('POST', `/hrms/employments/${job.publicId}/exit`, parsed.data, onDone) : parsed.error.issues[0]?.message ?? 'Check the form';
+    return parsed.success ? send('POST', `/hrms/employments/${job.publicId}/exit`, parsed.data, onDone) : formError(parsed.error, 'Check the form');
   }}>
     <label>Last day<input id="ex-on" name="on" type="date" required defaultValue={todayIst()} /></label>
     <label>Reason<input id="ex-reason" name="reason" required minLength={3} maxLength={200} placeholder="e.g. Resigned" /></label>

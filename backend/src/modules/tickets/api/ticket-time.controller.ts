@@ -3,7 +3,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import {
   AdjustTimeRequest, AllocationQuery, DailyUpdate, DailyUpdateRequest, DayAllocation, MissingUpdate, MissingUpdatesQuery, RunningTicket,
-  TicketPunchInRequest, TicketPunchOutRequest, TicketPunchResult,
+  TicketPunchInRequest, TicketPunchOutRequest, TicketPunchResult, TicketTimelogs,
 } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../platform/http/zod-validation.pipe';
 import { Ctx, Permission, RequestContext } from '../../../platform/http/request-context';
@@ -76,6 +76,12 @@ export class TicketTimeController {
     const { update, created } = await this.time.addDailyUpdate(ctx, publicId, body, files ?? []);
     if (!created) res.status(200);
     return update;
+  }
+
+  @Doc({ summary: 'Everyone\'s ticket punches on one ticket (who, start, end, punch-in address) and the counted time per person', response: TicketTimelogs })
+  @Permission(...SEE) @Get(':publicId/timelogs')
+  timelogs(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string) {
+    return this.time.ticketTimelogs(ctx, publicId);
   }
 
   @Doc({ summary: 'A ticket\'s daily updates, newest first', response: z.array(DailyUpdate) })

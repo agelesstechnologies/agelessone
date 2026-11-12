@@ -119,7 +119,7 @@ describe('HRMS calendar API', () => {
     const inLeave = await addHoliday(covered);
     const s = await staff();
     const leave = await http().post('/api/hrms/leave/requests').set(s.auth)
-      .send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'GL', fromDate: addDays(covered, -3), toDate: addDays(covered, 3) }).expect(201);
+      .send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'EL', fromDate: addDays(covered, -3), toDate: addDays(covered, 3) }).expect(201);
     await http().post(`/api/hrms/leave/requests/${leave.body.publicId}/approve`).set(hr).expect(200); // no manager: HR decides
     const refusedLeave = await http().delete(`/api/hrms/holidays/${inLeave.body.publicId}`).set(hr);
     expect([refusedLeave.status, refusedLeave.body.code]).toEqual([409, 'HRMS_HOLIDAY_IN_USE']);

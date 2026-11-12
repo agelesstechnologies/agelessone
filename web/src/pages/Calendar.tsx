@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import {
   CreateHolidayRequest, CreateWeeklyOffRequest, type Holiday, type WeeklyOff, type WeeklyOffRule, type WorkCalendar,
 } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { addDays, dayLabel, todayIst, useLoad, useMyEmployments, uuidv7 } from '../hooks';
 import { CALENDAR } from '../permissions';
@@ -98,7 +98,7 @@ function AddHoliday({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
     e.preventDefault();
     const d = new FormData(e.currentTarget);
     const parsed = CreateHolidayRequest.safeParse({ publicId: id, company: d.get('company'), date: d.get('date'), name: String(d.get('name') ?? '').trim(), isOptional: d.get('isOptional') === 'on' });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { await api('/hrms/holidays', { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }
@@ -160,7 +160,7 @@ function SetWeeklyOff({ company, onClose, onSaved }: { company: string; onClose:
       publicId: id, company: d.get('company'), validFrom: d.get('from'), ...(to ? { validTo: to } : {}),
       rule: { weekdays: days, nthWeekdays: satNth.length && !satEvery ? [{ weekday: 6, nth: satNth }] : [] },
     });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { await api('/hrms/weekly-offs', { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }

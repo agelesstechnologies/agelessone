@@ -21,29 +21,29 @@ const day = (n: number) => addDays(MONDAY, n); // day(0) Monday … day(4) Frida
 
 describe('HRMS leave API', () => {
   let app: INestApplication;
-  let hr: Auth, admin: Auth, sup: Auth, tech: Auth, engineer: Auth;
+  let hr: Auth, admin: Auth, mgr: Auth, sup: Auth, tech: Auth, engineer: Auth;
   const http = () => request(app.getHttpServer());
   const staff = (companies?: string[]) => newStaff(app, hr, admin, companies);
   const apply = (s: Staff, from: string, to: string, extra: Record<string, unknown> = {}, company = 'AE') =>
-    http().post('/api/hrms/leave/requests').set(s.auth).send({ employmentPublicId: s.jobs[company], leaveTypeCode: 'GL', fromDate: from, toDate: to, ...extra });
+    http().post('/api/hrms/leave/requests').set(s.auth).send({ employmentPublicId: s.jobs[company], leaveTypeCode: 'EL', fromDate: from, toDate: to, ...extra });
   const act = (auth: Auth, id: string, action: 'approve' | 'reject' | 'cancel', body: Record<string, unknown> = {}) =>
     http().post(`/api/hrms/leave/requests/${id}/${action}`).set(auth).send(body);
   const balance = async (s: Staff) => (await http().get('/api/hrms/leave/balances/mine').set(s.auth)).body
-    .find((b: { employment: { company: string }; leaveType: { code: string } }) => b.employment.company === 'AE' && b.leaveType.code === 'GL').balance;
+    .find((b: { employment: { company: string }; leaveType: { code: string } }) => b.employment.company === 'AE' && b.leaveType.code === 'EL').balance;
   const statuses = async (s: Staff, from: string, to: string) =>
     (await http().get('/api/hrms/attendance/history').query({ from, to }).set(s.auth)).body.map((r: { date: string; status: string }) => [r.date, r.status]);
   const opening = (s: Staff, days: number) => http().post('/api/hrms/leave/ledger/adjustments').set(hr)
-    .send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'GL', year: Number(day(0).slice(0, 4)), entry: 'opening', days, reason: 'Opening balance' });
+    .send({ employmentPublicId: s.jobs.AE, leaveTypeCode: 'EL', year: Number(day(0).slice(0, 4)), entry: 'opening', days, reason: 'Opening balance' });
 
   beforeAll(async () => {
     app = await createTestApp(AppModule);
-    [hr, admin, sup, tech, engineer] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.supervisor, DEMO.technician, DEMO.engineer].map((d) => signIn(app, d.login)));
+    [hr, admin, mgr, sup, tech, engineer] = await Promise.all([DEMO.hr, DEMO.admin, DEMO.manager, DEMO.supervisor, DEMO.technician, DEMO.engineer].map((d) => signIn(app, d.login)));
   });
   afterAll(async () => { await app?.close(); });
 
   it('lists the leave types', async () => {
     const res = await http().get('/api/hrms/leave/types').set(tech);
-    expect(res.body).toEqual(expect.arrayContaining([{ code: 'GL', name: 'General leave', isPaid: true }]));
+    expect(res.body).toEqual([{ code: 'EL', name: 'Earned leave', isPaid: true }, { code: 'LWP', name: 'Leave without pay', isPaid: false }, { code: 'SL', name: 'Sick leave', isPaid: true }]);   // General leave is no longer offered
   });
 
   it('overlapping leave is refused on the same job but allowed in the other company; a resend is stored once', async () => {
@@ -60,8 +60,8 @@ describe('HRMS leave API', () => {
     expect((await apply(s, day(1), day(2), {}, 'ATPL')).status).toBe(201);
   });
 
-  it('nobody approves their own leave; a supervisor decides only for their team', async () => {
-    const own = await http().post('/api/hrms/leave/requests').set(hr).send({ employmentPublicId: HR_JOB, leaveTypeCode: 'GL', fromDate: day(21), toDate: day(21) });
+  it('nobody approves their own leave; a manager decides only for their team', async () => {
+    const own = await http().post('/api/hrms/leave/requests').set(hr).send({ employmentPublicId: HR_JOB, leaveTypeCode: 'EL', fromDate: day(21), toDate: day(21) });
     expect(own.status).toBe(201);
     expect(own.body.approver).not.toBeNull();
     expect(own.body.approver.publicId).not.toBe(DEMO.hr.publicId); // another HR person, else the CEO
@@ -70,31 +70,44 @@ describe('HRMS leave API', () => {
 
     const s = await staff(); // no manager
     const r = await apply(s, day(0), day(0));
-    expect((await act(sup, r.body.publicId, 'approve')).status).toBe(403);
+    expect((await act(mgr, r.body.publicId, 'approve')).status).toBe(403);
     expect((await act(tech, r.body.publicId, 'approve')).status).toBe(403);
   });
 
-  it('approver fallback: the manager first, else HR; a supervisor decides only what names them', async () => {
+  it('approver fallback: the manager first, else HR; a manager decides only what names them', async () => {
     const s = await staff();
-    await http().patch(`/api/hrms/employments/${s.jobs.AE}`).set(hr).send({ managerPublicId: DEMO.supervisor.publicId }).expect(200);
-    expect((await apply(s, day(35), day(35))).body.approver.publicId).toBe(DEMO.supervisor.publicId);
+    await http().patch(`/api/hrms/employments/${s.jobs.AE}`).set(hr).send({ managerPublicId: DEMO.manager.publicId }).expect(200);
+    expect((await apply(s, day(35), day(35))).body.approver.publicId).toBe(DEMO.manager.publicId);
 
     // no manager and no department head: HR
     const other = await apply(await staff(), day(35), day(35));
     expect(other.body.approver.publicId).toBe(DEMO.hr.publicId);
-    expect((await act(sup, other.body.publicId, 'approve')).status).toBe(403);
+    expect((await act(mgr, other.body.publicId, 'approve')).status).toBe(403);
     // the CEO's own requests and Management decisions: reports/management.api.spec.ts
+  });
+
+  it('an on-site supervisor approves no leave: neither a request naming someone else nor one from their site', async () => {
+    const s = await staff();
+    await http().patch(`/api/hrms/employments/${s.jobs.AE}`).set(hr).send({ managerPublicId: DEMO.manager.publicId }).expect(200);
+    const r = await apply(s, day(42), day(42));
+    expect(r.body.approver.publicId).toBe(DEMO.manager.publicId);
+    for (const action of ['approve', 'reject'] as const) {
+      const res = await act(sup, r.body.publicId, action, { reason: 'Needed on site' });
+      expect([res.status, res.body.code]).toEqual([403, 'FORBIDDEN']);
+    }
+    expect((await http().get('/api/hrms/leave/requests/to-approve').set(sup)).status).toBe(403);
+    await act(mgr, r.body.publicId, 'approve').expect(200);   // still waiting for its approver
   });
 
   it('with the company balance-check policy on, leave may not take the balance below zero', async () => {
     // a far-future ATPL policy version, so no other test is affected
     await http().post('/api/core/policies').set(hr).send({ key: 'hrms.leave.balance_check', company: 'ATPL', value: true, effectiveFrom: '2030-01-01' }).expect(201);
     const s = await staff(['ATPL']);
-    const body = { employmentPublicId: s.jobs.ATPL, leaveTypeCode: 'GL', fromDate: '2030-03-04', toDate: '2030-03-05' };
+    const body = { employmentPublicId: s.jobs.ATPL, leaveTypeCode: 'EL', fromDate: '2030-03-04', toDate: '2030-03-05' };
     const refused = await http().post('/api/hrms/leave/requests').set(s.auth).send(body);
     expect([refused.status, refused.body.code]).toEqual([409, 'HRMS_LEAVE_BALANCE']);
     await http().post('/api/hrms/leave/ledger/adjustments').set(hr)
-      .send({ employmentPublicId: s.jobs.ATPL, leaveTypeCode: 'GL', year: 2030, entry: 'opening', days: 2, reason: 'Opening balance' }).expect(201);
+      .send({ employmentPublicId: s.jobs.ATPL, leaveTypeCode: 'EL', year: 2030, entry: 'opening', days: 2, reason: 'Opening balance' }).expect(201);
     expect((await http().post('/api/hrms/leave/requests').set(s.auth).send(body)).status).toBe(201);
     // before the policy takes effect the check is off
     expect((await http().post('/api/hrms/leave/requests').set(s.auth).send({ ...body, fromDate: '2029-12-03', toDate: '2029-12-04' })).status).toBe(201);
@@ -120,21 +133,21 @@ describe('HRMS leave API', () => {
 
   it('approval takes the days and marks the work days as leave; cancelling gives them back', async () => {
     const s = await staff();
-    await http().patch(`/api/hrms/employments/${s.jobs.AE}`).set(hr).send({ managerPublicId: DEMO.supervisor.publicId }).expect(200);
+    await http().patch(`/api/hrms/employments/${s.jobs.AE}`).set(hr).send({ managerPublicId: DEMO.manager.publicId }).expect(200);
     await opening(s, 10).expect(201);
     expect(await balance(s)).toBe(10);
 
     const r = await apply(s, day(0), day(1), { reason: 'Family function' });
-    expect(r.body.approver).toEqual({ publicId: DEMO.supervisor.publicId, displayName: 'Demo Supervisor' });
-    const waiting = await http().get('/api/hrms/leave/requests/to-approve').set(sup);
+    expect(r.body.approver).toEqual({ publicId: DEMO.manager.publicId, displayName: 'Demo Manager' });
+    const waiting = await http().get('/api/hrms/leave/requests/to-approve').set(mgr);
     expect(waiting.body.map((x: { publicId: string }) => x.publicId)).toContain(r.body.publicId);
 
-    const approved = await act(sup, r.body.publicId, 'approve');
+    const approved = await act(mgr, r.body.publicId, 'approve');
     expect(approved.status).toBe(200);
-    expect(approved.body).toMatchObject({ status: 'approved', decidedBy: { publicId: DEMO.supervisor.publicId } });
+    expect(approved.body).toMatchObject({ status: 'approved', decidedBy: { publicId: DEMO.manager.publicId } });
     expect(await balance(s)).toBe(8);
     expect(await statuses(s, day(0), day(1))).toEqual([[day(1), 'leave'], [day(0), 'leave']]);
-    expect((await act(sup, r.body.publicId, 'approve')).body.code).toBe('HRMS_LEAVE_NOT_PENDING');
+    expect((await act(mgr, r.body.publicId, 'approve')).body.code).toBe('HRMS_LEAVE_NOT_PENDING');
 
     const cancelled = await act(s.auth, r.body.publicId, 'cancel', { reason: 'Plans changed' });
     expect(cancelled.body.status).toBe('cancelled');
@@ -186,7 +199,7 @@ describe('HRMS leave API', () => {
   it('HR posts opening balances and adjustments with a reason, never on their own balance', async () => {
     const s = await staff();
     const year = Number(day(0).slice(0, 4));
-    const body = { employmentPublicId: s.jobs.AE, leaveTypeCode: 'GL', year, entry: 'adjustment', days: -1.5, reason: 'Unpaid absence in March' };
+    const body = { employmentPublicId: s.jobs.AE, leaveTypeCode: 'EL', year, entry: 'adjustment', days: -1.5, reason: 'Unpaid absence in March' };
     expect((await http().post('/api/hrms/leave/ledger/adjustments').set(tech).send(body)).status).toBe(403);
     expect((await http().post('/api/hrms/leave/ledger/adjustments').set(hr).send({ ...body, reason: undefined })).status).toBe(400);
     expect((await http().post('/api/hrms/leave/ledger/adjustments').set(hr).send({ ...body, days: 0.3 })).status).toBe(400);
@@ -202,21 +215,21 @@ describe('HRMS leave API', () => {
     expect(await balance(s)).toBe(10.5);
   });
 
-  it('the report shows HR everyone and a supervisor their team', async () => {
+  it('the report shows HR everyone and a manager their team', async () => {
     const team = await staff();
-    await http().patch(`/api/hrms/employments/${team.jobs.AE}`).set(hr).send({ managerPublicId: DEMO.supervisor.publicId }).expect(200);
+    await http().patch(`/api/hrms/employments/${team.jobs.AE}`).set(hr).send({ managerPublicId: DEMO.manager.publicId }).expect(200);
     const other = await staff();
     const a = await apply(team, day(28), day(29));
     const b = await apply(other, day(28), day(28));
-    await act(sup, a.body.publicId, 'approve').expect(200);
+    await act(mgr, a.body.publicId, 'approve').expect(200);
 
     const q = { company: 'AE', from: day(28), to: day(30) };
     const forHr = await http().get('/api/hrms/leave/report').query(q).set(hr);
     expect(forHr.status).toBe(200);
     expect(forHr.body.rows.map((r: { publicId: string }) => r.publicId)).toEqual(expect.arrayContaining([a.body.publicId, b.body.publicId]));
-    const forSup = (await http().get('/api/hrms/leave/report').query(q).set(sup)).body.rows.map((r: { publicId: string }) => r.publicId);
-    expect(forSup).toContain(a.body.publicId);
-    expect(forSup).not.toContain(b.body.publicId);
+    const forMgr = (await http().get('/api/hrms/leave/report').query(q).set(mgr)).body.rows.map((r: { publicId: string }) => r.publicId);
+    expect(forMgr).toContain(a.body.publicId);
+    expect(forMgr).not.toContain(b.body.publicId);
     expect((await http().get('/api/hrms/leave/report').query(q).set(engineer)).status).toBe(403);
   });
 });

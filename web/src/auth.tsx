@@ -7,8 +7,10 @@ interface AuthState {
   loading: boolean;
   login: (login: string, password: string) => Promise<void>;
   logout: () => void;
-  /** Replace the token (after a password change) and reload who is signed in. */
+  /** Reload who is signed in. */
   refresh: () => Promise<void>;
+  /** Use a new token (after setting or resetting a password) and reload who is signed in. */
+  adopt: (token: string) => Promise<void>;
   /** Does the signed-in person hold this permission (any scope)? The backend still checks every request. */
   can: (permission: string) => boolean;
   scopeOf: (permission: string) => RoleScope | null;
@@ -31,6 +33,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh().catch(() => setToken(null)).finally(() => setLoading(false));
   }, [refresh]);
 
+  const adopt = useCallback(async (token: string) => { setToken(token); await refresh(); }, [refresh]);
+
   const login = useCallback(async (loginName: string, password: string) => {
     const r = await api<LoginResponse>('/auth/login', { method: 'POST', json: { login: loginName, password } });
     setToken(r.token);
@@ -38,11 +42,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const value = useMemo<AuthState>(() => ({
-    me, loading, login, logout, refresh,
+    me, loading, login, logout, refresh, adopt,
     can: (p) => !!me?.permissions[p],
     scopeOf: (p) => me?.permissions[p] ?? null,
     seesOthers: me?.permissions['hrms.people.view'] === 'team' || me?.permissions['hrms.people.view'] === 'all' || !!me?.permissions['core.users.manage'],
-  }), [me, loading, login, logout, refresh]);
+  }), [me, loading, login, logout, refresh, adopt]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

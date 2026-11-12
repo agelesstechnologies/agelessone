@@ -36,9 +36,16 @@ export class PeopleService {
    * the next code for the department's prefix is generated in the same transaction.
    */
   async create(ctx: RequestContext, req: CreatePersonRequest): Promise<{ publicId: string }> {
-    requireAll(ctx, PEOPLE.create);
+    const scope = ctx.permissions[PEOPLE.create];
+    if (!scope) throw new AppError('FORBIDDEN', 403, `You need the permission ${PEOPLE.create}`);
     return this.db.transaction(async (tx) => {
       const refs = await this.employmentRefs(tx, ctx.tenantId, req.employment);
+      // HR (scope all): any company. A manager or department head (team): any department of a company they work in.
+      if (scope !== 'all' && !(await this.repo.hasActiveJobIn(tx, ctx.personId, refs.legalEntityId))) {
+        throw new AppError('HRMS_NOT_YOUR_COMPANY', 403, `You can add people only to a company you work in (${req.employment.legalEntityCode} is not one)`);
+      }
+      // a manager who names no manager manages the person: they stay in that manager's team (list, login, approvals)
+      if (scope !== 'all' && refs.managerPersonId === null) refs.managerPersonId = ctx.personId;
       const person = await this.core.createPerson(tx, {
         tenantId: ctx.tenantId, personType: 'employee', displayName: req.displayName, contacts: prepareContacts(req.contacts),
       });

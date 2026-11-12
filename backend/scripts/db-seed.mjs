@@ -16,19 +16,27 @@ const DEMO_PASSWORD = 'demo-pass-1';
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 // Fixed public ids, so the same people, logins and roles exist on every PC.
+// Demo Supervisor is on site only (site work of the tickets they supervise): nobody reports to them, and they add no
+// people, create no logins and approve nothing. Demo Manager leads the AE team (second job in AE, see below).
 const people = [
   { n: 1, display: 'Demo Supervisor', full: 'Demo Supervisor One', company: 'AE', code: 'AE-D001', phone: '+910000000001', email: 'demo.supervisor@example.com', role: 'supervisor', scope: 'team' },
-  { n: 2, display: 'Demo Technician', full: 'Demo Technician Two', company: 'AE', code: 'AE-D002', phone: '+910000000002', email: null, role: 'employee', scope: 'own', manager: 1 },
+  { n: 2, display: 'Demo Technician', full: 'Demo Technician Two', company: 'AE', code: 'AE-D002', phone: '+910000000002', email: 'demo.technician@example.com', role: 'employee', scope: 'own', manager: 9 },
   { n: 3, display: 'Demo Engineer', full: 'Demo Engineer Three', company: 'ATPL', code: 'ATPL-D001', phone: null, email: 'demo.engineer@example.com', role: 'employee', scope: 'own' },
   { n: 4, display: 'Demo HR', full: 'Demo HR Four', company: 'AE', code: 'AE-D003', phone: null, email: 'demo.hr@example.com', role: 'hr', scope: 'all' },
   { n: 5, display: 'Demo Admin', full: 'Demo Admin Five', company: 'ATPL', code: 'ATPL-D002', phone: null, email: 'demo.admin@example.com', role: 'system_admin', scope: 'all', grantedBy: 4 },
   { n: 6, display: 'Demo CEO', full: 'Demo CEO Six', company: 'AE', code: 'AE-D004', phone: null, email: 'demo.ceo@example.com', role: 'ceo', scope: 'team' },
-  // An employee (own records) who also holds Accounts executive at scope all (see extraRoles).
-  { n: 7, display: 'Demo Accountant', full: 'Demo Accountant Seven', company: 'ATPL', code: 'ATPL-D004', phone: null, email: 'demo.accountant@example.com', role: 'employee', scope: 'own' },
+  // Designing (ATPL): Demo Head heads the department; Demo Manager reports to Demo Head. Both lead with the Manager role;
+  // a department head is whoever is set as head of the department (no separate role). (n 7 is skipped: …0107 is in use.)
+  { n: 8, display: 'Demo Head', full: 'Demo Head Eight', company: 'ATPL', code: 'ATPL-D004', phone: '+910000000008', email: 'demo.head@example.com', role: 'manager', scope: 'team',
+    department: 'ATD', designation: 'Senior Designer', heads: 'ATD' },
+  { n: 9, display: 'Demo Manager', full: 'Demo Manager Nine', company: 'ATPL', code: 'ATPL-D005', phone: '+910000000009', email: 'demo.manager@example.com', role: 'manager', scope: 'team',
+    department: 'ATD', designation: 'Designer', manager: 8 },
+  // An employee (own records) who also holds Accounts executive at scope all (see extraRoles). (n 10 is skipped: …0110 is in use.)
+  { n: 11, display: 'Demo Accountant', full: 'Demo Accountant Eleven', company: 'ATPL', code: 'ATPL-D006', phone: null, email: 'demo.accountant@example.com', role: 'employee', scope: 'own' },
 ];
 
 // Roles for tenant 1 and their permissions (the permission list itself comes from migration 0005).
-const HR = ['hrms.people.view', 'hrms.people.create', 'hrms.people.update', 'hrms.contacts.manage', 'hrms.contacts.review', 'hrms.employments.manage', 'hrms.employments.update',
+const HR = ['hrms.people.view', 'hrms.people.create', 'hrms.letters.manage', 'hrms.people.update', 'hrms.contacts.manage', 'hrms.contacts.review', 'hrms.employments.manage', 'hrms.employments.update',
   'hrms.expenses.submit', 'hrms.expenses.approve', 'hrms.expenses.pay', 'hrms.expenses.report',
   'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.rebuild', 'hrms.attendance.approve', 'hrms.calendar.manage',
   'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.manage', 'hrms.leave.report', 'core.policies.manage', 'hrms.positions.manage',
@@ -37,15 +45,21 @@ const HR = ['hrms.people.view', 'hrms.people.create', 'hrms.people.update', 'hrm
 const roles = [
   { code: 'employee', name: 'Employee', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.leave.apply',
     'hrms.skills.add', 'hrms.skills.view', 'payroll.payslip.own', 'tickets.types.view', 'tickets.view', 'tickets.work'] },
-  { code: 'supervisor', name: 'Supervisor', permissions: ['hrms.people.view', 'hrms.employments.update', 'hrms.expenses.submit', 'hrms.expenses.approve',
+  // Manager: leads a team: approvals, add people and logins, create and run tickets, the full report of tickets they
+  // manage (tickets.report). (Was the Supervisor role.)
+  { code: 'manager', name: 'Manager', permissions: ['hrms.people.view', 'hrms.people.create', 'hrms.employments.update', 'hrms.expenses.submit', 'hrms.expenses.approve',
     'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report',
     'hrms.skills.add', 'hrms.skills.verify', 'hrms.skills.view', 'hrms.dashboard.view', 'payroll.payslip.own',
-    'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.work', 'tickets.manage', 'tickets.create', 'tickets.time.adjust'] },
+    'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.work', 'tickets.manage', 'tickets.create', 'tickets.time.adjust', 'tickets.report',
+    'core.users.team'] },
+  // Supervisor: on site only: own self-service plus the site work of the tickets they supervise (tickets.site).
+  { code: 'supervisor', name: 'Supervisor', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.leave.apply',
+    'hrms.skills.add', 'hrms.skills.view', 'payroll.payslip.own', 'tickets.types.view', 'tickets.view', 'tickets.work', 'tickets.site'] },
   // Payroll: prepares runs, salaries and bank details. Payroll Approver: approves runs (never one they prepared).
   { code: 'payroll', name: 'Payroll', permissions: ['payroll.prepare', 'payroll.payslip.own'] },
   { code: 'payroll_approver', name: 'Payroll Approver', permissions: ['payroll.approve', 'payroll.payslip.own'] },
   // Accounts: the executive drafts (maker), the manager approves (checker). Until they are appointed, the policy
-  // accounts.interim_roles lets HR make and the CEO check, so nobody holds these roles in the demo data.
+  // accounts.interim_roles lets HR make and the CEO check; in the demo data only Demo Accountant holds one (executive).
   { code: 'accounts_executive', name: 'Accounts executive', permissions: ['accounts.make', 'accounts.view', 'payroll.payslip.own'] },
   { code: 'accounts_manager', name: 'Accounts manager', permissions: ['accounts.check', 'accounts.view', 'payroll.payslip.own'] },
   { code: 'hr', name: 'HR', permissions: HR },
@@ -59,12 +73,14 @@ const roles = [
   // sees private details masked and may reveal them (audited).
   { code: 'management', name: 'Management', permissions: ['hrms.management', 'hrms.people.view', 'hrms.attendance.view', 'hrms.attendance.approve',
     'hrms.leave.approve', 'hrms.leave.report', 'hrms.expenses.approve', 'hrms.expenses.report', 'hrms.skills.view', 'hrms.dashboard.view',
-    'hrms.private.view', 'hrms.private.reveal', 'payroll.payslip.own', 'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage', 'tickets.time.adjust'] },
+    'hrms.private.view', 'hrms.private.reveal', 'hrms.letters.manage', 'payroll.payslip.own', 'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage', 'tickets.time.adjust',
+    'tickets.report'] },
 ];
 // Second roles: Demo HR runs payroll, Demo CEO approves it and has Management access (granted by Demo Admin).
+// (n 227, Manager for Demo Supervisor, is no longer given: older databases have it ended below.)
 const extraRoles = [{ n: 214, person: 4, role: 'payroll' }, { n: 216, person: 6, role: 'payroll_approver' }, { n: 226, person: 6, role: 'management' },
   // Accounts permissions only count at scope all, so the accountant holds Accounts executive as a second role.
-  { n: 227, person: 7, role: 'accounts_executive' }];
+  { n: 228, person: 11, role: 'accounts_executive' }];
 
 const client = new pg.Client({ connectionString: url.toString() });
 await client.connect();
@@ -78,9 +94,12 @@ try {
       (1, 'ATPL', 'Ageless Technologies', 'private_limited')
     ON CONFLICT (tenant_id, code) DO NOTHING`);
 
-  // POLICY: until HR confirms the leave types — one paid type for now.
-  await client.query(`INSERT INTO hrms.leave_types (tenant_id, code, name, policy_key, is_paid)
-    VALUES (1, 'GL', 'General leave', 'hrms.leave.gl', true) ON CONFLICT (tenant_id, code) DO NOTHING`);
+  // Leave types: Sick and Earned (paid, 1 day each a month: policy hrms.leave.monthly_accrual), Leave without pay
+  // (unpaid). General leave stays for history but can no longer be applied for.
+  await client.query(`INSERT INTO hrms.leave_types (tenant_id, code, name, policy_key, is_paid, is_active) VALUES
+      (1, 'SL', 'Sick leave', 'hrms.leave.sl', true, true), (1, 'EL', 'Earned leave', 'hrms.leave.el', true, true),
+      (1, 'LWP', 'Leave without pay', 'hrms.leave.lwp', false, true), (1, 'GL', 'General leave', 'hrms.leave.gl', true, false)
+    ON CONFLICT (tenant_id, code) DO NOTHING`);
 
   // Ageless Technologies: departments (code prefix starts the employee codes: ATS001 ...; heads are set later by HR)
   // and the designations its positions use.
@@ -133,9 +152,13 @@ try {
        SELECT 1, $1, id, $2, $3, $4 FROM core.persons WHERE public_id = $5
        ON CONFLICT (person_id) DO NOTHING`,
       [id(300 + p.n), p.phone, p.email, passwordHash, id(p.n)]);
+    // every login needs an email now (sign-in codes): fill one in for a demo login seeded before that rule
+    if (p.email) {
+      await client.query(`UPDATE core.users SET login_email = $1 WHERE public_id = $2 AND login_email IS NULL`, [p.email, id(300 + p.n)]);
+    }
   }
-  // Demo Supervisor also works in ATPL (second, non-primary job), so they can create tickets in both companies
-  // (a supervisor creates tickets only in companies they work in).
+  // Demo Supervisor also works in ATPL (second, non-primary job), so they can be named the on-site supervisor of tickets
+  // in both companies (a ticket's supervisor must have an active job in the ticket's company).
   await client.query(
     `INSERT INTO hrms.employments (tenant_id, public_id, person_id, legal_entity_id, employee_code, employment_type, joined_on, is_primary)
      SELECT 1, $1, p.id, le.id, 'ATPL-D003', 'permanent', DATE '2025-04-01', false
@@ -143,6 +166,15 @@ try {
       WHERE p.public_id = $2
      ON CONFLICT (public_id) DO NOTHING`,
     [id(107), id(1)]);
+  // Demo Manager also works in AE (second, non-primary job): they lead the AE team there (Demo Technician reports to them),
+  // add AE people and create their logins. Left alone if the job, the code or an active AE job of theirs already exists.
+  await client.query(
+    `INSERT INTO hrms.employments (tenant_id, public_id, person_id, legal_entity_id, employee_code, employment_type, joined_on, is_primary)
+     SELECT 1, $1, p.id, le.id, 'AE-D005', 'permanent', DATE '2025-04-01', false
+       FROM core.persons p JOIN core.legal_entities le ON le.tenant_id = 1 AND le.code = 'AE'
+      WHERE p.public_id = $2
+     ON CONFLICT DO NOTHING`,
+    [id(110), id(9)]);
 
   // The 13 standard ticket types, for every company (is_standard: only admin user and Management may change them).
   // Written by Demo Admin; safe to run again (a type that exists is left alone).
@@ -181,11 +213,32 @@ try {
     }
   }
 
-  // Team: Demo Technician reports to Demo Supervisor (only filled in when no manager is set yet).
+  // Team: Demo Technician reports to Demo Manager, Demo Manager to Demo Head (only filled in when no manager is set yet).
   for (const p of people.filter((x) => x.manager)) {
     await client.query(
       `UPDATE hrms.employments SET manager_person_id = (SELECT id FROM core.persons WHERE public_id = $1)
         WHERE public_id = $2 AND manager_person_id IS NULL`, [id(p.manager), id(100 + p.n)]);
+  }
+  // Older seeds had Demo Technician report to Demo Supervisor: move them to Demo Manager (only while that is still so).
+  await client.query(
+    `UPDATE hrms.employments SET manager_person_id = (SELECT id FROM core.persons WHERE public_id = $1)
+      WHERE public_id = $2 AND manager_person_id = (SELECT id FROM core.persons WHERE public_id = $3)`,
+    [id(9), id(102), id(1)]);
+  // Department and designation of a demo job, and the department a demo person heads (left alone once HR has set them).
+  for (const p of people.filter((x) => x.department)) {
+    await client.query(
+      `UPDATE hrms.employments e SET department_id = d.id, designation = COALESCE(e.designation, $3)
+         FROM hrms.departments d
+        WHERE e.public_id = $1 AND e.department_id IS NULL AND d.legal_entity_id = e.legal_entity_id AND d.code_prefix = $2`,
+      [id(100 + p.n), p.department, p.designation]);
+  }
+  for (const p of people.filter((x) => x.heads)) {
+    await client.query(
+      `UPDATE hrms.departments d SET head_person_id = p.id
+         FROM core.persons p, core.legal_entities le
+        WHERE p.public_id = $1 AND le.tenant_id = 1 AND le.code = $2 AND d.legal_entity_id = le.id AND d.code_prefix = $3
+          AND d.head_person_id IS NULL`,
+      [id(p.n), p.company, p.heads]);
   }
 
   // POLICY: until HR confirms — weekly off for both companies: every Sunday and the 2nd and 4th Saturday (set by Demo HR).
@@ -227,12 +280,20 @@ try {
   for (const x of extraRoles) {
     await client.query(
       `INSERT INTO core.role_assignments (tenant_id, public_id, person_id, role_id, scope, valid_from, granted_by)
-       SELECT 1, $1, person.id, r.id, 'all', DATE '2025-04-01', granter.id
+       SELECT 1, $1, person.id, r.id, $5, DATE '2025-04-01', granter.id
          FROM core.persons person, core.roles r, core.persons granter
         WHERE person.public_id = $2 AND r.tenant_id = 1 AND r.code = $3 AND granter.public_id = $4
        ON CONFLICT (public_id) DO NOTHING`,
-      [id(x.n), id(x.person), x.role, id(5)]);
+      [id(x.n), id(x.person), x.role, id(5), x.scope ?? 'all']);
   }
+  // Older seeds also gave Demo Supervisor the Manager role (n 227). Supervisors are on site only, so end it (ended, never
+  // deleted; left alone once ended), as ending a role in the app does.
+  await client.query(
+    `UPDATE core.role_assignments ra SET ended_at = now()
+       FROM core.persons person, core.roles r
+      WHERE ra.public_id = $1 AND ra.ended_at IS NULL AND ra.person_id = person.id AND person.public_id = $2
+        AND ra.role_id = r.id AND r.tenant_id = 1 AND r.code = 'manager'`,
+    [id(227), id(1)]);
 
   await client.query('COMMIT');
   const { rows } = await client.query(`SELECT

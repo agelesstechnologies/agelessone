@@ -365,3 +365,67 @@ export const ticketTimeAdjustments = ticketsSchema.table('ticket_time_adjustment
   check('ticket_time_adjustments_not_own', sql`adjusted_by <> person_id`),
   check('ticket_time_adjustments_as_check', sql`adjusted_as IN ('head','management')`),
 ]);
+
+/**
+ * Outside workers on a ticket (contractor labour, agency staff): who, how to reach them, where from, their trade, the
+ * days on site and a photo. Added by the ticket's on-site supervisor, a manager or the department head.
+ */
+export const ticketExternalStaff = ticketsSchema.table('ticket_external_staff', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  publicId: uuid('public_id').notNull().unique(),
+  ticketId: bigint('ticket_id', { mode: 'number' }).notNull(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull(),
+  name: text('name').notNull(),
+  phone: text('phone'),
+  agency: text('agency'),
+  trade: text('trade'),
+  fromDate: date('from_date').notNull(),
+  toDate: date('to_date'),
+  photoPath: text('photo_path'),
+  photoType: text('photo_type'),
+  addedBy: bigint('added_by', { mode: 'number' }).notNull().references(() => persons.id),
+  addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  foreignKey({ name: 'ticket_external_staff_ticket_company_fk', columns: [t.ticketId, t.legalEntityId], foreignColumns: [tickets.id, tickets.legalEntityId] }),
+  unique('ticket_external_staff_id_ticket_company_unique').on(t.id, t.ticketId, t.legalEntityId), // attendance: same worker, ticket and company
+  index('idx_ticket_external_staff_ticket').on(t.ticketId),
+  check('ticket_external_staff_dates_check', sql`to_date IS NULL OR to_date >= from_date`),
+  check('ticket_external_staff_name_check', sql`char_length(name) BETWEEN 2 AND 100`),
+  check('ticket_external_staff_photo_check', sql`(photo_path IS NULL) = (photo_type IS NULL) AND (photo_type IS NULL OR photo_type IN ('jpg','png'))`),
+]);
+
+/**
+ * An outside worker's attendance on the ticket's site for one work day (IST date): present, half day or absent, with
+ * optional time in / out (UTC; entered as IST clock times on that date) and a short note. One row per worker and day;
+ * a correction updates the row (updated_by / updated_at) and the ticket's timeline keeps the previous values.
+ * Recorded by the person who added the worker (while they run the site work) or the ticket's managers.
+ */
+export const ticketExternalAttendance = ticketsSchema.table('ticket_external_attendance', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  publicId: uuid('public_id').notNull().unique(),
+  ticketId: bigint('ticket_id', { mode: 'number' }).notNull(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull(),
+  externalStaffId: bigint('external_staff_id', { mode: 'number' }).notNull(),
+  workDate: date('work_date').notNull(),
+  status: text('status').notNull(),
+  timeIn: timestamp('time_in', { withTimezone: true }),
+  timeOut: timestamp('time_out', { withTimezone: true }),
+  note: text('note'),
+  recordedBy: bigint('recorded_by', { mode: 'number' }).notNull().references(() => persons.id),
+  recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: bigint('updated_by', { mode: 'number' }).references(() => persons.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+}, (t) => [
+  foreignKey({ name: 'ticket_external_attendance_ticket_company_fk', columns: [t.ticketId, t.legalEntityId], foreignColumns: [tickets.id, tickets.legalEntityId] }),
+  foreignKey({ name: 'ticket_external_attendance_staff_company_fk', columns: [t.externalStaffId, t.ticketId, t.legalEntityId],
+    foreignColumns: [ticketExternalStaff.id, ticketExternalStaff.ticketId, ticketExternalStaff.legalEntityId] }),
+  unique('ticket_external_attendance_one_per_day').on(t.externalStaffId, t.workDate),
+  index('idx_ticket_external_attendance_ticket_date').on(t.ticketId, t.workDate),
+  check('ticket_external_attendance_status_check', sql`status IN ('present','half_day','absent')`),
+  check('ticket_external_attendance_absent_no_times', sql`status <> 'absent' OR (time_in IS NULL AND time_out IS NULL)`),
+  check('ticket_external_attendance_out_after_in', sql`time_in IS NULL OR time_out IS NULL OR time_out > time_in`),
+  check('ticket_external_attendance_note_length', sql`note IS NULL OR char_length(note) BETWEEN 1 AND 200`),
+  check('ticket_external_attendance_updated_fields', sql`(updated_by IS NULL) = (updated_at IS NULL)`),
+]);

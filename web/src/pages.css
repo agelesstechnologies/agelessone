@@ -337,6 +337,160 @@ th.num,td.num{text-align:right;font-variant-numeric:tabular-nums;padding-right:1
 /* a table footer directly under an edge-to-edge table lines up with the first column */
 :not(.panel-body)>.table-wrap+.table-footer{padding-left:20px;padding-right:20px}
 
+/* ---- joining letters ---- */
+.letter-modal{width:min(760px,100%)}
+.form-grid textarea.letter-text{height:auto;min-height:280px;padding:12px 14px;font:13.5px/1.6 'DM Sans',sans-serif;resize:vertical;white-space:pre-wrap}
+.letter-modal .detail-section{margin-top:18px}
+.letter-modal .detail-row .text-btn{display:inline-flex;align-items:center;gap:5px}
+.template-state{align-self:end;margin:0 0 10px!important}
+.field-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;color:#5b6472;padding-top:4px}
+.field-chips b{color:#1f2733;margin-right:4px}
+.field-chips span{display:inline-flex;align-items:center;gap:5px;background:#f8fafc;border:1px solid #e9edf2;border-radius:7px;padding:4px 8px}
+.field-chips code{font:600 12px ui-monospace,Consolas,monospace;color:#9a5b00}
+.job-card .job-letter{margin-top:8px;display:inline-flex;align-items:center;gap:5px}
+/* text areas in forms fill the width under their label, like inputs */
+.form-grid textarea{display:block;width:100%;margin-top:6px;border:1px solid #e3e7ee;border-radius:7px;background:#fff;color:#1f2733;font:13px/1.5 inherit;padding:9px 11px}
+.form-grid textarea.letter-text{font:13.5px/1.6 "DM Sans",sans-serif;padding:12px 14px;min-height:300px}
+/* sign-in helpers: text links under the form, small hints beside labels */
+.login-links{display:flex;justify-content:space-between;gap:12px;margin-top:14px}
+.link-btn{border:0;background:none;padding:0;color:#9a5b00;font:600 13px inherit;cursor:pointer}
+.link-btn:hover{text-decoration:underline}.link-btn:disabled{opacity:.5;cursor:default}
+.login-help .link-btn{font-size:13px}
+.login-hint{font-weight:400;color:#8a93a3;margin-left:4px}
+/* create login: the details to hand over */
+.login-handover{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.login-handover div{background:#fffaf0;border:1px solid #f3e2bf;border-radius:8px;padding:10px 12px}
+.login-handover small{display:block;font-size:11px;color:#8a6a2c;margin-bottom:4px}
+.login-handover b{font:600 14px ui-monospace,Consolas,monospace;color:#0b1727;word-break:break-all}
+/* checkbox with its label on one line; numbered steps */
+.form-grid label.check-label{display:flex;align-items:center;gap:9px;font-weight:500;color:#1f2733;font-size:13px}
+.form-grid label.check-label input{width:16px;height:16px;margin:0;flex:none;accent-color:#f5a100}
+ol.steps{margin:6px 0 0;padding-left:20px;display:grid;gap:7px;font-size:13px;color:#1f2733;line-height:1.5}
+/* development only: the sign-in code shown on screen (DEV_SHOW_CODES) */
+.dev-code{margin:0 0 16px;padding:10px 12px;border:1px dashed #f5a100;border-radius:8px;background:#fffaf0;font-size:13px;color:#7a4b00}
+.dev-code b{font:700 16px ui-monospace,Consolas,monospace;letter-spacing:2px;color:#0b1727;margin-left:4px}
+/* person search: one box, suggestions drop down under it */
+.person-search{position:relative}
+.person-search .optional{margin-left:6px}
+.person-search-box{position:relative;display:block}
+.form-grid .person-search-box input{padding-right:36px}
+.form-grid .person-search-box input[readonly]{background:#fffaf0;border-color:#f3e2bf;font-weight:500}
+.person-clear{position:absolute;right:6px;top:50%;transform:translateY(-50%);margin-top:3px;height:28px;width:28px;border:0;border-radius:6px;background:none;color:#6b7380;display:grid;place-items:center}
+.person-clear:hover{background:#f2f4f7;color:#0b1727}
+.person-results{position:absolute;left:0;right:0;top:100%;z-index:20;margin:4px 0 0;padding:4px;list-style:none;background:#fff;border:1px solid #e3e8f0;border-radius:9px;box-shadow:0 12px 30px #0b17271f;max-height:260px;overflow:auto}
+.person-results li{padding:8px 10px;border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.person-results li:hover{background:#fff8ea}
+.person-results li b{font-weight:600;color:#0b1727;font-size:13px}
+.person-results li small{color:#7b8494;font-size:12px;white-space:nowrap}
+.person-results li.none{cursor:default;color:#7b8494;font-size:13px}.person-results li.none:hover{background:none}
+.field-error{display:block;color:#a84b43;font-size:12px;margin-top:4px}
+/* login and roles on a profile */
+.role-chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.role-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #e9edf2;border-radius:20px;padding:3px 4px 3px 4px;background:#fff}
+.role-chip small{font-size:11.5px;color:#7b8494}
+.role-chip button{height:22px;width:22px;border:0;border-radius:50%;background:none;color:#8a93a3;display:grid;place-items:center}
+.role-chip button:hover{background:#fff0ee;color:#a84b43}
+.role-give{display:flex;gap:8px;margin-top:6px}
+.role-give select{flex:1;height:36px;border:1px solid #e3e7ee;border-radius:7px;padding:0 10px;font:inherit;font-size:13px;background:#fff}
+/* loss-of-pay days under a leave request
+'s days */
+.sub.lop{color:#c0443f;font-weight:600}
+
+/* ---- tables, round 2 ---- */
+/* filter boxes above tables look like the form fields */
+.inline-field{font-size:12px;color:#3a4250;gap:6px}
+.input{height:38px;font-size:13px;border-radius:7px;padding:0 11px;color:#1f2733;min-width:160px}
+.input:focus{outline:none;border-color:#f5a100;box-shadow:0 0 0 3px #f5a10022}
+/* the first column (usually a person or a ticket) keeps its line; other columns share the rest */
+td:first-child{min-width:180px}
+td:first-child>b,td:first-child>a,td:first-child>.person-cell b{white-space:nowrap}
+th{white-space:nowrap}
+/* small buttons inside rows */
+.outline-btn.small-btn{height:30px;padding:0 10px;font-size:12px;gap:5px;border-radius:7px}
+td .chip-row{justify-content:flex-end;flex-wrap:nowrap;gap:6px}
+/* a table's empty cells show a calm dash */
+td:empty::after{content:'—';color:#c3c9d3}
+/* ticket detail: action buttons under a section breathe; external staff rows wrap on phones */
+.detail-section>.chip-row{margin-top:10px;margin-bottom:12px}
+.ext-staff>span:first-child{display:flex;flex-direction:column;gap:3px;color:#4d4e57}
+.ext-staff small{font-size:9px}
+/* external staff attendance: the last two weeks under each worker; Present / Half day / Absent buttons in the mark form */
+.ext-worker{border-top:1px solid #eef1f5}
+.ext-worker>.detail-row{border-top:0}
+.xa-days{display:flex;flex-direction:column;gap:5px;padding:0 2px 10px}
+.xa-day{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:12px;color:#4d4e57}
+.xa-date{min-width:96px;color:#6b7380}
+.xa-note{color:#737580;font-style:italic;word-break:break-word}
+.xa-status{display:flex;gap:8px}
+.xa-status .outline-btn{flex:1;justify-content:center;height:38px;font-size:12.5px}
+.xa-status .outline-btn.on{border-color:#f5a100;background:#fff6e5;color:#b37400;font-weight:700}
+/* ticket page (#tickets/<id>): Froid-style card, tile grid and big buttons; works from phone to desktop */
+.ticket-page{max-width:760px;margin:0 auto}
+.tp-bar{display:grid;grid-template-columns:40px 1fr 40px;align-items:center;margin:-6px 0 14px}
+.tp-bar h1{font:700 19px Manrope;text-align:center;color:#1c2b3c;margin:0}
+.tp-bar .icon-button{color:#b37400;height:40px;width:40px;border-radius:10px}
+.tp-bar .icon-button:hover{background:#fff6e5}
+.tp-card{background:#fff;border:1px solid #eceef2;border-radius:14px;padding:16px 18px;margin-bottom:14px;box-shadow:0 2px 6px #1c2b3c0d}
+.tp-card h3{font:700 13px Manrope;margin:14px 0 8px}
+.tp-card h3:first-child{margin-top:0}
+.tp-title{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.tp-number{font:800 17px Manrope;color:#1c2b3c;display:block}
+.tp-sub{font-size:11.5px;color:#8a8c96}
+.tp-badges{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.tp-name{font:700 16px Manrope;margin:12px 0 2px;color:#1c2b3c}
+.tp-type{font-size:12px;color:#b37400;font-weight:600;margin:0 0 10px}
+.tp-rows{margin:0;border-top:1px solid #f0f2f5}
+.tp-row{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid #f0f2f5;font-size:13px}
+.tp-row:last-child{border-bottom:0}
+.tp-row dt{display:flex;align-items:center;gap:8px;color:#7b7d88}
+.tp-row dd{margin:0;color:#2c2e36;word-break:break-word}
+.tp-row-icon{color:#d08a00;display:grid;place-items:center}
+.tp-people{display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+.tp-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+.tp-tile{position:relative;background:#fff;border:1px solid #eceef2;border-radius:14px;padding:16px 8px 13px;display:flex;flex-direction:column;
+  align-items:center;gap:9px;font:600 12.5px 'DM Sans';color:#2c2e36;box-shadow:0 2px 6px #1c2b3c0d;cursor:pointer}
+.tp-tile:hover{border-color:#ffcf74;background:#fffdf7}
+.tp-tile-icon{height:46px;width:46px;border-radius:50%;background:#fff3da;color:#c07c00;display:grid;place-items:center}
+.tp-tile small{position:absolute;top:8px;right:9px;background:#eef1f5;color:#5d606b;border-radius:9px;padding:1px 7px;font-size:10.5px}
+.tp-actions{display:flex;flex-direction:column;gap:10px;margin:4px 0 14px}
+.tp-big{width:100%;height:48px;border-radius:24px;font-size:14px;font-weight:700;justify-content:center}
+.tp-warn{border:1.5px solid #f3c27a;background:#fff8ec;color:#c4610e;cursor:pointer}
+.tp-warn:hover{background:#fff1da}
+.tp-out{border:0;background:#1c2b3c;color:#fff;cursor:pointer;display:inline-flex;align-items:center}
+.tp-manage{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 14px;border:1px dashed #e2e5eb;border-radius:12px;background:#fbfcfd}
+.tp-manage-label{font-size:10px;font-weight:700;letter-spacing:.8px;color:#9a9ca6;text-transform:uppercase;margin-right:4px}
+.tp-hint{text-align:center;margin:8px 0 2px}
+.tp-totals{display:flex;flex-direction:column;gap:3px;background:#f7f9fb;border-radius:10px;padding:10px 12px;margin:12px 0 4px;font-size:12px;color:#5d606b}
+.tp-totals b{color:#1c2b3c}
+.tp-sub-head{text-align:center;color:#7b7d88;font:500 12.5px 'DM Sans'!important;margin:16px 0 10px!important}
+.tp-log{border:1px solid #eceef2;border-radius:10px;padding:10px 12px;margin-bottom:9px;font-size:12.5px;line-height:1.6;color:#3c3e46;box-shadow:0 1px 3px #1c2b3c0a}
+.tp-log b{color:#1c2b3c}
+.tp-log-top{display:flex;justify-content:space-between;gap:8px}
+.tp-hours{color:#2f8a5b;font-weight:600}
+.tp-notes{display:flex;flex-direction:column;gap:9px;margin-bottom:12px}
+.tp-note{border:1px solid #eceef2;border-radius:10px;padding:10px 12px}
+.tp-note-top{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:11.5px;color:#8a8c96}
+.tp-note-top b{color:#b37400;font-size:12.5px}
+.tp-pct{margin-left:auto;background:#eaf7f0;color:#3f8d67;border-radius:9px;padding:1px 7px}
+.tp-note p{margin:6px 0 2px;font-size:13px;color:#2c2e36;white-space:pre-wrap}
+.ticket-page .detail-row{font-size:12.5px}
+@media(max-width:560px){
+  .tp-row{grid-template-columns:118px 1fr;font-size:12.5px}
+  .tp-tiles{gap:9px}
+  .tp-tile{padding:13px 4px 11px;font-size:11.5px}
+  .tp-tile-icon{height:40px;width:40px}
+  .tp-card{padding:14px}
+}
+/* sidebar: HRMS drop-down group (People, Attendance, Leave, Calendar, Skills) */
+.nav-group-wrap{display:grid;gap:4px}
+.nav-group{height:40px;width:100%;display:flex;align-items:center;gap:11px;padding:0 10px;border:0;border-radius:7px;background:transparent;color:#e2e8f0;font:500 12px 'DM Sans';cursor:pointer;text-align:left}
+.nav-group svg{color:#94a3b8}
+.nav-group:hover{background:#ffffff12}
+.nav-group.has-active{color:#fff;font-weight:700}.nav-group.has-active svg{color:var(--brand)}
+.nav-chevron{margin-left:auto;transition:transform .15s}.nav-chevron.open{transform:rotate(180deg)}
+.nav-sub{display:grid;gap:4px;margin:0 0 2px 18px;padding-left:8px;border-left:1px solid #ffffff1f}
+.nav-sub a{height:36px}
+
 /* Accounts: ledger keys with no Tally ledger yet */
 .row-warn td{background:#fff6f4}
 /* dark sign-in panel */
@@ -352,3 +506,5 @@ th.num,td.num{text-align:right;font-variant-numeric:tabular-nums;padding-right:1
 .login-form .demo-box .outline-btn:hover{background:#222}
 .login-form .demo-box small{color:#f5a100}
 .login-submit{background:#f5a100;color:#111}
+/* sign-in links (forgot password, sign-in code) stay readable on the dark panel */
+.login-main .link-btn{color:#f5a100}

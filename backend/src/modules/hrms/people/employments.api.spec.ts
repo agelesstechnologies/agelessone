@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../../../app.module';
 import { createTestApp, DEMO, signIn } from '../../../test/create-app';
-import { peopleApi, SUPERVISOR } from '../../../test/people';
+import { MANAGER, peopleApi } from '../../../test/people';
 
 interface Job { publicId: string; company: { code: string }; status: string; isPrimary: boolean; exitOn: string | null; exitReason: string | null }
 const job = (person: { employments: Job[] }, company: string) => person.employments.find((e) => e.company.code === company)!;
@@ -60,10 +60,10 @@ describe('HRMS employments API', () => {
   it('changes manager, department and designation; a person cannot manage themselves', async () => {
     const p = await api.createPerson({ company: 'ATPL' });
     const atpl = await api.employmentIn(p, 'ATPL');
-    const res = await patch(atpl, { managerPublicId: SUPERVISOR, departmentCode: 'ATS', designation: 'Developer' });
+    const res = await patch(atpl, { managerPublicId: MANAGER, departmentCode: 'ATS', designation: 'Developer' });
     expect(res.status).toBe(200);
     expect(job(res.body, 'ATPL')).toMatchObject({ department: { code: 'ATS', name: 'Software Development' }, designation: 'Developer',
-      manager: { publicId: SUPERVISOR, displayName: 'Demo Supervisor' } });
+      manager: { publicId: MANAGER, displayName: 'Demo Manager' } });
 
     const self = await patch(atpl, { managerPublicId: p });
     expect(self.status).toBe(400);

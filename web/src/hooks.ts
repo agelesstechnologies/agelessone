@@ -44,6 +44,18 @@ export function uuidv7(): string {
 }
 
 /** Work dates are IST calendar dates ('YYYY-MM-DD'). */
+/** The device's location for a punch, if the person allows it (a punch is accepted without it). Needs HTTPS or localhost. */
+export function devicePosition(): Promise<{ latitude?: number; longitude?: number; accuracyM?: number }> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) { resolve({}); return; }
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracyM: Math.round(p.coords.accuracy) }),
+      () => resolve({}),
+      { timeout: 4000, maximumAge: 60_000 },
+    );
+  });
+}
+
 export const todayIst = (): string => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 export function addDays(date: string, n: number): string {
   const d = new Date(`${date}T00:00:00Z`);
@@ -52,8 +64,10 @@ export function addDays(date: string, n: number): string {
 }
 export const timeIst = (iso: string | null): string =>
   iso ? new Date(iso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : '—';
+/** "Mon, 25 Oct"; the year is added when it is not this year ("Mon, 25 Oct 2027"), so dates are never ambiguous. */
 export const dayLabel = (date: string): string =>
-  new Date(`${date}T00:00:00Z`).toLocaleDateString('en-IN', { timeZone: 'UTC', weekday: 'short', day: '2-digit', month: 'short' });
+  new Date(`${date}T00:00:00Z`).toLocaleDateString('en-IN', { timeZone: 'UTC', weekday: 'short', day: '2-digit', month: 'short',
+    ...(date.slice(0, 4) !== todayIst().slice(0, 4) ? { year: 'numeric' } : {}) });
 export const hm = (minutes: number): string => `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
 export const rupees = (paise: number): string => (paise / 100).toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
 export const words = (s: string): string => s.replace(/_/g, ' ');

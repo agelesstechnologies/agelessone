@@ -38,6 +38,13 @@ export class PeopleRepository {
   }
 
   /** The company's employee codes starting with the prefix. */
+  /** Does the person have an active job in the company? */
+  async hasActiveJobIn(tx: Tx, personId: number, legalEntityId: number): Promise<boolean> {
+    const [row] = await tx.select({ id: employments.id }).from(employments)
+      .where(and(eq(employments.personId, personId), eq(employments.legalEntityId, legalEntityId), eq(employments.status, 'active'))).limit(1);
+    return row !== undefined;
+  }
+
   async codesWithPrefix(tx: Tx, legalEntityId: number, prefix: string): Promise<string[]> {
     const rows = await tx.select({ code: employments.employeeCode }).from(employments)
       .where(and(eq(employments.legalEntityId, legalEntityId), like(employments.employeeCode, `${prefix}%`)));

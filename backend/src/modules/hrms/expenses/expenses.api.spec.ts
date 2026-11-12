@@ -8,7 +8,7 @@ import request from 'supertest';
 import { AppModule } from '../../../app.module';
 import { createTestApp, DEMO, signIn } from '../../../test/create-app';
 
-// Seeded jobs (scripts/db-seed.mjs): the technician's job is managed by the supervisor; the engineer's has no manager.
+// Seeded jobs (scripts/db-seed.mjs): the technician's job is managed by Demo Manager; the engineer's has no manager.
 const JOB = {
   supervisor: '00000000-0000-4000-8000-000000000101',
   technician: '00000000-0000-4000-8000-000000000102',
@@ -21,7 +21,7 @@ interface Fields { employmentPublicId: string; categoryCode: string; spentOn?: s
 
 describe('HRMS expenses API', () => {
   let app: INestApplication;
-  let tech: Auth, sup: Auth, hr: Auth, eng: Auth;
+  let tech: Auth, mgr: Auth, sup: Auth, hr: Auth, eng: Auth;
   const http = () => request(app.getHttpServer());
 
   /** Multipart submit, as a browser form sends it. */
@@ -43,7 +43,7 @@ describe('HRMS expenses API', () => {
 
   beforeAll(async () => {
     app = await createTestApp(AppModule);
-    [tech, sup, hr, eng] = await Promise.all([DEMO.technician, DEMO.supervisor, DEMO.hr, DEMO.engineer].map((d) => signIn(app, d.login)));
+    [tech, mgr, sup, hr, eng] = await Promise.all([DEMO.technician, DEMO.manager, DEMO.supervisor, DEMO.hr, DEMO.engineer].map((d) => signIn(app, d.login)));
   });
   afterAll(async () => { await app?.close(); });
 
@@ -115,22 +115,22 @@ describe('HRMS expenses API', () => {
   describe('approving and rejecting', () => {
     it('the manager of the job sees the claim to approve; an employee has no approval list', async () => {
       const id = await techClaim();
-      const list = await http().get('/api/hrms/expenses/to-approve').set(sup);
+      const list = await http().get('/api/hrms/expenses/to-approve').set(mgr);
       expect(list.status).toBe(200);
       expect(list.body.map((c: { publicId: string }) => c.publicId)).toContain(id);
       expect((await http().get('/api/hrms/expenses/to-approve').set(tech)).status).toBe(403);
     });
 
     it('approves the claimed amount or a lower one, never a higher one', async () => {
-      const lower = await act(sup, await techClaim(50000), 'approve', { approvedAmountPaise: 42000 });
+      const lower = await act(mgr, await techClaim(50000), 'approve', { approvedAmountPaise: 42000 });
       expect(lower.status).toBe(200);
-      expect(lower.body).toMatchObject({ status: 'approved', approvedAmountPaise: 42000, approvedBy: { publicId: DEMO.supervisor.publicId } });
+      expect(lower.body).toMatchObject({ status: 'approved', approvedAmountPaise: 42000, approvedBy: { publicId: DEMO.manager.publicId } });
       expect(lower.body.approvedAt).toEqual(expect.any(String));
 
-      const full = await act(sup, await techClaim(30000), 'approve');
+      const full = await act(mgr, await techClaim(30000), 'approve');
       expect(full.body.approvedAmountPaise).toBe(30000);
 
-      const higher = await act(sup, await techClaim(10000), 'approve', { approvedAmountPaise: 10001 });
+      const higher = await act(mgr, await techClaim(10000), 'approve', { approvedAmountPaise: 10001 });
       expect(higher.status).toBe(400);
       expect(higher.body.code).toBe('HRMS_APPROVED_TOO_HIGH');
     });
@@ -145,23 +145,33 @@ describe('HRMS expenses API', () => {
       }
     });
 
-    it('a supervisor decides only claims on jobs they manage; HR decides any', async () => {
+    it('a manager decides only claims on jobs they manage; HR decides any', async () => {
       const engClaim = await submit(eng, { employmentPublicId: JOB.engineer, categoryCode: 'food', amountPaise: 1500 });
-      const bySup = await act(sup, engClaim.body.publicId, 'approve');
-      expect(bySup.status).toBe(403);
-      expect(bySup.body.code).toBe('FORBIDDEN');
+      const byMgr = await act(mgr, engClaim.body.publicId, 'approve');
+      expect(byMgr.status).toBe(403);
+      expect(byMgr.body.code).toBe('FORBIDDEN');
       expect((await act(hr, engClaim.body.publicId, 'approve')).status).toBe(200);
+    });
+
+    it('an on-site supervisor decides no claim and has no approval list', async () => {
+      const id = await techClaim(15000);   // names Demo Manager, the technician's manager
+      for (const [step, body] of [['approve', {}], ['reject', { reason: 'Not a site expense' }]] as const) {
+        const res = await act(sup, id, step, body);
+        expect([res.status, res.body.code]).toEqual([403, 'FORBIDDEN']);
+      }
+      expect((await http().get('/api/hrms/expenses/to-approve').set(sup)).status).toBe(403);
+      expect((await act(mgr, id, 'approve')).body.status).toBe('approved');   // still waiting for its approver
     });
 
     it('a rejection needs a reason and is final', async () => {
       const id = await techClaim();
-      const noReason = await act(sup, id, 'reject', {});
+      const noReason = await act(mgr, id, 'reject', {});
       expect(noReason.status).toBe(400);
       expect(noReason.body.code).toBe('VALIDATION');
-      const res = await act(sup, id, 'reject', { reason: 'No bill for this meal' });
+      const res = await act(mgr, id, 'reject', { reason: 'No bill for this meal' });
       expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ status: 'rejected', rejectionReason: 'No bill for this meal', rejectedBy: { publicId: DEMO.supervisor.publicId } });
-      const later = await act(sup, id, 'approve');
+      expect(res.body).toMatchObject({ status: 'rejected', rejectionReason: 'No bill for this meal', rejectedBy: { publicId: DEMO.manager.publicId } });
+      const later = await act(mgr, id, 'approve');
       expect(later.status).toBe(409);
       expect(later.body.code).toBe('HRMS_CLAIM_NOT_PENDING');
     });
@@ -174,8 +184,8 @@ describe('HRMS expenses API', () => {
       expect(early.status).toBe(409);
       expect(early.body.code).toBe('HRMS_CLAIM_NOT_APPROVED');
 
-      await act(sup, id, 'approve').expect(200);
-      expect((await act(sup, id, 'mark-paid', { paymentRef: 'NEFT-0001' })).status).toBe(403);
+      await act(mgr, id, 'approve').expect(200);
+      expect((await act(mgr, id, 'mark-paid', { paymentRef: 'NEFT-0001' })).status).toBe(403);
       const paid = await act(hr, id, 'mark-paid', { paymentRef: 'NEFT-0001' });
       expect(paid.status).toBe(200);
       expect(paid.body).toMatchObject({ status: 'paid', paymentRef: 'NEFT-0001', paidAt: expect.any(String) });
@@ -183,7 +193,7 @@ describe('HRMS expenses API', () => {
 
     it('a paid claim cannot change', async () => {
       const id = await techClaim(20000);
-      await act(sup, id, 'approve').expect(200);
+      await act(mgr, id, 'approve').expect(200);
       await act(hr, id, 'mark-paid', { paymentRef: 'NEFT-0002' }).expect(200);
       for (const [step, body] of [['approve', {}], ['reject', { reason: 'too late' }], ['mark-paid', { paymentRef: 'NEFT-0003' }]] as const) {
         const res = await act(hr, id, step, body);
@@ -210,7 +220,7 @@ describe('HRMS expenses API', () => {
 
     it('freezes a paid claim', async () => {
       const id = await techClaim(10000);
-      await act(sup, id, 'approve').expect(200);
+      await act(mgr, id, 'approve').expect(200);
       await act(hr, id, 'mark-paid', { paymentRef: 'NEFT-0004' }).expect(200);
       const c = await claimId(id);
       await expect(db.query(`UPDATE hrms.expense_claims SET payment_ref = 'changed' WHERE id = $1`, [c.id])).rejects.toThrow(/is paid and cannot change/);
@@ -223,7 +233,7 @@ describe('HRMS expenses API', () => {
       const fuel = await submit(tech, { employmentPublicId: JOB.technician, categoryCode: 'fuel', amountPaise: 10000, spentOn: day }, png);
       await submit(tech, { employmentPublicId: JOB.technician, categoryCode: 'food', amountPaise: 2000, spentOn: day }).expect(201);
       await submit(eng, { employmentPublicId: JOB.engineer, categoryCode: 'food', amountPaise: 3000, spentOn: day }).expect(201); // ATPL
-      await act(sup, fuel.body.publicId, 'approve', { approvedAmountPaise: 9000 }).expect(200);
+      await act(mgr, fuel.body.publicId, 'approve', { approvedAmountPaise: 9000 }).expect(200);
       await act(hr, fuel.body.publicId, 'mark-paid', { paymentRef: 'NEFT-0005' }).expect(200);
 
       const ae = await http().get('/api/hrms/expenses/report').query({ company: 'AE', from: day, to: day }).set(hr);
@@ -241,7 +251,7 @@ describe('HRMS expenses API', () => {
     });
 
     it('is for HR only, and needs from ≤ to', async () => {
-      expect((await http().get('/api/hrms/expenses/report').query({ from: '2025-01-01', to: '2025-01-31' }).set(sup)).status).toBe(403);
+      expect((await http().get('/api/hrms/expenses/report').query({ from: '2025-01-01', to: '2025-01-31' }).set(mgr)).status).toBe(403);
       const backwards = await http().get('/api/hrms/expenses/report').query({ from: '2025-02-01', to: '2025-01-01' }).set(hr);
       expect(backwards.status).toBe(400);
       expect(backwards.body.code).toBe('VALIDATION');

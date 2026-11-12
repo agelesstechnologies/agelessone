@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../../../app.module';
 import { createTestApp, DEMO, signIn } from '../../../test/create-app';
 import { fakePhone, tag } from '../../../test/people';
+import { finishFirstLogin } from '../../../test/staff';
 
 type Auth = Record<string, string>;
 const PDF = Buffer.from('%PDF-1.4\n% offer letter\n');
@@ -68,13 +69,13 @@ describe('HRMS Ageless Technologies setup: departments, codes, joining, position
     const login = `staff.${tag().toLowerCase()}@example.com`;
     await http().post('/api/core/users').set(admin).send({ personPublicId: person.publicId, loginEmail: login, password: 'first-pass-1' }).expect(201);
     await http().post('/api/core/role-assignments').set(admin).send({ personPublicId: person.publicId, roleCode: 'employee', scope: 'own' }).expect(201);
-    const me = await signIn(app, login, 'first-pass-1');
+    const me = await finishFirstLogin(app, login, 'first-pass-1', 'own-pass-1');
 
     const punch = () => http().post('/api/hrms/attendance/punches').set(me)
       .send({ publicId: randomUUID(), employmentPublicId: job.publicId, kind: 'in', occurredAt: '2026-04-06T09:00:00+05:30' });
     expect((await punch()).body.code).toBe('HRMS_EMPLOYMENT_NOT_ACTIVE');
     expect((await http().post('/api/hrms/leave/requests').set(me)
-      .send({ employmentPublicId: job.publicId, leaveTypeCode: 'GL', fromDate: '2026-04-07', toDate: '2026-04-07' })).body.code).toBe('HRMS_EMPLOYMENT_NOT_ACTIVE');
+      .send({ employmentPublicId: job.publicId, leaveTypeCode: 'EL', fromDate: '2026-04-07', toDate: '2026-04-07' })).body.code).toBe('HRMS_EMPLOYMENT_NOT_ACTIVE');
     expect((await http().post('/api/hrms/expenses').set(me)
       .field('employmentPublicId', job.publicId).field('categoryCode', 'food').field('spentOn', '2026-04-06').field('amountPaise', '5000')).body.code)
       .toBe('HRMS_EMPLOYMENT_NOT_ACTIVE');
@@ -121,8 +122,8 @@ describe('HRMS Ageless Technologies setup: departments, codes, joining, position
     const login = `staff.${tag().toLowerCase()}@example.com`;
     await http().post('/api/core/users').set(admin).send({ personPublicId: person.publicId, loginEmail: login, password: 'first-pass-1' }).expect(201);
     await http().post('/api/core/role-assignments').set(admin).send({ personPublicId: person.publicId, roleCode: 'employee', scope: 'own' }).expect(201);
-    const me = await signIn(app, login, 'first-pass-1');
-    const leave = await http().post('/api/hrms/leave/requests').set(me).send({ employmentPublicId: job.publicId, leaveTypeCode: 'GL', fromDate: '2027-03-02', toDate: '2027-03-02' });
+    const me = await finishFirstLogin(app, login, 'first-pass-1', 'own-pass-1');
+    const leave = await http().post('/api/hrms/leave/requests').set(me).send({ employmentPublicId: job.publicId, leaveTypeCode: 'EL', fromDate: '2027-03-02', toDate: '2027-03-02' });
     expect(leave.body.approver).toEqual({ publicId: head.person.publicId, displayName: head.person.displayName });
     await http().patch(`/api/hrms/departments/${dep.publicId}`).set(hr).send({ headPublicId: null }).expect(200); // leave no head behind for other tests
   });

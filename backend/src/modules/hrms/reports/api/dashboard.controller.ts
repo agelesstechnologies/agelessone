@@ -25,7 +25,7 @@ export class DashboardController {
     return this.inbox.mine(ctx, q);
   }
 
-  @Doc({ summary: 'HRMS dashboard for a month: your team (supervisor) or everyone (HR, Management); one company or all you may see', response: Dashboard })
+  @Doc({ summary: 'HRMS dashboard for a month: your team (manager) or everyone (HR, Management); one company or all you may see', response: Dashboard })
   @Permission(DASHBOARD.view, MANAGEMENT) @Get('dashboard')
   dashboard(@Ctx() ctx: RequestContext, @Query(new ZodValidationPipe(DashboardQuery)) q: DashboardQuery) {
     return this.dashboards.dashboard(ctx, q);

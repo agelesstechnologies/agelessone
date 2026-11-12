@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, Check, Plus, X } from 'lucide-react';
 import {
   CreateExpenseRequest, type ExpenseCategory, type ExpenseClaim, type ExpenseClaimList, type ExpenseReport,
 } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { VoiceInput } from '../VoiceInput';
 import { addDays, dayLabel, rupees, todayIst, useLoad, useMyEmployments, uuidv7, words } from '../hooks';
@@ -21,7 +21,7 @@ export default function Expenses() {
   ];
   const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'mine');
   return <>
-    <PageHead eyebrow="HRMS • EXPENSES" title="Expenses" subtitle="Claim what you spent, approve your team's claims, and see totals." />
+    <PageHead eyebrow="ACCOUNTS • EXPENSES" title="Expenses" subtitle="Claim what you spent, approve your team's claims, and see totals." />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'mine' && <MyClaims />}
     {tab === 'approve' && <Approvals />}
@@ -123,7 +123,7 @@ function NewClaim({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
       publicId: claimId, employmentPublicId: jobId, categoryCode: category, spentOn: String(form.get('spentOn')),
       amountPaise: Math.round(Number(rupeeText) * 100), description: String(form.get('description') ?? ''),
     });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     const receipt = form.get('receipt');
     const body = new FormData();
     for (const [k, v] of Object.entries(parsed.data)) if (v !== undefined) body.append(k, String(v));

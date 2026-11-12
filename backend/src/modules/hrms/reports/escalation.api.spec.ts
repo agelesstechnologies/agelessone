@@ -28,7 +28,7 @@ describe('Sending requests to the CEO (forward, or automatically after waiting)'
   const leave = async (s?: Staff) => {
     const who = s ?? await newStaff(app, hr, admin, ['ATPL']);
     const res = await http().post('/api/hrms/leave/requests').set(who.auth)
-      .send({ employmentPublicId: who.jobs.ATPL, leaveTypeCode: 'GL', fromDate: monday, toDate: monday });
+      .send({ employmentPublicId: who.jobs.ATPL, leaveTypeCode: 'EL', fromDate: monday, toDate: monday });
     expect(res.status).toBe(201);
     monday = addDays(monday, 7);
     return { staff: who, id: res.body.publicId as string };

@@ -27,13 +27,15 @@ const decider = aliasedTable(persons, 'decider');
 export class LeaveRepository {
   constructor(@Inject(DB) private readonly db: Db) {}
 
-  types(tenantId: number): Promise<LeaveType[]> {
+  /** activeOnly: the types that can be applied for (the old General leave is kept for history, inactive). */
+  types(tenantId: number, activeOnly = false): Promise<LeaveType[]> {
     return this.db.select({ code: leaveTypes.code, name: leaveTypes.name, isPaid: leaveTypes.isPaid })
-      .from(leaveTypes).where(eq(leaveTypes.tenantId, tenantId)).orderBy(asc(leaveTypes.code));
+      .from(leaveTypes).where(and(eq(leaveTypes.tenantId, tenantId), activeOnly ? eq(leaveTypes.isActive, true) : undefined)).orderBy(asc(leaveTypes.name));
   }
 
   async findType(tenantId: number, code: string) {
-    const [row] = await this.db.select({ id: leaveTypes.id }).from(leaveTypes).where(and(eq(leaveTypes.tenantId, tenantId), eq(leaveTypes.code, code)));
+    const [row] = await this.db.select({ id: leaveTypes.id, isActive: leaveTypes.isActive, isPaid: leaveTypes.isPaid }).from(leaveTypes)
+      .where(and(eq(leaveTypes.tenantId, tenantId), eq(leaveTypes.code, code)));
     return row;
   }
 
@@ -108,7 +110,8 @@ export class LeaveRepository {
     if (employmentIds.length === 0) return [];
     return this.db.select({
       employmentId: leaveRequests.employmentId, typeCode: leaveTypes.code, fromDate: leaveRequests.fromDate, toDate: leaveRequests.toDate,
-      fromHalf: leaveRequests.fromHalf, toHalf: leaveRequests.toHalf,
+      fromHalf: leaveRequests.fromHalf, toHalf: leaveRequests.toHalf, isPaid: leaveTypes.isPaid,
+      unpaidDays: sql<number>`${leaveRequests.unpaidDays}`.mapWith(Number),
     }).from(leaveRequests).innerJoin(leaveTypes, eq(leaveTypes.id, leaveRequests.leaveTypeId))
       .where(and(inArray(leaveRequests.employmentId, employmentIds), eq(leaveRequests.status, 'approved'),
         lte(leaveRequests.fromDate, to), gte(leaveRequests.toDate, from)));
@@ -130,8 +133,8 @@ export class LeaveRepository {
       leaveTypeId: leaveRequests.leaveTypeId, legalEntityId: leaveRequests.legalEntityId, fromDate: leaveRequests.fromDate, toDate: leaveRequests.toDate,
       fromHalf: leaveRequests.fromHalf, toHalf: leaveRequests.toHalf, days: leaveRequests.days,
       status: leaveRequests.status, approverPersonId: leaveRequests.approverPersonId, publicId: leaveRequests.publicId, personName: persons.displayName,
-      escalatedAt: leaveRequests.escalatedAt,
-    }).from(leaveRequests).innerJoin(persons, eq(persons.id, leaveRequests.personId))
+      escalatedAt: leaveRequests.escalatedAt, typePaid: leaveTypes.isPaid,
+    }).from(leaveRequests).innerJoin(persons, eq(persons.id, leaveRequests.personId)).innerJoin(leaveTypes, eq(leaveTypes.id, leaveRequests.leaveTypeId))
       .where(and(eq(leaveRequests.tenantId, tenantId), eq(leaveRequests.publicId, publicId))).for('update');
     return row && { ...row, days: Number(row.days), status: row.status as LeaveStatus };
   }
@@ -152,6 +155,39 @@ export class LeaveRepository {
     return this.db.select({ id: leaveRequests.id, tenantId: leaveRequests.tenantId, legalEntityId: leaveRequests.legalEntityId, createdAt: leaveRequests.createdAt })
       .from(leaveRequests)
       .where(and(eq(leaveRequests.status, 'submitted'), isNull(leaveRequests.escalatedAt), lt(leaveRequests.createdAt, createdBefore)));
+  }
+
+  /** Days beyond the balance at approval: loss of pay. */
+  async setUnpaidDays(tx: Tx, id: number, unpaidDays: number): Promise<void> {
+    await tx.update(leaveRequests).set({ unpaidDays: String(unpaidDays) }).where(eq(leaveRequests.id, id));
+  }
+
+  // ---- monthly entitlement and year-end lapse (the daily job) ----
+
+  /** Every active job (all tenants) with its joining date, for the monthly entitlement (onlyJobs: these public ids; tests). */
+  activeJobs(onlyJobs?: string[]) {
+    return this.db.select({ id: employments.id, tenantId: employments.tenantId, legalEntityId: employments.legalEntityId, joinedOn: employments.joinedOn })
+      .from(employments).where(and(eq(employments.status, 'active'), onlyJobs ? inArray(employments.publicId, onlyJobs) : undefined));
+  }
+
+  /** The tenant's leave types by code. */
+  async typeIds(tenantId: number): Promise<Map<string, number>> {
+    const rows = await this.db.select({ id: leaveTypes.id, code: leaveTypes.code }).from(leaveTypes).where(eq(leaveTypes.tenantId, tenantId));
+    return new Map(rows.map((r) => [r.code, r.id]));
+  }
+
+  /** Adds a monthly or year-end row once (the period makes it unique); answers whether it was new. */
+  async addSystemEntry(conn: Conn, v: { tenantId: number; employmentId: number; legalEntityId: number; leaveTypeId: number; year: number;
+    entry: 'grant' | 'lapse'; days: number; period: string; reason: string }): Promise<boolean> {
+    const rows = await conn.insert(leaveLedger).values({ ...v, days: String(v.days), postedBy: null }).onConflictDoNothing().returning({ id: leaveLedger.id });
+    return rows.length > 0;
+  }
+
+  /** Balance of one job and type counting only rows of `year` and before. */
+  async balanceUpTo(conn: Conn, employmentId: number, leaveTypeId: number, year: number): Promise<number> {
+    const [row] = await conn.select({ sum: sql<number>`coalesce(sum(${leaveLedger.days}), 0)`.mapWith(Number) }).from(leaveLedger)
+      .where(and(eq(leaveLedger.employmentId, employmentId), eq(leaveLedger.leaveTypeId, leaveTypeId), lte(leaveLedger.year, year)));
+    return row.sum;
   }
 
   async cancel(tx: Tx, id: number, cancelledBy: number): Promise<void> {
@@ -187,7 +223,7 @@ export class LeaveRepository {
     }).from(employments)
       .innerJoin(legalEntities, eq(legalEntities.id, employments.legalEntityId))
       .innerJoin(leaveTypes, eq(leaveTypes.tenantId, employments.tenantId))
-      .where(and(eq(employments.tenantId, tenantId), eq(employments.personId, personId), eq(employments.status, 'active')))
+      .where(and(eq(employments.tenantId, tenantId), eq(employments.personId, personId), eq(employments.status, 'active'), eq(leaveTypes.isActive, true), eq(leaveTypes.isPaid, true)))
       .orderBy(asc(legalEntities.code), asc(leaveTypes.code));
   }
 
@@ -224,7 +260,7 @@ export class LeaveRepository {
       employmentPublicId: employments.publicId, company: legalEntities.code, employeeCode: employments.employeeCode,
       typeCode: leaveTypes.code, typeName: leaveTypes.name,
       fromDate: leaveRequests.fromDate, toDate: leaveRequests.toDate, fromHalf: leaveRequests.fromHalf, toHalf: leaveRequests.toHalf,
-      days: leaveRequests.days, reason: leaveRequests.reason, status: leaveRequests.status,
+      days: leaveRequests.days, reason: leaveRequests.reason, status: leaveRequests.status, unpaidDays: leaveRequests.unpaidDays,
       approverPublicId: approver.publicId, approverName: approver.displayName,
       deciderPublicId: decider.publicId, deciderName: decider.displayName,
       decidedAs: leaveRequests.decidedAs, decidedAt: leaveRequests.decidedAt, decisionReason: leaveRequests.decisionReason,
@@ -243,7 +279,7 @@ export class LeaveRepository {
 
 interface ViewRow {
   publicId: string; personPublicId: string; personName: string; employmentPublicId: string; company: string; employeeCode: string;
-  typeCode: string; typeName: string; fromDate: string; toDate: string; fromHalf: string; toHalf: string; days: string;
+  typeCode: string; typeName: string; fromDate: string; toDate: string; fromHalf: string; toHalf: string; days: string; unpaidDays: string;
   reason: string | null; status: string; approverPublicId: string | null; approverName: string | null;
   deciderPublicId: string | null; deciderName: string | null; decidedAs: string | null; decidedAt: Date | null; decisionReason: string | null;
   cancelledAt: Date | null; createdAt: Date;
@@ -255,7 +291,7 @@ function toView(r: ViewRow & EscalationRow): LeaveRequestView {
     leaveType: { code: r.typeCode, name: r.typeName },
     fromDate: r.fromDate, toDate: r.toDate,
     fromHalf: r.fromHalf as LeaveRequestView['fromHalf'], toHalf: r.toHalf as LeaveRequestView['toHalf'],
-    days: Number(r.days), reason: r.reason, status: r.status as LeaveStatus,
+    days: Number(r.days), unpaidDays: Number(r.unpaidDays), reason: r.reason, status: r.status as LeaveStatus,
     approver: r.approverPublicId ? { publicId: r.approverPublicId, displayName: r.approverName! } : null,
     decidedBy: r.deciderPublicId ? { publicId: r.deciderPublicId, displayName: r.deciderName! } : null,
     decidedAs: r.decidedAs as DecidedAs | null,

@@ -4,7 +4,7 @@ import {
   AdjustTimeRequest, DailyUpdateRequest, TicketPunchInRequest, TicketPunchOutRequest,
   type DailyUpdate, type DayAllocation, type MissingUpdate, type RunningTicket, type TicketPunchResult, type TicketSummary,
 } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { addDays, dayLabel, hm, timeIst, todayIst, useLoad, uuidv7 } from '../hooks';
 import { PersonPicker } from '../JobPicker';
@@ -40,7 +40,7 @@ function Running() {
   }
   function punchIn() {
     const parsed = TicketPunchInRequest.safeParse({ items: [...picked].map((ticketPublicId) => ({ publicId: uuidv7(), ticketPublicId })) });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Choose at least one ticket'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Choose at least one ticket')); return; }
     void call('/tickets/punch-in', parsed.data);
   }
   function punchOut(ids?: string[]) {
@@ -73,7 +73,7 @@ function Running() {
 }
 
 /** The ticket's daily updates and a form to add today's (a note, percent done, and up to 5 photos or files). */
-export function TicketUpdates({ ticketId, label, onClose }: { ticketId: string; label: string; onClose: () => void }) {
+export function TicketUpdates({ ticketId, label, onClose, inline = false }: { ticketId: string; label: string; onClose?: () => void; inline?: boolean }) {
   const q = useLoad(() => api<DailyUpdate[]>(`/tickets/${ticketId}/updates`), [ticketId]);
   const { can } = useAuth();
   const [id, setId] = useState(uuidv7);
@@ -84,7 +84,7 @@ export function TicketUpdates({ ticketId, label, onClose }: { ticketId: string; 
     const form = e.currentTarget;
     const f = new FormData(form);
     const parsed = DailyUpdateRequest.safeParse({ publicId: id, note: String(f.get('note')).trim(), percentComplete: Number(f.get('percent')) });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     const files = f.getAll('files').filter((x): x is File => x instanceof File && x.size > 0);
     if (files.length > 5) { setError('At most 5 files'); return; }
     setSaving(true); setError('');
@@ -99,10 +99,13 @@ export function TicketUpdates({ ticketId, label, onClose }: { ticketId: string; 
     } catch (err) { setError(errText(err)); }
     finally { setSaving(false); }
   }
-  return <Modal title="Daily updates" subtitle={label} onClose={onClose}>
+  const body = <>
     {q.error && <Notice>{q.error}</Notice>}
-    {q.loading && !q.data ? <Loading /> : !q.data?.length ? <p className="muted-text">No updates yet.</p> :
-      q.data.map((u) => <div className="detail-row" key={u.publicId}><span>{dayLabel(u.workDate)} · {u.person.displayName}: {u.note}</span><b>{u.percentComplete}%{u.attachments.length ? ` · ${u.attachments.length} file${u.attachments.length === 1 ? '' : 's'}` : ''}</b></div>)}
+    {q.loading && !q.data ? <Loading /> : !q.data?.length ? <p className="muted-text">No notes yet. Add today's progress below.</p> : inline
+      ? <div className="tp-notes">{q.data.map((u) => <div className="tp-note" key={u.publicId}>
+          <div className="tp-note-top"><b>{u.person.displayName}</b><span>{dayLabel(u.workDate)}</span><span className="tp-pct">{u.percentComplete}% done</span></div>
+          <p>{u.note}</p>{u.attachments.length > 0 && <small className="muted-text">{u.attachments.length} file{u.attachments.length === 1 ? '' : 's'} attached</small>}</div>)}</div>
+      : q.data.map((u) => <div className="detail-row" key={u.publicId}><span>{dayLabel(u.workDate)} · {u.person.displayName}: {u.note}</span><b>{u.percentComplete}%{u.attachments.length ? ` · ${u.attachments.length} file${u.attachments.length === 1 ? '' : 's'}` : ''}</b></div>)}
     {can(TICKETS.work) && <form onSubmit={submit}>
       {error && <Notice>{error}</Notice>}
       <div className="form-grid">
@@ -110,9 +113,10 @@ export function TicketUpdates({ ticketId, label, onClose }: { ticketId: string; 
         <label>Percent complete<input id="du-pct" name="percent" type="number" min={0} max={100} required defaultValue={0} /></label>
         <label>Photos / files <span className="optional">up to 5</span><input id="du-files" name="files" type="file" multiple accept="application/pdf,image/jpeg,image/png" /></label>
       </div>
-      <div className="modal-foot"><button type="button" className="outline-btn" onClick={onClose}>Close</button><button className="primary-btn" disabled={saving}>{saving ? 'Saving…' : 'Add update'}</button></div>
+      <div className="modal-foot">{!inline && <button type="button" className="outline-btn" onClick={onClose}>Close</button>}<button className="primary-btn" disabled={saving}>{saving ? 'Saving…' : inline ? 'Add note' : 'Add update'}</button></div>
     </form>}
-  </Modal>;
+  </>;
+  return inline ? <div className="tp-updates">{body}</div> : <Modal title="Daily updates" subtitle={label} onClose={onClose ?? (() => {})}>{body}</Modal>;
 }
 
 function Missing() {
@@ -169,7 +173,7 @@ function Adjust({ a, onClose, onSaved }: { a: DayAllocation; onClose: () => void
     const f = new FormData(e.currentTarget);
     const changes = a.rows.map((r) => ({ ticketPublicId: r.ticket.publicId, minutes: Math.round(Number(f.get(`m_${r.ticket.publicId}`)) || 0) })).filter((c) => c.minutes !== 0);
     const parsed = AdjustTimeRequest.safeParse({ personPublicId: a.person.publicId, date: a.date, reason: String(f.get('reason')).trim(), changes });
-    if (!parsed.success) { setError(changes.length ? parsed.error.issues[0]?.message ?? 'Check the form' : 'Enter minutes for at least one ticket'); return; }
+    if (!parsed.success) { setError(changes.length ? formError(parsed.error, 'Check the form') : 'Enter minutes for at least one ticket'); return; }
     try { await api('/tickets/time/adjustments', { method: 'POST', json: parsed.data }); onSaved(); } catch (err) { setError(errText(err)); }
   }
   return <Modal title="Adjust ticket time" subtitle={`${a.person.displayName} · ${dayLabel(a.date)}. Minutes: + adds, − takes away.`} onClose={onClose}><form onSubmit={submit}>

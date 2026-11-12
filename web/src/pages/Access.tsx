@@ -2,14 +2,14 @@ import { useState, type FormEvent } from 'react';
 import {
   AssignRoleRequest, ChangePasswordRequest, CreateUserRequest, ResetPasswordRequest, type PersonList, type RoleScope,
 } from '@ageless/shared';
-import { api, errText, setToken } from '../api';
+import { api, errText, setToken, formError } from '../api';
 import { useAuth } from '../auth';
 import { useLoad } from '../hooks';
 import { PERMISSION_LABELS, SCOPE_LABELS, USERS } from '../permissions';
 import { Badge, Notice, PageHead, Panel } from '../ui';
 
 const ROLE_OPTIONS = [
-  ['employee', 'Employee'], ['supervisor', 'Supervisor'], ['hr', 'HR'], ['admin_user', 'Admin user'], ['system_admin', 'System admin'],
+  ['employee', 'Employee'], ['manager', 'Manager'], ['supervisor', 'Supervisor'], ['hr', 'HR'], ['admin_user', 'Admin user'], ['system_admin', 'System admin'],
 ] as const;
 
 export default function Access() {
@@ -44,7 +44,7 @@ function Password() {
     const form = e.currentTarget;
     const data = new FormData(form);
     const parsed = ChangePasswordRequest.safeParse({ currentPassword: data.get('currentPassword'), newPassword: data.get('newPassword') });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setBusy(true); setError(''); setOk('');
     try {
       const r = await api<{ token: string }>('/auth/password', { method: 'POST', json: parsed.data });
@@ -83,7 +83,7 @@ function CreateLogin() {
     const d = new FormData(form);
     const text = (k: string) => String(d.get(k) ?? '').trim() || undefined;
     const parsed = CreateUserRequest.safeParse({ personPublicId: d.get('personPublicId'), loginPhone: text('loginPhone'), loginEmail: text('loginEmail'), password: d.get('password') });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setBusy(true); setError(''); setOk('');
     try { const r = await api<{ publicId: string }>('/core/users', { method: 'POST', json: parsed.data }); form.reset(); setCreated(r.publicId); setOk('Login created. Share the password with the person directly.'); }
     catch (err) { setError(errText(err)); }
@@ -117,7 +117,7 @@ function AssignRole() {
     const parsed = AssignRoleRequest.safeParse({
       personPublicId: d.get('personPublicId'), roleCode: d.get('roleCode'), scope: d.get('scope') as RoleScope, validFrom: text('validFrom'), validTo: text('validTo'),
     });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setBusy(true); setError(''); setOk('');
     try { const r = await api<{ publicId: string }>('/core/role-assignments', { method: 'POST', json: parsed.data }); form.reset(); setAssigned(r.publicId); setOk('Role assigned. It applies the next time that person signs in or reloads.'); }
     catch (err) { setError(errText(err)); }
@@ -147,7 +147,7 @@ function ResetPassword({ userId }: { userId: string }) {
   const [msg, setMsg] = useState('');
   async function reset() {
     const parsed = ResetPasswordRequest.safeParse({ newPassword: pw });
-    if (!parsed.success) { setMsg(parsed.error.issues[0]?.message ?? 'Check the password'); return; }
+    if (!parsed.success) { setMsg(formError(parsed.error, 'Check the password')); return; }
     try { await api(`/core/users/${userId}/reset-password`, { method: 'POST', json: parsed.data }); setPw(''); setMsg('Password reset.'); }
     catch (err) { setMsg(errText(err)); }
   }

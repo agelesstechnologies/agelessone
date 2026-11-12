@@ -3,7 +3,7 @@ import { Check, X } from 'lucide-react';
 import {
   CreateCorrectionRequest, CreateOvertimeRequest, type Correction, type CorrectionKind, type HistoryRow, type OvertimeRequestView,
 } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { dayLabel, hm, timeIst, useLoad, uuidv7 } from '../hooks';
 import { Badge, Empty, Loading, Modal, Notice, Panel, type Tone } from '../ui';
 
@@ -68,7 +68,7 @@ export function MyRequests() {
   </Panel>;
 }
 
-/** Corrections and overtime waiting for the supervisor. */
+/** Corrections and overtime waiting for the manager. */
 export function RequestApprovals() {
   const q = useRows('to-approve');
   const [rejecting, setRejecting] = useState<Row | null>(null);
@@ -138,7 +138,7 @@ export function CorrectionModal({ day, onClose, onSaved }: { day: HistoryRow; on
       requestedIn: needsIn ? istToIso(String(d.get('in') ?? '')) : undefined, requestedOut: needsOut ? istToIso(String(d.get('out') ?? '')) : undefined,
       punchIdsToExclude: kind === 'missed_in' || kind === 'missed_out' ? [] : exclude, reason: String(d.get('reason') ?? '').trim(),
     });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { await api('/hrms/attendance/corrections', { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }
@@ -180,7 +180,7 @@ export function OvertimeModal({ day, onClose, onSaved }: { day: HistoryRow; onCl
       publicId: requestId, employmentPublicId: day.employment.publicId, workDate: day.date,
       minutes: Math.round(Number(d.get('hours')) * 60), reason: String(d.get('reason') ?? '').trim(),
     });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { await api('/hrms/attendance/overtime', { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }

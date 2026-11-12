@@ -51,11 +51,11 @@ describe('Ticket time API', () => {
     const grant = (personId: string, roleCode: string, scope: string) =>
       http().post('/api/core/role-assignments').set(admin).send({ personPublicId: personId, roleCode, scope }).expect(201);
     [head, otherHead] = await Promise.all([newStaff(app, hr, admin, ['AE']), newStaff(app, hr, admin, ['AE'])]);
-    await grant(head.personId, 'supervisor', 'team');
-    await grant(otherHead.personId, 'supervisor', 'team');
+    await grant(head.personId, 'manager', 'team');
+    await grant(otherHead.personId, 'manager', 'team');
     const a = await newStaff(app, hr, admin, ['AE']);
     await grant(a.personId, 'admin_user', 'all');
-    await grant(a.personId, 'supervisor', 'team');   // admin user no longer creates tickets: a supervisor of the company does
+    await grant(a.personId, 'manager', 'team');   // admin user no longer creates tickets: a supervisor of the company does
     adminUser = a.auth;
     dept = (await http().post('/api/hrms/departments').set(hr).send({ company: 'AE', name: `Time ${tag()}`, codePrefix: letters() }).expect(201)).body.publicId;
     await http().patch(`/api/hrms/departments/${dept}`).set(hr).send({ headPublicId: head.personId }).expect(200);
@@ -220,5 +220,24 @@ describe('Ticket time API', () => {
     expect([view.attendanceMinutes, view.totalMinutes]).toEqual([240, 240]);
     expect(minutesOf(view)).toEqual({ [t1.number]: 120, [t2.number]: 120 });
     expect(view.timelogs.map((l: any) => l.endedAt)).toEqual([at(12, 8), at(12, 8)]);   // the timelogs themselves never change
+  });
+
+  it('the ticket shows everyone\'s timelogs and the counted (shared) time per person; outsiders see nothing', async () => {
+    const s = await newStaff(app, hr, admin, ['AE']);
+    const [t1, t2] = [await assignedTicket(s), await assignedTicket(s)];
+    await punch(s, 'in', at(14, 0));
+    await ticketIn(s, [t1.publicId, t2.publicId], at(14, 1)).expect(201);             // two tickets run together for 2 hours
+    await ticketOut(s, { all: true, occurredAt: at(14, 3) }).expect(200);
+    await punch(s, 'out', at(14, 8));
+    const res = await http().get(`/api/tickets/${t1.publicId}/timelogs`).set(head.auth);
+    expect(res.status).toBe(200);
+    expect(res.body.logs).toEqual([expect.objectContaining({ person: { publicId: s.personId, displayName: expect.any(String) },
+      startedAt: at(14, 1), endedAt: at(14, 3), endReason: 'manual', timerMinutes: 120, address: null })]);
+    expect(res.body.totals).toEqual([{ person: expect.objectContaining({ publicId: s.personId }), minutes: 60 }]);   // shared with t2
+    expect(res.body.totalMinutes).toBe(60);
+    const mine = await http().get(`/api/tickets/${t1.publicId}/timelogs`).set(s.auth);
+    expect(mine.body.logs).toHaveLength(1);                                                // the assignee sees it too
+    const outsider = await newStaff(app, hr, admin, ['AE']);
+    expect((await http().get(`/api/tickets/${t1.publicId}/timelogs`).set(outsider.auth)).status).toBe(404);
   });
 });

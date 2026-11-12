@@ -83,7 +83,7 @@ company per person (`HRMS_DUPLICATE_EMPLOYMENT`).
 ### Change a job — `PATCH /hrms/employments/:publicId`
 Any of: `managerPublicId` (or `null`), `departmentCode` (or `null`; a **transfer keeps the employee code**),
 `designation` (or `null`), `isPrimary: true` (the person's other primary is cleared in the same transaction; only an
-active job). A Supervisor may change the jobs of people they manage, not their own.
+active job). A Manager may change the jobs of people they manage, not their own.
 
 ### Activate — `POST /hrms/employments/:publicId/activate`
 `joining` → `active` when the person starts. `HRMS_EMPLOYMENT_NOT_JOINING` otherwise.

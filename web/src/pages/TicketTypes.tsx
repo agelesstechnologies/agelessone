@@ -4,7 +4,7 @@ import {
   CreateTicketTypeRequest, UpdateTicketTypeRequest,
   type CompletionRules, type Department, type TicketField, type TicketType, type TicketTypeDetail,
 } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { useLoad, uuidv7 } from '../hooks';
 import { TICKET_TYPES } from '../permissions';
@@ -95,7 +95,7 @@ function TypeForm({ existing, onClose, onSaved }: { existing?: TicketTypeDetail;
     const parsed = existing
       ? UpdateTicketTypeRequest.safeParse({ ...shared, expectedVersion: existing.version, ownerDepartmentPublicId: owner || null })
       : CreateTicketTypeRequest.safeParse({ ...shared, publicId: id, company, code: text('code'), ...(owner ? { ownerDepartmentPublicId: owner } : {}) });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { await api(existing ? `/tickets/types/${existing.publicId}` : '/tickets/types', { method: existing ? 'PATCH' : 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }

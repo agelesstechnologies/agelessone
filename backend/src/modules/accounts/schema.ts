@@ -7,7 +7,7 @@ export const accounts = pgSchema('accounts');
 
 /**
  * One row per company per month, created when someone first closes it (no row = open). Closed months refuse new
- * journal entries (trigger, migration 0030). Reopening needs a request and the CEO's approval; both are audited.
+ * journal entries (trigger, migration 0038). Reopening needs a request and the CEO's approval; both are audited.
  */
 export const periods = accounts.table('periods', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),

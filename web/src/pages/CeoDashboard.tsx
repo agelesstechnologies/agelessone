@@ -6,7 +6,8 @@ import { dayLabel, hm, rupees, todayIst, useLoad } from '../hooks';
 import { Badge, Empty, Loading, Notice, PageHead, Panel, type Tone } from '../ui';
 import { AskReason, BASE, LABEL, SentToCeo, TONE } from './Approvals';
 import { HBars, Kpi, OverviewCharts } from './OverviewCharts';
-import TicketDetail, { STATUS_TONE, statusLabel } from './TicketDetail';
+import { STATUS_TONE, statusLabel } from './TicketDetail';
+import { openTicket } from './Tickets';
 
 /**
  * The CEO's dashboard for one company. First version: Ageless Technologies only. When the other companies come,
@@ -107,7 +108,6 @@ function PayrollSection({ company, month }: { company: string; month: string }) 
 /** Open tickets, overdue, completed this month vs last, how long completed tickets took, and the oldest open ones. */
 function TicketsSection({ company, month }: { company: string; month: string }) {
   const d = useLoad(() => api<TicketDashboard>(`/tickets/dashboard?company=${company}&month=${month}`), [company, month]);
-  const [open, setOpen] = useState<string | null>(null);
   if (d.loading && !d.data) return <Loading />;
   if (d.error) return <Notice>{d.error}</Notice>;
   const t = d.data;
@@ -126,7 +126,7 @@ function TicketsSection({ company, month }: { company: string; month: string }) 
       <Panel title="Oldest open tickets" note="Not completed or cancelled, oldest first">
         <div className="panel-body">{!t.oldestOpen.length ? <Empty title="No open tickets" /> :
           <div className="table-wrap"><table><thead><tr><th>TICKET</th><th>TYPE</th><th>STATUS</th><th>PRIORITY</th><th>AGE</th><th>DUE</th></tr></thead>
-            <tbody>{t.oldestOpen.map((o) => <tr key={o.ticket.publicId} className="link-row" onClick={() => setOpen(o.ticket.publicId)}>
+            <tbody>{t.oldestOpen.map((o) => <tr key={o.ticket.publicId} className="link-row" onClick={() => openTicket(o.ticket.publicId)}>
               <td>{o.ticket.number}<small className="sub">{o.ticket.title}</small></td>
               <td>{o.type.name}</td>
               <td><Badge tone={STATUS_TONE[o.status]}>{statusLabel(o.status)}</Badge></td>
@@ -141,6 +141,5 @@ function TicketsSection({ company, month }: { company: string; month: string }) 
         <div className="panel-body"><HBars rows={c.byType.map((x) => ({ label: `${x.type.name} (${x.completed})`, value: x.avgHours ?? 0, text: hours(x.avgHours) }))} /></div>
       </Panel>
     </div>
-    {open && <TicketDetail id={open} onClose={() => setOpen(null)} onChanged={d.reload} />}
   </>;
 }

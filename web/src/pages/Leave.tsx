@@ -3,7 +3,7 @@ import { Check, Plus, X } from 'lucide-react';
 import {
   ApplyLeaveRequest, LeaveAdjustmentRequest, type LeaveBalance, type LeaveReport, type LeaveRequestView, type LeaveType,
 } from '@ageless/shared';
-import { api, errText } from '../api';
+import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { VoiceInput } from '../VoiceInput';
 import { addDays, dayLabel, todayIst, useLoad, useMyEmployments, uuidv7, words } from '../hooks';
@@ -51,10 +51,10 @@ function MyLeave() {
   const q = useLoad(() => api<LeaveRequestView[]>(`/hrms/leave/requests/mine${status ? `?status=${status}` : ''}`), [status]);
   const refresh = () => { balances.reload(); q.reload(); };
   return <>
-    <Panel title="Balances" note="Days left for each leave type." action={can(LEAVE.manage) && <button className="outline-btn" onClick={() => setAdjusting(true)}>Adjust balance</button>}>
+    <Panel title="Balances" note="1 sick + 1 earned day a month; unused sick leave lapses at year end, earned leave carries forward." action={can(LEAVE.manage) && <button className="outline-btn" onClick={() => setAdjusting(true)}>Adjust balance</button>}>
       <div className="panel-body">
         {balances.error && <Notice>{balances.error}</Notice>}
-        {balances.loading && !balances.data ? <Loading /> : !balances.data?.length ? <Empty title="No balances yet" text="HR sets your opening balance." /> :
+        {balances.loading && !balances.data ? <Loading /> : !balances.data?.length ? <Empty title="No balances yet" text="1 sick and 1 earned day are added on the 1st of every month." /> :
           <div className="mini-stats">{balances.data.map((b) => <div key={`${b.employment.publicId}-${b.leaveType.code}`}>
             <small>{b.leaveType.name.toUpperCase()} · {b.employment.company}</small><strong>{b.balance}</strong></div>)}</div>}
       </div>
@@ -72,7 +72,7 @@ function MyLeave() {
         {q.loading && !q.data ? <Loading /> : !q.data?.length ? <Empty title="No leave requests" text="Use Apply for leave to add one." /> :
           <div className="table-wrap"><table><thead><tr><th>DATES</th><th>TYPE</th><th>DAYS</th><th>COMPANY</th><th>STATUS</th><th>NOTE</th><th /></tr></thead>
             <tbody>{q.data.map((r) => <tr key={r.publicId}>
-              <td>{period(r)}</td><td>{r.leaveType.name}</td><td>{r.days}</td><td>{r.employment.company}</td><td><StatusBadge status={r.status} /></td>
+              <td>{period(r)}</td><td>{r.leaveType.name}</td><td>{r.days}{r.unpaidDays > 0 && <small className="sub lop">{r.unpaidDays} loss of pay</small>}</td><td>{r.employment.company}</td><td><StatusBadge status={r.status} /></td>
               <td className="note-cell">{note(r)}{r.approver && r.status === 'submitted' && <small className="sub">With {r.approver.displayName}</small>}</td>
               <td className="row-actions">{(r.status === 'submitted' || r.status === 'approved') &&
                 <button className="outline-btn danger" onClick={() => setCancelling(r)}>Cancel</button>}</td></tr>)}</tbody></table></div>}
@@ -87,6 +87,7 @@ function MyLeave() {
 function Apply({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const { jobs, primary, error: jobsError } = useMyEmployments();
   const types = useLoad(() => api<LeaveType[]>('/hrms/leave/types'));
+  const balances = useLoad(() => api<LeaveBalance[]>('/hrms/leave/balances/mine'));
   const [requestId] = useState(uuidv7); // one id per form, so pressing Send twice stores one request
   const [jobId, setJobId] = useState('');
   const [type, setType] = useState('');
@@ -94,6 +95,15 @@ function Apply({ onClose, onSaved }: { onClose: () => void; onSaved: () => void 
   const [error, setError] = useState('');
   useEffect(() => { if (!jobId && primary) setJobId(primary.publicId); }, [primary, jobId]);
   useEffect(() => { if (!type && types.data?.[0]) setType(types.data[0].code); }, [types.data, type]);
+
+  // what the chosen type has left; days beyond it are loss of pay
+  function balanceNote(): string {
+    const t = types.data?.find((x) => x.code === type);
+    if (!t) return '';
+    if (!t.isPaid) return 'Leave without pay: these days are deducted from salary.';
+    const left = balances.data?.find((b) => b.employment.publicId === jobId && b.leaveType.code === type)?.balance ?? 0;
+    return `You have ${left} day${left === 1 ? '' : 's'} of ${t.name.toLowerCase()} left. Days beyond that are loss of pay.`;
+  }
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -103,7 +113,7 @@ function Apply({ onClose, onSaved }: { onClose: () => void; onSaved: () => void 
       publicId: requestId, employmentPublicId: jobId, leaveTypeCode: type, fromDate: d.get('fromDate'), toDate: d.get('toDate'),
       fromHalf: d.get('fromHalf'), toHalf: d.get('toHalf'), ...(reason ? { reason } : {}),
     });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setSaving(true); setError('');
     try { await api('/hrms/leave/requests', { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }
@@ -120,6 +130,7 @@ function Apply({ onClose, onSaved }: { onClose: () => void; onSaved: () => void 
         <label className="span-two">Leave type
           <select id="leave-type" value={type} onChange={(e) => setType(e.target.value)}>
             {types.data?.map((t) => <option key={t.code} value={t.code}>{t.name}{t.isPaid ? '' : ' (unpaid)'}</option>)}</select></label>
+        <p className="span-two muted-text">{balanceNote()}</p>
         <label>From<input id="leave-from" name="fromDate" type="date" required defaultValue={todayIst()} /></label>
         <label>Starts<select id="leave-from-half" name="fromHalf" defaultValue="full"><option value="full">Full day</option><option value="second_half">Second half only</option></select></label>
         <label>To<input id="leave-to" name="toDate" type="date" required defaultValue={todayIst()} /></label>
@@ -176,7 +187,7 @@ function Approvals() {
       {q.loading ? <Loading /> : !rows.length ? <Empty title="Nothing waiting" text="New leave requests from your team appear here." /> :
         <div className="table-wrap"><table><thead><tr><th>PERSON</th><th>DATES</th><th>TYPE</th><th>DAYS</th><th>NOTE</th><th /></tr></thead>
           <tbody>{rows.map((r) => <tr key={r.publicId}>
-            <td><b>{r.person.displayName}</b><small className="sub">{r.employment.company}</small></td><td>{period(r)}</td><td>{r.leaveType.name}</td><td>{r.days}</td>
+            <td><b>{r.person.displayName}</b><small className="sub">{r.employment.company}</small></td><td>{period(r)}</td><td>{r.leaveType.name}</td><td>{r.days}{r.unpaidDays > 0 && <small className="sub lop">{r.unpaidDays} loss of pay</small>}</td>
             <td className="note-cell">{r.reason ?? ''}</td>
             <td className="row-actions">
               <button className="outline-btn ok" disabled={busyId === r.publicId} onClick={() => void approve(r)}><Check size={13} /> Approve</button>
@@ -233,7 +244,7 @@ function Report() {
           <div className="table-wrap"><table><thead><tr><th>PERSON</th><th>DATES</th><th>TYPE</th><th>DAYS</th><th>STATUS</th></tr></thead>
             <tbody>{r.rows.map((x) => <tr key={x.publicId}>
               <td><b>{x.person.displayName}</b><small className="sub">{x.employment.company} · {x.employment.employeeCode}</small></td>
-              <td>{period(x)}</td><td>{x.leaveType.name}</td><td>{x.days}</td><td><StatusBadge status={words(x.status)} /></td></tr>)}</tbody></table></div>}
+              <td>{period(x)}</td><td>{x.leaveType.name}</td><td>{x.days}{x.unpaidDays > 0 && <small className="sub lop">{x.unpaidDays} loss of pay</small>}</td><td><StatusBadge status={words(x.status)} /></td></tr>)}</tbody></table></div>}
       </>}
     </div>
   </Panel>;
@@ -257,7 +268,7 @@ function Adjust({ onClose, onSaved }: { onClose: () => void; onSaved: () => void
       publicId: entryId, employmentPublicId: d.get('job'), leaveTypeCode: d.get('type'), year: Number(d.get('year')),
       entry: d.get('entry'), days: Number(d.get('days')), reason: String(d.get('reason') ?? '').trim(),
     });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
+    if (!parsed.success) { setError(formError(parsed.error, 'Check the form')); return; }
     setBusy(true); setError('');
     try { await api('/hrms/leave/ledger/adjustments', { method: 'POST', json: parsed.data }); onSaved(); }
     catch (err) { setError(errText(err)); }
