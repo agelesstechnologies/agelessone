@@ -2,13 +2,14 @@ import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Res, Uploa
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import {
-  AdjustTimeRequest, AllocationQuery, DailyUpdate, DailyUpdateRequest, DayAllocation, MissingUpdate, MissingUpdatesQuery, RunningTicket,
-  TicketPunchInRequest, TicketPunchOutRequest, TicketPunchResult, TicketTimelogs,
+  AdjustTimeRequest, AllocationQuery, ApproveSplitRequest, DailyUpdate, DailyUpdateRequest, DayAllocation, MissingUpdate, MissingUpdatesQuery, ReasonRequest,
+  RunningTicket, SplitSuggestion, SplitSuggestionsQuery, SuggestSplitRequest, TicketPunchInRequest, TicketPunchOutRequest, TicketPunchResult, TicketTimelogs,
 } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../platform/http/zod-validation.pipe';
 import { Ctx, Permission, RequestContext } from '../../../platform/http/request-context';
 import { Doc } from '../../../platform/http/doc';
 import { TicketTimeService } from '../application/ticket-time.service';
+import { TicketSplitService } from '../application/ticket-split.service';
 import { MAX_TICKET_FILE_BYTES, TicketUpload } from '../application/ticket-work.service';
 import { TICKETS } from '../domain/permissions';
 
@@ -23,7 +24,10 @@ const WORK = [TICKETS.work, TICKETS.manage] as [string, ...string[]];
  */
 @Controller('tickets')
 export class TicketTimeController {
-  constructor(@Inject(TicketTimeService) private readonly time: TicketTimeService) {}
+  constructor(
+    @Inject(TicketTimeService) private readonly time: TicketTimeService,
+    @Inject(TicketSplitService) private readonly split: TicketSplitService,
+  ) {}
 
   @Doc({ summary: 'Ticket punch-in: start a timer on one or more of my tickets (one transaction)', response: TicketPunchResult, resend: true,
     description: 'Only while punched in for the day (409 TICKETS_NOT_PUNCHED_IN). The first punch-in moves an assigned ticket to in progress.' })
@@ -57,6 +61,43 @@ export class TicketTimeController {
   @Permission(TICKETS.timeAdjust) @Post('time/adjustments')
   adjust(@Ctx() ctx: RequestContext, @Body(new ZodValidationPipe(AdjustTimeRequest)) body: AdjustTimeRequest) {
     return this.time.adjust(ctx, body);
+  }
+
+  @Doc({ summary: 'Suggest another split of my ticket time on one day, for the department head to approve', response: SplitSuggestion, resend: true,
+    description: 'Minutes per ticket (at least two of my tickets that day) adding up to what they have now. Today only after the daily punch-out, '
+      + 'up to tickets.time.suggest_days back. Changes nothing until approved. One pending per day (409 TICKETS_SPLIT_PENDING).' })
+  @Permission(TICKETS.work) @Post('time/suggestions')
+  async suggest(@Ctx() ctx: RequestContext, @Body(new ZodValidationPipe(SuggestSplitRequest)) body: SuggestSplitRequest, @Res({ passthrough: true }) res: Created) {
+    const { suggestion, created } = await this.split.suggest(ctx, body);
+    if (!created) res.status(200);
+    return suggestion;
+  }
+
+  @Doc({ summary: 'Split suggestions: mine, and the ones I decide (newest first)', response: z.array(SplitSuggestion),
+    description: 'Heads: tickets of departments they head or supervise. Management, HR and admin user: all.' })
+  @Permission(...SEE) @Get('time/suggestions')
+  suggestions(@Ctx() ctx: RequestContext, @Query(new ZodValidationPipe(SplitSuggestionsQuery)) q: SplitSuggestionsQuery) {
+    return this.split.list(ctx, q);
+  }
+
+  @Doc({ summary: 'Approve a split suggestion as suggested, or with my own minutes (and a reason); stored as my adjustment', response: SplitSuggestion,
+    description: 'The head of the tickets\' department, their supervisor, or Management; never the person (403 TICKETS_SELF_APPROVAL).' })
+  @Permission(TICKETS.timeAdjust) @Post('time/suggestions/:publicId/approve') @HttpCode(200)
+  approveSuggestion(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string,
+    @Body(new ZodValidationPipe(ApproveSplitRequest)) body: ApproveSplitRequest) {
+    return this.split.approve(ctx, publicId, body);
+  }
+
+  @Doc({ summary: 'Reject a split suggestion with a reason (the split stays as it is)', response: SplitSuggestion })
+  @Permission(TICKETS.timeAdjust) @Post('time/suggestions/:publicId/reject') @HttpCode(200)
+  rejectSuggestion(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string, @Body(new ZodValidationPipe(ReasonRequest)) body: ReasonRequest) {
+    return this.split.reject(ctx, publicId, body);
+  }
+
+  @Doc({ summary: 'Withdraw my pending split suggestion', response: SplitSuggestion })
+  @Permission(TICKETS.work) @Post('time/suggestions/:publicId/cancel') @HttpCode(200)
+  cancelSuggestion(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string) {
+    return this.split.cancel(ctx, publicId);
   }
 
   @Doc({ summary: 'Who worked on a ticket without its daily update (default: yesterday)', response: z.array(MissingUpdate),

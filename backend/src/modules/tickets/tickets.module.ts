@@ -7,6 +7,9 @@ import { TicketTypesService } from './application/ticket-types.service';
 import { TicketsService } from './application/tickets.service';
 import { TicketWorkService } from './application/ticket-work.service';
 import { TicketTimeService } from './application/ticket-time.service';
+import { TicketSplitService } from './application/ticket-split.service';
+import { TicketOverdueService } from './application/ticket-overdue.service';
+import { TicketSplitRepository } from './infrastructure/ticket-split.repository';
 import { TicketReportsService } from './application/ticket-reports.service';
 import { TicketFullReportService } from './application/ticket-full-report.service';
 import { TicketTypesRepository } from './infrastructure/ticket-types.repository';
@@ -22,8 +25,8 @@ import { TicketReportsRepository } from './infrastructure/ticket-reports.reposit
  */
 @Module({
   controllers: [TicketTypesController, TicketTimeController, TicketReportsController, TicketsController],
-  providers: [TicketTypesService, TicketsService, TicketWorkService, TicketTimeService, TicketReportsService, TicketFullReportService,
-    TicketTypesRepository, TicketsRepository, TicketTimeRepository, TicketReportsRepository],
+  providers: [TicketTypesService, TicketsService, TicketWorkService, TicketTimeService, TicketSplitService, TicketOverdueService, TicketReportsService, TicketFullReportService,
+    TicketTypesRepository, TicketsRepository, TicketTimeRepository, TicketSplitRepository, TicketReportsRepository],
   exports: [TicketTypesService, TicketsService, TicketTimeService],
 })
 export class TicketsModule {}

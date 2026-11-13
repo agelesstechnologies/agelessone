@@ -4,6 +4,7 @@ import {
   AdjustTimeRequest, DailyUpdateRequest, TicketPunchInRequest, TicketPunchOutRequest,
   type DailyUpdate, type DayAllocation, type MissingUpdate, type RunningTicket, type TicketPunchResult, type TicketSummary,
 } from '@ageless/shared';
+import { SplitSuggestions, SuggestSplit } from './SplitSuggestions';
 import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { addDays, dayLabel, devicePosition, hm, timeIst, todayIst, useLoad, uuidv7 } from '../hooks';
@@ -16,6 +17,7 @@ export default function TicketTime() {
   const { can } = useAuth();
   return <>
     {can(TICKETS.work) && <Running />}
+    <SplitSuggestions />
     <Missing />
     <Allocation />
   </>;
@@ -159,11 +161,13 @@ function Missing() {
 }
 
 function Allocation() {
-  const { can } = useAuth();
+  const { can, me } = useAuth();
   const [person, setPerson] = useState('');
   const [date, setDate] = useState(todayIst());
   const [shown, setShown] = useState<{ person: string; date: string } | null>(null);
   const [adjusting, setAdjusting] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const [sent, setSent] = useState('');
   const q = useLoad(() => shown ? api<DayAllocation>(`/tickets/time/allocations?person=${shown.person}&date=${shown.date}`) : Promise.resolve(null), [shown?.person, shown?.date]);
   const a = q.data;
   return <Panel title="Time per ticket" note="A person's attended minutes for one day, shared across the tickets they worked on.">
@@ -182,8 +186,14 @@ function Allocation() {
               <td>{hm(r.calculatedMinutes)}</td><td>{r.adjustedMinutes ? `${r.adjustedMinutes > 0 ? '+' : '−'}${hm(Math.abs(r.adjustedMinutes))}` : '—'}</td><td><b>{hm(r.minutes)}</b></td></tr>)}</tbody></table></div>}
         {a.adjustments.map((x) => <div className="detail-row" key={`${x.batchId}-${x.ticket.publicId}`}>
           <span>{x.ticket.number}: {x.minutes > 0 ? '+' : '−'}{Math.abs(x.minutes)} min · {x.reason}</span><Badge tone="blue">{x.adjustedBy.displayName} ({x.adjustedAs})</Badge></div>)}
-        {can(TICKETS.timeAdjust) && !!a.rows.length && <div className="chip-row"><button className="outline-btn" onClick={() => setAdjusting(true)}><Plus size={13} /> Adjust time</button></div>}
+        {sent && <Notice tone="ok" onClose={() => setSent('')}>{sent}</Notice>}
+        <div className="chip-row">
+          {can(TICKETS.timeAdjust) && a.person.publicId !== me?.person.publicId && !!a.rows.length && <button className="outline-btn" onClick={() => setAdjusting(true)}><Plus size={13} /> Adjust time</button>}
+          {can(TICKETS.work) && a.person.publicId === me?.person.publicId && a.rows.length >= 2 &&
+            <button className="outline-btn" onClick={() => setSuggesting(true)}>Suggest a different split</button>}</div>
         {adjusting && <Adjust a={a} onClose={() => setAdjusting(false)} onSaved={() => { setAdjusting(false); q.reload(); }} />}
+        {suggesting && <SuggestSplit a={a} onClose={() => setSuggesting(false)}
+          onSaved={() => { setSuggesting(false); setSent('Sent to your department head. Your time changes only when they approve it.'); }} />}
       </>}
     </div>
   </Panel>;
@@ -209,3 +219,4 @@ function Adjust({ a, onClose, onSaved }: { a: DayAllocation; onClose: () => void
     </div>
     <div className="modal-foot"><button type="button" className="outline-btn" onClick={onClose}>Close</button><button className="primary-btn">Save adjustment</button></div></form></Modal>;
 }
+

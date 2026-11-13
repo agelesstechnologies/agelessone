@@ -1,13 +1,15 @@
 import { Controller, Get, Inject, Query, Res } from '@nestjs/common';
+import { z } from 'zod';
 import {
-  AsOfQuery, HoursQuery, HoursReport, MissingUpdatesReport, MissingUpdatesReportQuery, OnHoldReport, OverdueReport, TicketDashboard,
-  TicketDashboardQuery, UtilisationQuery, UtilisationReport, WeeklyQuery, WeeklyReport,
+  AsOfQuery, HoursQuery, HoursReport, MissingUpdatesReport, MissingUpdatesReportQuery, OnHoldReport, OverdueAlert, OverdueAlertsQuery, OverdueReport,
+  TicketDashboard, TicketDashboardQuery, UtilisationQuery, UtilisationReport, WeeklyQuery, WeeklyReport,
 } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../platform/http/zod-validation.pipe';
 import { Ctx, Permission, RequestContext } from '../../../platform/http/request-context';
 import { Doc } from '../../../platform/http/doc';
 import { respond } from '../../../platform/csv';
 import { TicketReportsService } from '../application/ticket-reports.service';
+import { TicketOverdueService } from '../application/ticket-overdue.service';
 import { TICKETS } from '../domain/permissions';
 
 type Reply = { setHeader(k: string, v: string): void };
@@ -17,7 +19,18 @@ const WHO = 'Department heads: their departments. HR, admin user and Management:
 /** Ticket reports (JSON, or CSV with format=csv) and dashboard numbers. Listed before TicketsController in the module. */
 @Controller('tickets')
 export class TicketReportsController {
-  constructor(@Inject(TicketReportsService) private readonly reports: TicketReportsService) {}
+  constructor(
+    @Inject(TicketReportsService) private readonly reports: TicketReportsService,
+    @Inject(TicketOverdueService) private readonly overdueAlerts: TicketOverdueService,
+  ) {}
+
+  @Doc({ summary: 'Overdue tickets I am alerted about, most overdue first', response: z.array(OverdueAlert),
+    description: 'The CEO (Management): the ones sent to them (policy tickets.overdue.ceo_after_days days overdue). Admin user: all alerted. '
+      + 'Anyone else: tickets of departments they head and tickets they supervise. Steps are taken by the daily job tickets:daily.' })
+  @Permission(...SEE) @Get('overdue-alerts')
+  alerts(@Ctx() ctx: RequestContext, @Query(new ZodValidationPipe(OverdueAlertsQuery)) q: OverdueAlertsQuery) {
+    return this.overdueAlerts.alerts(ctx, q);
+  }
 
   @Doc({ summary: 'Ticket hours by ticket, type, person, department or customer', response: HoursReport, csv: true, description: WHO })
   @Permission(...SEE) @Get('reports/hours')

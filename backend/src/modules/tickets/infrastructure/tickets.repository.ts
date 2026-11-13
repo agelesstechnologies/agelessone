@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, exists, gte, inArray, isNull, lt, lte, or, sql, SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql, SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { Conn, DB, Db, Tx } from '../../../platform/db/db.module';
 import { legalEntities, persons } from '../../core/schema';
@@ -266,6 +266,46 @@ export class TicketsRepository {
   async summary(conn: Conn, ticketId: number) {
     const [row] = await this.summarySelect(conn).where(eq(tickets.id, ticketId));
     return row;
+  }
+
+  // ---- overdue escalation ----
+
+  /** Unfinished tickets due before `today` with a step left: not alerted for their current due date, or not sent to the CEO yet. */
+  async overdueToEscalate(today: string) {
+    return this.db.select({ id: tickets.id, tenantId: tickets.tenantId, legalEntityId: tickets.legalEntityId, dueDate: tickets.dueDate,
+      overdueFor: tickets.overdueFor, escalatedAt: tickets.overdueEscalatedAt }).from(tickets)
+      .where(and(lt(tickets.dueDate, today), inArray(tickets.status, ['open', 'assigned', 'in_progress', 'on_hold']),
+        or(isNull(tickets.overdueFor), ne(tickets.overdueFor, tickets.dueDate), isNull(tickets.overdueEscalatedAt))))
+      .orderBy(asc(tickets.id));
+  }
+
+  /** The department head is alerted about this due date (a new due date starts again: not sent to the CEO). */
+  async markOverdueAlerted(tx: Tx, id: number, dueDate: string): Promise<void> {
+    await tx.update(tickets).set({ overdueFor: dueDate, overdueAlertedAt: new Date(), overdueEscalatedAt: null }).where(eq(tickets.id, id));
+  }
+
+  async markOverdueSentToCeo(tx: Tx, id: number): Promise<void> {
+    await tx.update(tickets).set({ overdueEscalatedAt: new Date() }).where(and(eq(tickets.id, id), isNull(tickets.overdueEscalatedAt)));
+  }
+
+  /**
+   * Unfinished tickets alerted as overdue for their current due date, most overdue first. who null: all; otherwise tickets
+   * of departments they head or tickets they supervise. sentToCeo: only those sent to the CEO.
+   */
+  async overdueAlerted(tenantId: number, who: { personId: number; headedDepartmentIds: number[] } | null, sentToCeo: boolean, company?: string) {
+    const stamps = await this.db.select({ id: tickets.id, alertedAt: tickets.overdueAlertedAt, sentAt: tickets.overdueEscalatedAt }).from(tickets)
+      .innerJoin(legalEntities, eq(legalEntities.id, tickets.legalEntityId))
+      .where(and(eq(tickets.tenantId, tenantId), inArray(tickets.status, ['open', 'assigned', 'in_progress', 'on_hold']),
+        isNotNull(tickets.overdueFor), eq(tickets.overdueFor, tickets.dueDate),
+        sentToCeo ? isNotNull(tickets.overdueEscalatedAt) : undefined,
+        company ? eq(legalEntities.code, company) : undefined,
+        who ? or(eq(tickets.supervisorPersonId, who.personId),
+          who.headedDepartmentIds.length ? inArray(tickets.departmentId, who.headedDepartmentIds) : sql`false`) : undefined))
+      .limit(500);
+    if (stamps.length === 0) return [];
+    const byId = new Map(stamps.map((s) => [s.id, s]));
+    const rows = await this.summarySelect(this.db).where(inArray(tickets.id, [...byId.keys()])).orderBy(asc(tickets.dueDate), asc(tickets.number));
+    return rows.map((row) => ({ row, alertedAt: byId.get(row.id)!.alertedAt!, sentAt: byId.get(row.id)!.sentAt }));
   }
 
   // ---- assignees ----

@@ -91,6 +91,11 @@ export const tickets = ticketsSchema.table('tickets', {
   headApprovedAt: timestamp('head_approved_at', { withTimezone: true }),
   createdBy: bigint('created_by', { mode: 'number' }).notNull().references(() => persons.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  // overdue escalation (tickets:daily): the due date it is about, when the department head was alerted, when it went to the
+  // CEO (policy tickets.overdue.ceo_after_days). A new due date starts again: the stamps count only while overdue_for = due_date.
+  overdueFor: date('overdue_for'),
+  overdueAlertedAt: timestamp('overdue_alerted_at', { withTimezone: true }),
+  overdueEscalatedAt: timestamp('overdue_escalated_at', { withTimezone: true }),
 }, (t) => [
   foreignKey({ name: 'tickets_type_version_company_fk', columns: [t.typeId, t.typeVersion, t.legalEntityId],
     foreignColumns: [ticketTypes.id, ticketTypes.version, ticketTypes.legalEntityId] }),
@@ -108,6 +113,7 @@ export const tickets = ticketsSchema.table('tickets', {
   check('tickets_cancel_has_reason', sql`status <> 'cancelled' OR cancel_reason IS NOT NULL`),
   check('tickets_completed_fields', sql`(status = 'completed') = (completed_at IS NOT NULL)`),
   check('tickets_head_approval_fields', sql`(head_approved_by IS NULL) = (head_approved_at IS NULL)`),
+  check('tickets_overdue_fields', sql`(overdue_for IS NULL) = (overdue_alerted_at IS NULL) AND (overdue_escalated_at IS NULL OR overdue_alerted_at IS NOT NULL)`),
 ]);
 
 /**
@@ -364,6 +370,57 @@ export const ticketTimeAdjustments = ticketsSchema.table('ticket_time_adjustment
   check('ticket_time_adjustments_reason_check', sql`length(trim(reason)) >= 3`),
   check('ticket_time_adjustments_not_own', sql`adjusted_by <> person_id`),
   check('ticket_time_adjustments_as_check', sql`adjusted_as IN ('head','management')`),
+]);
+
+/**
+ * A person's suggestion for another split of their own ticket time on one day (their job, IST date). It changes nothing:
+ * the department head (or Management) approves it, which stores ticket_time_adjustments rows (adjustment_batch_id), or
+ * rejects it with a reason; the person may cancel it while pending. One pending suggestion per job and day.
+ */
+export const ticketTimeSplitRequests = ticketsSchema.table('ticket_time_split_requests', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  publicId: uuid('public_id').notNull().unique(),               // made on the device: a resend is stored once
+  personId: bigint('person_id', { mode: 'number' }).notNull().references(() => persons.id),
+  employmentId: bigint('employment_id', { mode: 'number' }).notNull(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull(),
+  workDate: date('work_date').notNull(),
+  note: text('note'),
+  status: text('status').notNull().default('pending'),
+  decidedBy: bigint('decided_by', { mode: 'number' }).references(() => persons.id),
+  decidedAs: text('decided_as'),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decisionReason: text('decision_reason'),
+  adjustmentBatchId: uuid('adjustment_batch_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  foreignKey({ name: 'ticket_time_split_requests_employment_company_fk', columns: [t.employmentId, t.legalEntityId], foreignColumns: [employments.id, employments.legalEntityId] }),
+  unique('ticket_time_split_requests_id_company_unique').on(t.id, t.legalEntityId),   // target of the lines' company-safe key
+  uniqueIndex('ticket_time_split_requests_one_pending').on(t.employmentId, t.workDate).where(sql`status = 'pending'`),
+  index('idx_ticket_time_split_requests_person_date').on(t.personId, t.workDate),
+  check('ticket_time_split_requests_status_check', sql`status IN ('pending','approved','rejected','cancelled')`),
+  check('ticket_time_split_requests_decided', sql`(status IN ('approved','rejected')) = (decided_by IS NOT NULL AND decided_at IS NOT NULL AND decided_as IS NOT NULL)`),
+  check('ticket_time_split_requests_as_check', sql`decided_as IS NULL OR decided_as IN ('head','management')`),
+  check('ticket_time_split_requests_not_own', sql`decided_by IS NULL OR decided_by <> person_id`),
+  check('ticket_time_split_requests_rejected_reason', sql`status <> 'rejected' OR length(trim(coalesce(decision_reason, ''))) >= 3`),
+]);
+
+/** One ticket of a split suggestion: its minutes when suggested, the suggested minutes, and what was approved. */
+export const ticketTimeSplitLines = ticketsSchema.table('ticket_time_split_lines', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  requestId: bigint('request_id', { mode: 'number' }).notNull(),
+  ticketId: bigint('ticket_id', { mode: 'number' }).notNull(),
+  employmentId: bigint('employment_id', { mode: 'number' }).notNull(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull(),
+  beforeMinutes: integer('before_minutes').notNull(),
+  suggestedMinutes: integer('suggested_minutes').notNull(),
+  approvedMinutes: integer('approved_minutes'),
+}, (t) => [
+  foreignKey({ name: 'ticket_time_split_lines_request_company_fk', columns: [t.requestId, t.legalEntityId], foreignColumns: [ticketTimeSplitRequests.id, ticketTimeSplitRequests.legalEntityId] }),
+  foreignKey({ name: 'ticket_time_split_lines_ticket_company_fk', columns: [t.ticketId, t.legalEntityId], foreignColumns: [tickets.id, tickets.legalEntityId] }),
+  foreignKey({ name: 'ticket_time_split_lines_employment_company_fk', columns: [t.employmentId, t.legalEntityId], foreignColumns: [employments.id, employments.legalEntityId] }),
+  unique('ticket_time_split_lines_request_ticket_unique').on(t.requestId, t.ticketId),
+  check('ticket_time_split_lines_minutes_check', sql`before_minutes >= 0 AND suggested_minutes >= 0 AND (approved_minutes IS NULL OR approved_minutes >= 0)`),
 ]);
 
 /**

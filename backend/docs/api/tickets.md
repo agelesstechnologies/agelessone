@@ -485,6 +485,36 @@ The person themselves; the head or supervisor of one of their tickets that day; 
   `details: { totalMinutes, attendanceMinutes }`).
 - Answer `201`: the person's day. Event `time_adjusted` on each ticket.
 
+### Split suggestions — the person suggests, the head decides
+The equal split is often not how the day went (6 h on one ticket, 30 min on two others), and nobody changes their own
+time. So the person **suggests** another split; it changes nothing until the department head approves it, and is then
+stored as that head's **adjustment** (above), so every report uses it. With no suggestion the equal split stands.
+Tables `tickets.ticket_time_split_requests` and `ticket_time_split_lines`.
+
+- `POST /tickets/time/suggestions` — `tickets.work`, for the caller's own day:
+  ```json
+  { "publicId": "uuid made on the device", "date": "2026-11-12", "note": "Most of the day on the first site",
+    "tickets": [{ "ticketPublicId": "uuid", "minutes": 240 }, { "ticketPublicId": "uuid", "minutes": 80 }, { "ticketPublicId": "uuid", "minutes": 40 }] }
+  ```
+  At least two of the caller's tickets with time that day (`400 TICKETS_SPLIT_UNKNOWN_TICKET`), of one job
+  (`TICKETS_SPLIT_TWO_JOBS`); the minutes add up to what those tickets have now (`400 TICKETS_SPLIT_TOTAL`,
+  `details: { totalMinutes, givenMinutes }`) and differ from it (`TICKETS_SPLIT_UNCHANGED`). Today only after the daily
+  punch-out (`409 TICKETS_DAY_NOT_FINISHED`); at most policy `tickets.time.suggest_days` back (7; `400 TICKETS_SPLIT_TOO_OLD`).
+  One pending per job and day (`409 TICKETS_SPLIT_PENDING`: cancel it first). Answer `201` (a resend `200`):
+  `{ publicId, person, date, note, status, rows: [{ ticket, beforeMinutes, suggestedMinutes, approvedMinutes }], createdAt,
+  decidedBy, decidedAs, decidedAt, decisionReason, canDecide }`. Event `time_split_suggested` on each ticket.
+- `GET /tickets/time/suggestions?status=pending` — mine, and those of tickets of departments I head or supervise
+  (Management, HR, admin user: all), newest first. `canDecide` says whether the caller may approve or reject it.
+- `POST /tickets/time/suggestions/:id/approve` — `tickets.time.adjust`: the head of every ticket's department, the
+  tickets' supervisor, or Management (`403 TICKETS_FORBIDDEN`); never the person (`403 TICKETS_SELF_APPROVAL`). Body `{}`
+  stores the suggested split — in proportion to what the tickets have now, if that changed since (e.g. a corrected punch),
+  in whole minutes adding up exactly. Or the head's own split of the same tickets and total, with a reason:
+  `{ "reason": "Site visit was shorter", "tickets": [{ "ticketPublicId": "uuid", "minutes": 200 }, …] }`. Stored as one
+  adjustment batch by the head (reason "Split suggested by <name>: <note>", or "…, changed by the head: <reason>"), with
+  the usual `time_adjusted` events. Decided already: `409 TICKETS_SPLIT_DECIDED`.
+- `POST /tickets/time/suggestions/:id/reject` — same people, `{ "reason": "..." }`. Nothing changes. Event `time_split_rejected`.
+- `POST /tickets/time/suggestions/:id/cancel` — the person, while pending (anyone else: `404`). Event `time_split_cancelled`.
+
 ### Daily updates
 - `POST /tickets/:id/updates` — assignees and managers, JSON or multipart: `note` (3–1000), `percentComplete` (0–100),
   optional `workDate` (IST, default today, not in the future), optional `publicId` (a resend answers `200` with the
@@ -502,7 +532,31 @@ The person themselves; the head or supervisor of one of their tickets that day; 
 
 ### Daily job
 `pnpm --filter @ageless/backend tickets:daily` (after `pnpm --filter @ageless/backend build`), every morning: closes the
-timers of people whose daily punch-in has been open longer than the open-punch limit, as `unfinished`.
+timers of people whose daily punch-in has been open longer than the open-punch limit, as `unfinished`; and escalates
+overdue tickets (below).
+
+## Overdue escalation
+The same way approvals escalate. An unfinished ticket (open, assigned, in progress, on hold) whose due date has passed:
+1. **the day after the due date** alerts its **department head** (and the ticket's supervisor) — event `overdue_head_alerted`;
+2. once it is policy **`tickets.overdue.ceo_after_days`** days overdue (3 for now) it is **sent to the CEO** — event
+   `overdue_sent_to_ceo` (`details: { dueDate, daysOverdue, reason: "Overdue for 4 days" }`).
+
+The daily job takes the steps (columns `overdue_for`, `overdue_alerted_at`, `overdue_escalated_at` on `tickets.tickets`);
+running it again changes nothing. A **new due date starts again**: the stamps count only for the due date they were made
+for, so a ticket moved to a later date leaves the lists, and if that date passes too the head is alerted again. A
+completed or cancelled ticket leaves the lists. There are no notifications yet: the alerts are lists.
+
+`GET /tickets/overdue-alerts?company=` — the overdue tickets the caller is alerted about, most overdue first:
+the CEO (Management) the ones **sent to them**; the admin user every alerted ticket; anyone else the tickets of
+departments they head and the tickets they supervise.
+```json
+[{ "ticket": { "publicId": "uuid", "number": "ATPL-0012", "title": "Site work" }, "company": "ATPL", "status": "in_progress",
+   "priority": 2, "department": { "publicId": "uuid", "name": "Software Development" }, "supervisor": { "publicId", "displayName" },
+   "primaryAssignee": { "publicId", "displayName" }, "dueDate": "2026-11-08", "daysOverdue": 5,
+   "headAlertedAt": "2026-11-09T00:30:00.000Z", "sentToCeoAt": "2026-11-11T00:30:00.000Z" }]
+```
+Web: the **Overview** shows the list to heads and supervisors (hidden when empty); the **CEO dashboard** shows
+"Overdue tickets sent to you".
 
 ## Punch confirmations and addresses
 

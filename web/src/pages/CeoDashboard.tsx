@@ -8,6 +8,7 @@ import { AskReason, BASE, LABEL, SentToCeo, TONE } from './Approvals';
 import { HBars, Kpi, OverviewCharts } from './OverviewCharts';
 import { STATUS_TONE, statusLabel } from './TicketDetail';
 import { openTicket } from './Tickets';
+import OverdueAlerts from './OverdueAlerts';
 
 /**
  * The CEO's dashboard for one company. First version: Ageless Technologies only. When the other companies come,
@@ -35,6 +36,8 @@ export default function CeoDashboard() {
       action={<label className="month-pick">Month <input type="month" value={month} max={todayIst().slice(0, 7)}
         onChange={(e) => e.target.value && setMonth(e.target.value)} /></label>} />
     <WaitingForYou company={COMPANY.code} />
+    <OverdueAlerts company={COMPANY.code} title="Overdue tickets sent to you" showEmpty
+      note="Unfinished tickets overdue for a few days (after their department head was alerted). Open one to act on it." />
     <h2 className="section-title">People &amp; attendance</h2>
     <OverviewCharts company={COMPANY.code} month={month} />
     <h2 className="section-title">Payroll</h2>
