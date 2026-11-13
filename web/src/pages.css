@@ -455,10 +455,16 @@ td:empty::after{content:'—';color:#c3c9d3}
 .tp-big{width:100%;height:48px;border-radius:24px;font-size:14px;font-weight:700;justify-content:center}
 .tp-warn{border:1.5px solid #f3c27a;background:#fff8ec;color:#c4610e;cursor:pointer}
 .tp-warn:hover{background:#fff1da}
-.tp-out{border:0;background:#1c2b3c;color:#fff;cursor:pointer;display:inline-flex;align-items:center}
+/* ticket punch on the ticket screen: green to punch in, red while the timer runs */
+.tp-in,.tp-out{border:0;color:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.tp-in{background:#1f9d55}
+.tp-in:hover{background:#1a8a4a}
+.tp-out{background:#d64545}
+.tp-out:hover{background:#c03b3b}
+.tp-in:disabled,.tp-out:disabled{opacity:.6;cursor:default}
+.tp-tile small.tp-running{background:#fdecec;color:#c03b3b;font-weight:700}
 .tp-manage{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 14px;border:1px dashed #e2e5eb;border-radius:12px;background:#fbfcfd}
 .tp-manage-label{font-size:10px;font-weight:700;letter-spacing:.8px;color:#9a9ca6;text-transform:uppercase;margin-right:4px}
-.tp-hint{text-align:center;margin:8px 0 2px}
 .tp-totals{display:flex;flex-direction:column;gap:3px;background:#f7f9fb;border-radius:10px;padding:10px 12px;margin:12px 0 4px;font-size:12px;color:#5d606b}
 .tp-totals b{color:#1c2b3c}
 .tp-sub-head{text-align:center;color:#7b7d88;font:500 12.5px 'DM Sans'!important;margin:16px 0 10px!important}

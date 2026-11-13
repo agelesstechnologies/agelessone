@@ -45,7 +45,7 @@ const NAV: NavItem[] = [
 
 /** Drop-down groups in the menu, in this order after Overview and the CEO dashboard. */
 const GROUPS: { key: GroupKey; label: string; icon: ReactNode }[] = [
-  { key: 'hrms', label: 'HRMS', icon: <Users size={18} /> },
+  { key: 'hrms', label: 'HR', icon: <Users size={18} /> },
   { key: 'accounts', label: 'Accounts', icon: <Wallet size={18} /> },
   { key: 'operations', label: 'Operations', icon: <Wrench size={18} /> },
 ];

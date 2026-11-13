@@ -1,18 +1,18 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { LoaderCircle, Plus, X } from 'lucide-react';
-import { CreatePersonRequest, type Department, type NextEmployeeCode } from '@ageless/shared';
+import { CreatePersonRequest } from '@ageless/shared';
 import { api, errText, formError } from '../api';
-import { todayIst, useLoad, useMyEmployments } from '../hooks';
+import { todayIst, useMyEmployments } from '../hooks';
 import { useAuth } from '../auth';
 import { PEOPLE, USERS } from '../permissions';
 import { PersonPicker } from '../JobPicker';
+import DepartmentAndId, { type JobCodes } from './DepartmentAndId';
 
 const COMPANIES = [{ code: 'AE', name: 'Ageless Entertainments' }, { code: 'ATPL', name: 'Ageless Technologies' }];
 
 /**
- * Add a person with their first job. Choosing a department shows the next employee ID for its prefix (ATS004 …);
- * left as shown, the code is assigned when saving (so two people saved at once never get the same one). HR can type
- * another code instead, e.g. when bringing over existing staff.
+ * Add a person with their first job. The employee ID is automatic: the next number for the chosen department's prefix
+ * (ATS004 …), assigned when saving. Only HR may type an existing ID instead, e.g. for staff brought over with their old code.
  */
 export default function AddPerson({ onClose, onCreated }: { onClose: () => void; onCreated: (publicId: string) => void }) {
   // HR: any company. A manager or department head: the companies they work in
@@ -22,10 +22,7 @@ export default function AddPerson({ onClose, onCreated }: { onClose: () => void;
   const companies = scopeOf(PEOPLE.create) === 'all' || !myCodes.size ? COMPANIES : COMPANIES.filter((c) => myCodes.has(c.code));
   const [picked, setPicked] = useState('');
   const company = companies.some((c) => c.code === picked) ? picked : (companies.find((c) => c.code === 'ATPL') ?? companies[0])!.code;
-  const setCompany = setPicked;
-  const [department, setDepartment] = useState('');
-  const [code, setCode] = useState('');
-  const [suggested, setSuggested] = useState('');
+  const [codes, setCodes] = useState<JobCodes>({});
   const [manager, setManager] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -34,38 +31,24 @@ export default function AddPerson({ onClose, onCreated }: { onClose: () => void;
   const [giveLogin, setGiveLogin] = useState(canLogin);
   const [loginEmail, setLoginEmail] = useState('');
   const [done, setDone] = useState<{ personId: string; name: string; loginNote: string } | null>(null);
-  const depts = useLoad(() => api<Department[]>(`/hrms/departments?company=${company}`), [company]);
-  const dept = depts.data?.find((d) => d.publicId === department);
-
-  // the next code for the chosen department, filled in for HR (kept if HR has typed their own)
-  useEffect(() => {
-    if (!department) { setSuggested(''); return; }
-    let live = true;
-    api<NextEmployeeCode>(`/hrms/departments/${department}/next-employee-code`)
-      .then((n) => { if (!live) return; setCode((c) => (c === '' || c === suggested ? n.code : c)); setSuggested(n.code); })
-      .catch((e) => { if (live) setError(errText(e)); });
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [department]);
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const text = (k: string) => String(f.get(k) ?? '').trim();
-    const typed = code.trim();
     const raw = {
       displayName: text('displayName'),
       contacts: text('value') ? [{ kind: text('kind'), value: text('value'), isPrimary: true }] : [],
       employment: {
         legalEntityCode: company,
-        // the suggested code is generated again on save; only a code HR typed is sent
-        employeeCode: typed && typed !== suggested ? typed : undefined,
-        departmentCode: dept?.codePrefix,
+        // no employee ID is sent unless HR typed an existing one: the next number is generated on save
+        employeeCode: codes.employeeCode,
+        departmentCode: codes.departmentCode,
         engagementType: text('engagementType'), joinedOn: text('joinedOn'), designation: text('designation') || undefined,
         managerPublicId: manager || undefined, isPrimary: true,
       },
     };
-    if (!raw.employment.employeeCode && !raw.employment.departmentCode) { setError('Choose a department, or type an employee ID'); return; }
+    if (!raw.employment.departmentCode) { setError('Choose a department: the employee ID is made from it'); return; }
     const parsed = CreatePersonRequest.safeParse(raw);
     if (!parsed.success) { setError(formError(parsed.error, 'Check the form fields')); return; }
     const email = giveLogin ? loginEmail.trim() : '';
@@ -107,13 +90,9 @@ export default function AddPerson({ onClose, onCreated }: { onClose: () => void;
       {error && <div className="error-banner">{error}</div>}
       <div className="form-grid">
         <label className="span-two">Full name<input name="displayName" required minLength={2} maxLength={100} placeholder="e.g. Asha Kumar" autoFocus /></label>
-        <label>Company<select value={company} onChange={(e) => { setCompany(e.target.value); setDepartment(''); setCode(''); setSuggested(''); }}>
+        <label>Company<select value={company} onChange={(e) => setPicked(e.target.value)}>
           {companies.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.name}</option>)}</select></label>
-        <label>Department<select value={department} onChange={(e) => setDepartment(e.target.value)} key={`${company}${depts.data?.length ?? 0}`}>
-          <option value="">{depts.loading ? 'Loading…' : depts.data?.length ? 'Choose' : 'No departments yet'}</option>
-          {depts.data?.map((d) => <option key={d.publicId} value={d.publicId}>{d.name} ({d.codePrefix})</option>)}</select></label>
-        <label>Employee ID {code && code === suggested && <span className="optional">next number, assigned on save</span>}
-          <input value={code} onChange={(e) => setCode(e.target.value)} maxLength={20} placeholder={department ? 'Loading…' : 'Choose a department first'} /></label>
+        <DepartmentAndId company={company} idPrefix="ap" mayTypeId={scopeOf(PEOPLE.create) === 'all'} onChange={setCodes} />
         <label>Designation<input name="designation" maxLength={80} placeholder="e.g. Software Engineer" /></label>
         <label>Engagement type<select name="engagementType" defaultValue="permanent"><option value="permanent">Permanent</option><option value="probation">Probation</option>
           <option value="contract">Contract</option><option value="intern">Intern</option><option value="external">External</option></select></label>

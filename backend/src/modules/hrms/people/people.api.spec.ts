@@ -44,9 +44,36 @@ describe('HRMS people API', () => {
     expect(again.status).toBe(409);
     expect(again.body.code).toBe('HRMS_DUPLICATE_EMPLOYMENT');
 
+    // one company at a time: policy hrms.people.one_company_per_person, on in the test database for jobs joining from 2030
+    // (see src/test/global-setup.ts); before that the tests of two-company people run with it off
     const otherCompany = await api().post(`/api/hrms/people/${body.publicId}/employments`).set(callerHeaders)
-      .send({ legalEntityCode: 'ATPL', employeeCode: `T-${tag()}`, engagementType: 'contract', joinedOn: '2026-02-01' });
-    expect(otherCompany.status).toBe(201);
+      .send({ legalEntityCode: 'ATPL', employeeCode: `T-${tag()}`, engagementType: 'contract', joinedOn: '2030-02-01' });
+    expect(otherCompany.status).toBe(409);
+    expect(otherCompany.body.code).toBe('HRMS_ONE_COMPANY_ONLY');
+    expect(otherCompany.body.message).toContain('AE');
+    expect(otherCompany.body.details).toEqual({ employmentPublicId: expect.stringMatching(/^[0-9a-f-]{36}$/) });
+  });
+
+  it('moves a person to another company: exit the job, then the new job is primary and the person active again', async () => {
+    const { body } = await create(newPerson(tag(), { company: 'AE' }));
+    const before = await api().get(`/api/hrms/people/${body.publicId}`).set(callerHeaders);
+    const aeJob = before.body.employments[0].publicId as string;
+
+    // 2030: the one-company rule is on (src/test/global-setup.ts), and a transfer passes it
+    const exit = await api().post(`/api/hrms/employments/${aeJob}/exit`).set(callerHeaders).send({ exitOn: '2030-03-31', exitReason: 'Transferred to ATPL' });
+    expect(exit.status).toBe(200);
+    expect(exit.body.status).toBe('inactive'); // no job left: no sign-in
+
+    const code = `T-${tag()}`;
+    const added = await api().post(`/api/hrms/people/${body.publicId}/employments`).set(callerHeaders)
+      .send({ legalEntityCode: 'ATPL', employeeCode: code, engagementType: 'permanent', joinedOn: '2030-04-01' });
+    expect(added.status).toBe(201);
+
+    const after = await api().get(`/api/hrms/people/${body.publicId}`).set(callerHeaders);
+    expect(after.body.status).toBe('active');
+    const jobs = after.body.employments as { publicId: string; company: { code: string }; employeeCode: string; status: string; isPrimary: boolean }[];
+    expect(jobs.find((j) => j.publicId === added.body.publicId)).toMatchObject({ company: { code: 'ATPL' }, employeeCode: code, isPrimary: true });
+    expect(jobs.find((j) => j.publicId === aeJob)).toMatchObject({ status: 'exited', isPrimary: false });
   });
 
   it('refuses an employee code already used in the company, and saves nothing', async () => {

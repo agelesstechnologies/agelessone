@@ -1,13 +1,13 @@
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   ArrowLeft, CalendarCheck, CalendarClock, ChevronDown, ChevronUp, Clock, Download, FileText, HardHat, History, ListChecks, MapPin, MessageSquare, Paperclip, Plus,
-  Share2, User, Users,
+  Share2, Square, Timer, User, Users,
 } from 'lucide-react';
 import {
   AddExternalStaffRequest, AssignTicketRequest, ChecklistResultRequest, EndExternalStaffRequest, LinkTicketRequest, ReasonRequest, RecordExternalAttendanceRequest,
   SignoffRequest, TicketPunchInRequest, TicketPunchOutRequest, UpdateTicketRequest,
   type ChecklistResult, type ExternalAttendance, type ExternalAttendanceStatus, type ExternalStaff, type RunningTicket, type TicketDetail as Detail,
-  type TicketSummary, type TicketTimelogs,
+  type TicketPunchResult, type TicketSummary, type TicketTimelogs,
 } from '@ageless/shared';
 import { api, downloadFile, errText, formError } from '../api';
 import { useAuth } from '../auth';
@@ -49,6 +49,10 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
   const work = can(TICKETS.work) || runSite;
   const live = !!t && t.status !== 'completed' && t.status !== 'cancelled';
   const assignee = !!t && t.assignees.some((a) => a.person.publicId === me?.person.publicId);
+  // ticket punch is on the main screen for the ticket's assignees (the backend checks the same); the Timelogs tile keeps the history
+  const mayPunch = live && can(TICKETS.work) && assignee;
+  const running = useLoad(() => (mayPunch ? api<RunningTicket[]>('/tickets/time/running') : Promise.resolve([] as RunningTicket[])), [mayPunch]);
+  const timer = running.data?.find((r) => r.ticket.publicId === id);
 
   async function act(fn: () => Promise<Detail | void>, done?: string) {
     setBusy(true); setError(''); setNote('');
@@ -60,6 +64,24 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
   async function upload(kind: 'photo' | 'file', f: File) {
     const body = new FormData(); body.append('kind', kind); body.append('file', f);
     await act(() => api<Detail>(`/tickets/${id}/attachments`, { method: 'POST', body }), kind === 'photo' ? 'Photo added.' : 'File added.');
+  }
+  /** Punch in on this ticket (with the device position, when allowed) or out of it. The first punch-in starts the ticket. */
+  async function punch() {
+    setBusy(true); setError(''); setNote('');
+    try {
+      if (timer) {
+        await api<TicketPunchResult>('/tickets/punch-out', { method: 'POST', json: TicketPunchOutRequest.parse({ tickets: [id] }) });
+        setNote('Punched out of this ticket.');
+      } else {
+        const parsed = TicketPunchInRequest.safeParse({ items: [{ publicId: uuidv7(), ticketPublicId: id }], ...(await devicePosition()) });
+        if (!parsed.success) { setError(formError(parsed.error)); return; }
+        const r = await api<TicketPunchResult>('/tickets/punch-in', { method: 'POST', json: parsed.data });
+        setNote(r.confirmation?.message ?? 'Punched in on this ticket.');
+      }
+      running.reload();
+      q.setData(await api<Detail>(`/tickets/${id}`));
+    } catch (e) { setError(errText(e)); }
+    finally { setBusy(false); }
   }
   async function share() {
     try { await navigator.clipboard.writeText(window.location.href); setNote('Link copied. Paste it in a message to share this ticket.'); }
@@ -82,7 +104,7 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
   const shownPeople = allPeople ? people : people.slice(0, 2);
   const answered = t.checklist.filter((c) => c.result).length;
   const tiles: { key: Exclude<View, 'home'>; label: string; icon: ReactNode; count?: string }[] = [
-    { key: 'time', label: 'Timelogs', icon: <Clock size={22} /> },
+    { key: 'time', label: 'Timelogs', icon: <Clock size={22} />, count: timer ? 'running' : undefined },
     { key: 'files', label: 'Files', icon: <Paperclip size={22} />, count: t.attachments.length ? String(t.attachments.length) : undefined },
     { key: 'notes', label: 'Notes', icon: <MessageSquare size={22} /> },
     ...(t.checklist.length ? [{ key: 'checklist' as const, label: 'Checklist', icon: <ListChecks size={22} />, count: `${answered}/${t.checklist.length}` }] : []),
@@ -144,10 +166,14 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
       {t.warnings.map((w, i) => <Notice key={i}>{w.message}</Notice>)}
 
       <div className="tp-tiles">{tiles.map((x) => <button key={x.key} className="tp-tile" onClick={() => setView(x.key)}>
-        <span className="tp-tile-icon">{x.icon}</span><span className="tp-tile-label">{x.label}</span>{x.count && <small>{x.count}</small>}</button>)}</div>
+        <span className="tp-tile-icon">{x.icon}</span><span className="tp-tile-label">{x.label}</span>{x.count && <small className={x.count === 'running' ? 'tp-running' : undefined}>{x.count}</small>}</button>)}</div>
 
       {live && t.missingForCompletion.length > 0 && <Notice>To complete: {t.missingForCompletion.join(', ')}.</Notice>}
       <div className="tp-actions">
+        {/* punch in while the ticket can take time (assigned, in progress); punch out whenever a timer runs (also on hold) */}
+        {mayPunch && (timer || t.status === 'assigned' || t.status === 'in_progress') &&
+          <button className={`tp-big ${timer ? 'tp-out' : 'tp-in'}`} disabled={busy || running.loading} onClick={() => void punch()}>
+            {timer ? <><Square size={15} /> Punch out · running since {timeIst(timer.startedAt)}</> : <><Timer size={17} /> Punch in</>}</button>}
         {canStart && <button className="primary-btn tp-big" disabled={busy} onClick={() => void post('start', {}, 'Work started.')}>Start work</button>}
         {live && runSite && t.status === 'on_hold' && <button className="primary-btn tp-big" disabled={busy} onClick={() => void post('resume', {}, 'Work resumed.')}>Resume</button>}
         {canComplete && <button className="primary-btn tp-big" disabled={busy} onClick={() => void post('complete', {}, 'Ticket completed.')}>Complete ticket</button>}
@@ -156,7 +182,7 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
       {manageButtons.length > 0 && <div className="tp-manage"><span className="tp-manage-label">Manage</span>{manageButtons}</div>}
     </>}
 
-    {view === 'time' && <Timelogs t={t} canPunch={live && can(TICKETS.work) && assignee} />}
+    {view === 'time' && <Timelogs t={t} />}
     {view === 'notes' && <section className="tp-card"><TicketUpdates ticketId={id} label={t.number} inline /></section>}
     {view === 'staff' && <ExternalStaffSection ticketId={id} canAdd={runSite && live} canMark={t.status !== 'cancelled'} />}
     {view === 'files' && <section className="tp-card">
@@ -191,7 +217,7 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
     </section>}
 
     {dialog === 'edit' && <EditTicket t={t} limited={siteSup} onClose={() => setDialog(null)} run={(body) => act(() => api<Detail>(`/tickets/${id}`, { method: 'PATCH', json: body }), 'Saved.')} />}
-    {dialog === 'assign' && <AssignTicket onClose={() => setDialog(null)} run={(body) => act(() => api<Detail>(`/tickets/${id}/assignees`, { method: 'PUT', json: body }), 'Assigned.')} />}
+    {dialog === 'assign' && <AssignTicket company={t.company} onClose={() => setDialog(null)} run={(body) => act(() => api<Detail>(`/tickets/${id}/assignees`, { method: 'PUT', json: body }), 'Assigned.')} />}
     {dialog === 'link' && <LinkTicket t={t} onClose={() => setDialog(null)} run={(body) => act(() => api<Detail>(`/tickets/${id}/links`, { method: 'POST', json: body }), 'Linked.')} />}
     {dialog === 'signoff' && <Signoff onClose={() => setDialog(null)} run={(body) => act(() => api<Detail>(`/tickets/${id}/signoffs`, { method: 'POST', body }), 'Sign-off recorded.')} />}
     {dialog && typeof dialog === 'object' && <Reason title={REASON_TITLE[dialog.reason]} onClose={() => setDialog(null)}
@@ -209,38 +235,12 @@ function UploadButton({ label, accept, onFile }: { label: string; accept: string
     <input type="file" accept={accept} hidden onChange={(e) => { const i = e.currentTarget; const f = i.files?.[0]; if (f) void onFile(f).then(() => { i.value = ''; }); }} /></label>;
 }
 
-/** Everyone's ticket punches on this ticket (newest first) and, for an assignee, punch in / out on it. */
-function Timelogs({ t, canPunch }: { t: Detail; canPunch: boolean }) {
+/** Everyone's ticket punches on this ticket (newest first) and the counted time. Punch in / out is on the ticket's main screen. */
+function Timelogs({ t }: { t: Detail }) {
   const q = useLoad(() => api<TicketTimelogs>(`/tickets/${t.publicId}/timelogs`), [t.publicId]);
-  const running = useLoad(() => (canPunch ? api<RunningTicket[]>('/tickets/time/running') : Promise.resolve([] as RunningTicket[])), [canPunch]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [ok, setOk] = useState('');
-  const on = !!running.data?.some((r) => r.ticket.publicId === t.publicId);
-
-  async function punch() {
-    setBusy(true); setError(''); setOk('');
-    try {
-      if (on) {
-        await api('/tickets/punch-out', { method: 'POST', json: TicketPunchOutRequest.parse({ tickets: [t.publicId] }) });
-        setOk('Punched out of this ticket.');
-      } else {
-        const parsed = TicketPunchInRequest.safeParse({ items: [{ publicId: uuidv7(), ticketPublicId: t.publicId }], ...(await devicePosition()) });
-        if (!parsed.success) { setError(formError(parsed.error)); return; }
-        const r = await api<{ confirmation?: { message?: string } }>('/tickets/punch-in', { method: 'POST', json: parsed.data });
-        setOk(r.confirmation?.message ?? 'Punched in on this ticket.');
-      }
-      q.reload(); running.reload();
-    } catch (e) { setError(errText(e)); }
-    finally { setBusy(false); }
-  }
 
   return <section className="tp-card">
-    {(error || q.error) && <Notice onClose={() => setError('')}>{error || q.error}</Notice>}
-    {ok && <Notice tone="ok" onClose={() => setOk('')}>{ok}</Notice>}
-    {canPunch && <button className={`tp-big ${on ? 'tp-out' : 'primary-btn'}`} disabled={busy || running.loading} onClick={() => void punch()}>
-      {busy ? 'Please wait…' : on ? 'Punch out' : 'Punch in'}</button>}
-    {canPunch && !on && <p className="muted-text tp-hint">Punch in for the day on the Attendance page first.</p>}
+    {q.error && <Notice>{q.error}</Notice>}
     {q.data && q.data.totals.length > 0 && <div className="tp-totals"><b>Counted time {hm(q.data.totalMinutes)}</b>
       <span>{q.data.totals.map((x) => `${x.person.displayName} ${hm(x.minutes)}`).join(' · ')}</span></div>}
     <h3 className="tp-sub-head">Previous timelogs</h3>
@@ -299,7 +299,7 @@ function EditTicket({ t, limited, onClose, run }: { t: Detail; limited: boolean;
 }
 
 /** One person takes the ticket (the whole assignee list is replaced). */
-function AssignTicket({ onClose, run }: { onClose: () => void; run: (b: AssignTicketRequest) => Promise<void> }) {
+function AssignTicket({ company, onClose, run }: { company: string; onClose: () => void; run: (b: AssignTicketRequest) => Promise<void> }) {
   const [job, setJob] = useState('');
   const [error, setError] = useState('');
   function submit(e: FormEvent) {
@@ -310,7 +310,7 @@ function AssignTicket({ onClose, run }: { onClose: () => void; run: (b: AssignTi
   }
   return <Modal title="Assign ticket" subtitle="The chosen person replaces the current assignees." onClose={onClose}><form onSubmit={submit}>
     {error && <Notice>{error}</Notice>}
-    <div className="form-grid"><JobPicker idPrefix="asg" onChange={setJob} /></div>
+    <div className="form-grid"><JobPicker idPrefix="asg" company={company} onChange={setJob} /></div>
     <div className="modal-foot"><button type="button" className="outline-btn" onClick={onClose}>Close</button><button className="primary-btn">Assign</button></div></form></Modal>;
 }
 

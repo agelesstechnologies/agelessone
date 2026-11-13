@@ -6,7 +6,7 @@ import {
 } from '@ageless/shared';
 import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
-import { addDays, dayLabel, hm, timeIst, todayIst, useLoad, uuidv7 } from '../hooks';
+import { addDays, dayLabel, devicePosition, hm, timeIst, todayIst, useLoad, uuidv7 } from '../hooks';
 import { PersonPicker } from '../JobPicker';
 import { TICKETS } from '../permissions';
 import { Badge, Empty, Loading, Modal, Notice, Panel } from '../ui';
@@ -21,52 +21,76 @@ export default function TicketTime() {
   </>;
 }
 
+/** Ticks in a list of ticket IDs: toggle one, or all / none. */
+const toggle = (s: Set<string>, id: string, on: boolean) => { const n = new Set(s); if (on) n.add(id); else n.delete(id); return n; };
+const plural = (n: number) => `${n} ticket${n === 1 ? '' : 's'}`;
+
 function Running() {
   const running = useLoad(() => api<RunningTicket[]>('/tickets/time/running'));
   const mine = useLoad(() => api<TicketSummary[]>('/tickets/mine'));
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<Set<string>>(new Set());     // tickets to punch in on
+  const [stopping, setStopping] = useState<Set<string>>(new Set()); // running tickets to punch out of
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [updating, setUpdating] = useState<{ id: string; label: string } | null>(null);
-  const runningIds = new Set(running.data?.map((r) => r.ticket.publicId));
+  const runs = running.data ?? [];
+  const runningIds = new Set(runs.map((r) => r.ticket.publicId));
   const candidates = (mine.data ?? []).filter((t) => (t.status === 'assigned' || t.status === 'in_progress' || t.status === 'open') && !runningIds.has(t.publicId));
+  const chosenOut = [...stopping].filter((id) => runningIds.has(id));
+  const allTicked = runs.length > 0 && chosenOut.length === runs.length;
 
   async function call(path: string, json: unknown) {
     setBusy(true); setError(''); setOk('');
-    try { const r = await api<TicketPunchResult>(path, { method: 'POST', json }); setOk(r.started ? `Started ${r.started} ticket${r.started === 1 ? '' : 's'}.` : `Stopped ${r.stopped} ticket${r.stopped === 1 ? '' : 's'}.`); setPicked(new Set()); running.reload(); mine.reload(); }
+    try {
+      const r = await api<TicketPunchResult>(path, { method: 'POST', json });
+      setOk(r.started ? `Punched in on ${plural(r.started)}.` : `Punched out of ${plural(r.stopped)}.`);
+      setPicked(new Set()); setStopping(new Set()); running.reload(); mine.reload();
+    }
     catch (e) { setError(errText(e)); }
     finally { setBusy(false); }
   }
-  function punchIn() {
-    const parsed = TicketPunchInRequest.safeParse({ items: [...picked].map((ticketPublicId) => ({ publicId: uuidv7(), ticketPublicId })) });
-    if (!parsed.success) { setError(formError(parsed.error, 'Choose at least one ticket')); return; }
+  async function punchIn() {
+    setBusy(true);   // the position can take a few seconds: no second click meanwhile
+    // the device position (when allowed) gives the punch-in address, as on the ticket screen
+    const parsed = TicketPunchInRequest.safeParse({ items: [...picked].map((ticketPublicId) => ({ publicId: uuidv7(), ticketPublicId })), ...(await devicePosition()) });
+    if (!parsed.success) { setBusy(false); setError(formError(parsed.error, 'Choose at least one ticket')); return; }
     void call('/tickets/punch-in', parsed.data);
   }
+  /** Punch out of the tickets given (one, or the ticked ones), or of every running ticket. */
   function punchOut(ids?: string[]) {
     const parsed = TicketPunchOutRequest.safeParse(ids ? { tickets: ids } : { all: true });
     if (parsed.success) void call('/tickets/punch-out', parsed.data);
   }
 
-  return <Panel title="Ticket time" note="Punch in for the day on the Attendance page first, then start timers on the tickets you work on. Time is shared when timers overlap.">
+  return <Panel title="Ticket time" note="Punch in for the day on the Attendance page first, then punch in on the tickets you work on. Time is shared when tickets run together.">
     <div className="panel-body">
       {(error || running.error) && <Notice onClose={() => setError('')}>{error || running.error}</Notice>}
       {ok && <Notice tone="ok" onClose={() => setOk('')}>{ok}</Notice>}
       <h3>Running now</h3>
-      {running.loading && !running.data ? <Loading /> : !running.data?.length ? <Empty title="No timers running" /> :
-        <div className="table-wrap"><table><thead><tr><th>TICKET</th><th>SINCE</th><th /></tr></thead>
-          <tbody>{running.data.map((r) => <tr key={r.timelogPublicId}>
+      {running.loading && !running.data ? <Loading /> : !runs.length ? <Empty title="No tickets running" /> :
+        <div className="table-wrap"><table><thead><tr>
+          <th><input type="checkbox" aria-label="Tick all running tickets" checked={allTicked} disabled={busy}
+            onChange={(e) => setStopping(e.target.checked ? new Set(runningIds) : new Set())} /></th>
+          <th>TICKET</th><th>SINCE</th><th /></tr></thead>
+          <tbody>{runs.map((r) => <tr key={r.timelogPublicId}>
+            <td><input type="checkbox" aria-label={`Tick ${r.ticket.number}`} checked={stopping.has(r.ticket.publicId)} disabled={busy}
+              onChange={(e) => setStopping((s) => toggle(s, r.ticket.publicId, e.target.checked))} /></td>
             <td><b>{r.ticket.number}</b><small className="sub">{r.ticket.title}</small></td><td>{timeIst(r.startedAt)}</td>
             <td><span className="chip-row">
               <button className="text-btn" disabled={busy} onClick={() => setUpdating({ id: r.ticket.publicId, label: r.ticket.number })}>Daily update</button>
-              <button className="text-btn" disabled={busy} onClick={() => punchOut([r.ticket.publicId])}>Stop</button></span></td></tr>)}</tbody></table></div>}
-      {!!running.data?.length && <div className="chip-row"><button className="outline-btn" disabled={busy} onClick={() => punchOut()}>Stop all</button></div>}
+              <button className="text-btn" disabled={busy} onClick={() => punchOut([r.ticket.publicId])}>Punch out</button></span></td></tr>)}</tbody></table></div>}
+      {runs.length > 0 && <div className="chip-row">
+        {runs.length > 1 && <button className="primary-btn" disabled={busy || !chosenOut.length} onClick={() => punchOut(chosenOut)}>
+          {chosenOut.length ? `Punch out of ${plural(chosenOut.length)}` : 'Tick tickets to punch out'}</button>}
+        <button className="outline-btn" disabled={busy} onClick={() => punchOut()}>Punch out of all ({runs.length})</button></div>}
       <h3>Start work</h3>
       {mine.loading && !mine.data ? <Loading /> : !candidates.length ? <Empty title="Nothing to start" text="Tickets assigned to you appear here." /> : <>
         <ul className="plain-list">{candidates.map((t) => <li key={t.publicId}>
           <label className="check-row"><input type="checkbox" checked={picked.has(t.publicId)}
-            onChange={(e) => setPicked((s) => { const n = new Set(s); if (e.target.checked) n.add(t.publicId); else n.delete(t.publicId); return n; })} /> {t.number} · {t.title}</label></li>)}</ul>
-        <div className="chip-row"><button className="primary-btn" disabled={busy || !picked.size} onClick={punchIn}>Start {picked.size || ''} timer{picked.size === 1 ? '' : 's'}</button></div></>}
+            onChange={(e) => setPicked((s) => toggle(s, t.publicId, e.target.checked))} /> {t.number} · {t.title}</label></li>)}</ul>
+        <div className="chip-row"><button className="primary-btn" disabled={busy || !picked.size} onClick={() => void punchIn()}>
+          {picked.size ? `Punch in on ${plural(picked.size)}` : 'Tick tickets to punch in'}</button></div></>}
     </div>
     {updating && <TicketUpdates ticketId={updating.id} label={updating.label} onClose={() => setUpdating(null)} />}
   </Panel>;

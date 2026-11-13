@@ -147,7 +147,7 @@ function NewTicket({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
       {error && <Notice>{error}</Notice>}
       {noDepts && <Notice tone="error">{companyName} has no departments yet, so a ticket can't be created there. HR adds departments under Organisation.</Notice>}
       <div className="form-grid">
-        <label>Company<select id="nt-company" value={company} onChange={(e) => { setCompany(e.target.value); setTypeId(''); }}>{companies.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select></label>
+        <label>Company<select id="nt-company" value={company} onChange={(e) => { setCompany(e.target.value); setTypeId(''); setJob(''); }}>{companies.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select></label>
         <label>Type<select id="nt-type" value={typeId} onChange={(e) => setTypeId(e.target.value)} required>
           <option value="" disabled>{types.loading ? 'Loading…' : 'Choose a type'}</option>{types.data?.map((t) => <option key={t.publicId} value={t.publicId}>{t.name}</option>)}</select></label>
         <label className="span-two">Title<input id="nt-title" name="title" required minLength={3} maxLength={150} /></label>
@@ -164,7 +164,7 @@ function NewTicket({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
             <input id={`nt-d-${fld.key}`} name={`d_${fld.key}`} required={fld.required} type={fld.type === 'number' || fld.type === 'money' ? 'number' : fld.type === 'date' ? 'date' : 'text'}
               step={fld.type === 'money' ? '0.01' : undefined} placeholder={fld.type === 'money' ? 'Amount in ₹' : fld.type === 'person' ? "Person's ID" : undefined} /></label>)}
         <PersonPicker idPrefix="nt-sup" label="Supervisor" hint="optional — the department head, or you, if left empty" onChange={setSupervisor} />
-        <JobPicker idPrefix="nt-asg" label="Assign to" hint="optional" onChange={setJob} />
+        <JobPicker key={company} idPrefix="nt-asg" label="Assign to" hint="optional" company={company} onChange={setJob} />
       </div>
       <div className="modal-foot"><button type="button" className="outline-btn" onClick={onClose}>Cancel</button>
         <button className="primary-btn" disabled={saving || noDepts}>{saving ? 'Creating…' : 'Create ticket'}</button></div>

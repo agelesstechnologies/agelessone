@@ -54,15 +54,31 @@ export class PeopleService {
     });
   }
 
-  /** Another employment for an existing person (for example a second company). */
+  /**
+   * A new employment for an existing person. POLICY hrms.people.one_company_per_person (on by default; the version in force
+   * for the new job's company on its joining date): while the person has a current job in another company this is refused;
+   * moving company is a transfer (exit that job, then add this one).
+   * With no current job left (a transfer or a re-hire) the new job becomes the primary one and the person is active again.
+   */
   async addEmployment(ctx: RequestContext, personPublicId: string, req: AddEmploymentRequest): Promise<{ publicId: string }> {
     return this.db.transaction(async (tx) => {
       const personId = await this.personId(tx, ctx.tenantId, personPublicId);
       await this.checkScope(tx, ctx, PEOPLE.manageEmployments, personId);
       const refs = await this.employmentRefs(tx, ctx.tenantId, req);
       if (refs.managerPersonId === personId) throw new AppError('HRMS_SELF_MANAGER', 400, 'A person cannot be their own manager');
-      if (req.isPrimary) await this.repo.clearPrimaryEmployment(tx, personId);
-      const publicId = await this.repo.insertEmployment(tx, { ...this.employmentRow(ctx.tenantId, personId, req, refs), isPrimary: req.isPrimary === true });
+      await this.repo.lockPerson(tx, personId);
+      const current = await this.repo.currentEmployments(tx, personId);
+      const elsewhere = current.find((j) => j.legalEntityId !== refs.legalEntityId);
+      if (elsewhere && await this.core.getPolicy(ctx.tenantId, 'hrms.people.one_company_per_person', refs.legalEntityId, req.joinedOn)) {
+        throw new AppError('HRMS_ONE_COMPANY_ONLY', 409,
+          `This person already works for ${elsewhere.company} (${elsewhere.employeeCode}). One company at a time: record an exit on that job first, then add the new one.`,
+          { employmentPublicId: elsewhere.publicId });
+      }
+      const primary = req.isPrimary === true || current.length === 0;
+      if (primary) await this.repo.clearPrimaryEmployment(tx, personId);   // also the exited job that was primary
+      const publicId = await this.repo.insertEmployment(tx, { ...this.employmentRow(ctx.tenantId, personId, req, refs), isPrimary: primary });
+      // the exit of their last job made the person inactive (no sign-in); the new job brings them back
+      if (current.length === 0) await this.core.updatePerson(tx, personId, { status: 'active' });
       return { publicId };
     });
   }
