@@ -19,6 +19,7 @@ ageless/
   backend/         NestJS API and the PostgreSQL database (migrations, seed, docs)   → backend/CLAUDE.md
   shared/          Zod request shapes and response types used by backend and web (@ageless/shared)
   web/             admin panel, React + Vite (not created yet)                     → web/CLAUDE.md
+  connector/       Windows service on the Tally server PC: posts approved Tally batches to Tally  → connector/CLAUDE.md
   mobile/          placeholder for the field app, built later
   .github/         CI workflow and CODEOWNERS
 ```
@@ -32,7 +33,7 @@ ageless/
 ## Commands (run from the repository root)
 - `pnpm install` — install everything
 - `pnpm --filter @ageless/backend dev` — start the API on http://localhost:3000/api
-- `pnpm typecheck`, `pnpm test`, `pnpm build` — every app
+- `pnpm typecheck`, `pnpm test`, `pnpm build` — every app (including `connector/`)
 - `pnpm boundaries` — check the backend's module boundary rules
 - `pnpm db:generate -- --name <what_changed>`, `pnpm db:migrate`, `pnpm db:reset`, `pnpm db:seed` — see `backend/CLAUDE.md`
   (in PowerShell quote the separator: `npm run db:generate '--' --name <what_changed>`)

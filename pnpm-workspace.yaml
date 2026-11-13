@@ -2,4 +2,5 @@ packages:
   - "backend"
   - "shared"
   - "web"
+  - "connector"
   # - "mobile"   (added when the field app is built)

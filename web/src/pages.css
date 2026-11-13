@@ -4,8 +4,9 @@
 /* sign in */
 .login-page{min-height:100vh;display:grid;grid-template-columns:minmax(360px,52%) 1fr;background:#f7f8fa}
 .login-hero{background:url("/hero-park.png") center / cover no-repeat;color:#e2e8f0;padding:44px 52px;display:flex;flex-direction:column;justify-content:space-between;gap:40px;position:relative;overflow:hidden}
-.login-logo{position:absolute;top:36px;left:40px;width:min(110px,32%);height:auto;object-fit:contain;z-index:1}
-.login-hero::after{content:'';position:absolute;right:-120px;bottom:-120px;width:340px;height:340px;border-radius:50%;border:56px solid #f5a10014}
+.login-hero::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,#07111f45 0%,transparent 55%),linear-gradient(0deg,#07111f38 0%,transparent 48%);pointer-events:none}
+.login-logo{position:absolute;top:36px;left:40px;width:min(110px,32%);height:auto;object-fit:contain;z-index:2}
+.login-hero::after{content:'';position:absolute;right:-120px;bottom:-120px;width:340px;height:340px;border-radius:50%;border:56px solid #f5a10014;z-index:1;pointer-events:none}
 .login-brand{display:flex;align-items:center;gap:12px}
 .login-mark{height:42px;width:42px;border-radius:12px;background:#fff;color:#0b1727;font:800 30px/1 Manrope;display:grid;place-items:center;letter-spacing:-3px;padding:0 4px 6px 0}
 .login-mark span{color:#f5a100}

@@ -7,6 +7,7 @@ import { AppModule } from '../../app.module';
 import { DB, Db } from '../../platform/db/db.module';
 import { createTestApp, DEMO, signIn } from '../../test/create-app';
 import { newStaff } from '../../test/staff';
+import { EXPENSE_LEDGER_KEYS, LEDGER_KEYS } from '@ageless/shared';
 import { AccountsFacade } from './accounts.facade';
 
 type Auth = Record<string, string>;
@@ -22,7 +23,7 @@ describe('Accounts API', () => {
   const facade = () => app.get(AccountsFacade);
   const post = (entryDate: string, lines: { ledgerKey: string; debitMinor: number; creditMinor: number }[], sourcePublicId = randomUUID(), sourceType: 'expense_approved' | 'expense_paid' = 'expense_approved') =>
     app.get<Db>(DB).transaction((tx) => facade().postEntry(tx, { tenantId: 1, legalEntityId: companyId, sourceType, sourcePublicId, entryDate, lines, createdBy: null }));
-  const lines = (amount: number, a = 'expense:fuel', b = 'staff_reimbursements_payable') => [
+  const lines = (amount: number, a = 'expense.fuel', b = 'payable.reimbursements') => [
     { ledgerKey: a, debitMinor: amount, creditMinor: 0 }, { ledgerKey: b, debitMinor: 0, creditMinor: amount }];
   const period = (year: number, month: number) => ({ company: 'ATPL', year, month });
   const balanceOf = async (ledgerKey: string) => Number((await db.query(
@@ -65,7 +66,7 @@ describe('Accounts API', () => {
         const e = await db.query(`INSERT INTO accounts.journal_entries (tenant_id, legal_entity_id, source_type, source_public_id, entry_date)
           VALUES (1, $1, 'expense_approved', gen_random_uuid(), '2033-05-10') RETURNING id`, [companyId]);
         await db.query(`INSERT INTO accounts.journal_lines (tenant_id, entry_id, legal_entity_id, line_no, ledger_key, debit_minor, credit_minor)
-          VALUES (1, $1, $2, 1, 'a', 500, 0), (1, $1, $2, 2, 'b', 0, 499)`, [e.rows[0].id, companyId]);
+          VALUES (1, $1, $2, 1, 'expense.fuel', 500, 0), (1, $1, $2, 2, 'payable.reimbursements', 0, 499)`, [e.rows[0].id, companyId]);
         await expect(db.query('COMMIT')).rejects.toThrow(/ACCOUNTS_UNBALANCED/);
       } finally { await db.query('ROLLBACK'); }
     });
@@ -80,7 +81,7 @@ describe('Accounts API', () => {
     });
 
     it('the service refuses unbalanced lines before writing anything', async () => {
-      await expect(post('2033-05-10', [{ ledgerKey: 'a', debitMinor: 5, creditMinor: 0 }, { ledgerKey: 'b', debitMinor: 0, creditMinor: 4 }]))
+      await expect(post('2033-05-10', [{ ledgerKey: 'expense.fuel', debitMinor: 5, creditMinor: 0 }, { ledgerKey: 'payable.reimbursements', debitMinor: 0, creditMinor: 4 }]))
         .rejects.toMatchObject({ code: 'ACCOUNTS_UNBALANCED' });
     });
 
@@ -104,15 +105,15 @@ describe('Accounts API', () => {
     });
 
     it('a reversal restores every balance, happens once, and is never itself reversed', async () => {
-      const before = [await balanceOf('expense:rev_test'), await balanceOf('payable_rev_test')];
-      const entry = await post('2033-05-14', lines(50_000, 'expense:rev_test', 'payable_rev_test'));
-      expect(await balanceOf('expense:rev_test')).toBe(before[0] + 50_000);
+      const before = [await balanceOf('expense.travel'), await balanceOf('payable.vendors')];
+      const entry = await post('2033-05-14', lines(50_000, 'expense.travel', 'payable.vendors'));
+      expect(await balanceOf('expense.travel')).toBe(before[0] + 50_000);
 
       expect((await http().post(`/api/accounts/journal-entries/${entry.publicId}/reverse`).set(hr).send({ reason: 'wrong amount' })).status).toBe(403);
       const rev = await http().post(`/api/accounts/journal-entries/${entry.publicId}/reverse`).set(ceo).send({ reason: 'wrong amount' });
       expect(rev.status).toBe(201);
       expect(rev.body).toMatchObject({ sourceType: 'reversal', reversesPublicId: entry.publicId, totalDebitMinor: 50_000, totalCreditMinor: 50_000 });
-      expect([await balanceOf('expense:rev_test'), await balanceOf('payable_rev_test')]).toEqual(before);
+      expect([await balanceOf('expense.travel'), await balanceOf('payable.vendors')]).toEqual(before);
 
       const again = await http().post(`/api/accounts/journal-entries/${entry.publicId}/reverse`).set(ceo).send({ reason: 'wrong amount' });
       expect([again.status, again.body.publicId]).toEqual([200, rev.body.publicId]);
@@ -124,8 +125,8 @@ describe('Accounts API', () => {
 
     it('entries are listed with filters and found by their source', async () => {
       const source = randomUUID();
-      const e = await post('2033-06-02', lines(33_300, 'expense:list_test'), source);
-      const list = await http().get('/api/accounts/journal-entries').query({ company: 'ATPL', from: '2033-06-01', to: '2033-06-30', ledgerKey: 'expense:list_test' }).set(hr);
+      const e = await post('2033-06-02', lines(33_300, 'expense.materials', 'payable.vendors'), source);
+      const list = await http().get('/api/accounts/journal-entries').query({ company: 'ATPL', from: '2033-06-01', to: '2033-06-30', ledgerKey: 'expense.materials' }).set(hr);
       expect(list.status).toBe(200);
       expect(list.body.total).toBe(1);
       expect(list.body.items[0]).toMatchObject({ publicId: e.publicId, company: 'ATPL', entryDate: '2033-06-02', totalDebitMinor: 33_300, totalCreditMinor: 33_300 });
@@ -191,37 +192,142 @@ describe('Accounts API', () => {
       const res = await http().get('/api/accounts/posting-rules').query({ company: 'ATPL' }).set(hr);
       expect(res.status).toBe(200);
       const byEvent = Object.fromEntries(res.body.map((r: { eventType: string }) => [r.eventType, r]));
-      expect(byEvent.expense_approved).toMatchObject({ debitLedgerKey: 'expense:<category>', creditLedgerKey: 'staff_reimbursements_payable', source: 'default' });
-      expect(byEvent.expense_paid).toMatchObject({ debitLedgerKey: 'staff_reimbursements_payable', creditLedgerKey: 'bank' });
-      expect(byEvent.payroll_approved).toMatchObject({ debitLedgerKey: 'salary_expense', creditLedgerKey: 'salary_payable', deductionLedgerKey: 'deduction:<label>' });
-      expect(byEvent.salary_paid).toMatchObject({ debitLedgerKey: 'salary_payable', creditLedgerKey: 'bank' });
+      expect(byEvent.expense_approved).toMatchObject({ debitLedgerKey: 'expense.<category>', creditLedgerKey: 'payable.reimbursements', source: 'default' });
+      expect(byEvent.expense_paid).toMatchObject({ debitLedgerKey: 'payable.reimbursements', creditLedgerKey: 'bank.operating' });
+      expect(byEvent.payroll_approved).toMatchObject({ debitLedgerKey: 'salary.expense', creditLedgerKey: 'payable.salary', deductionLedgerKey: null });
+      expect(byEvent.salary_paid).toMatchObject({ debitLedgerKey: 'payable.salary', creditLedgerKey: 'bank.salary' });
     });
 
     it('the checker adds a new version that takes effect on its date; the maker cannot; a resend stores nothing new', async () => {
-      const body = { company: 'ATPL', eventType: 'salary_paid', debitLedgerKey: 'salary_payable', creditLedgerKey: 'bank_hdfc', effectiveFrom: '2033-01-01' };
+      const body = { company: 'ATPL', eventType: 'salary_paid', debitLedgerKey: 'payable.salary', creditLedgerKey: 'bank.salary', effectiveFrom: '2033-01-01' };
       expect((await http().post('/api/accounts/posting-rules').set(hr).send(body)).status).toBe(403);
       const id = randomUUID();
       const created = await http().post('/api/accounts/posting-rules').set(ceo).send({ ...body, publicId: id });
       expect([created.status, created.body.version]).toEqual([201, 1]);
       const again = await http().post('/api/accounts/posting-rules').set(ceo).send({ ...body, publicId: id });
       expect([again.status, again.body.publicId]).toEqual([200, id]);
-      const next = await http().post('/api/accounts/posting-rules').set(ceo).send({ ...body, creditLedgerKey: 'bank_icici', effectiveFrom: '2034-01-01' });
+      const next = await http().post('/api/accounts/posting-rules').set(ceo).send({ ...body, creditLedgerKey: 'bank.operating', effectiveFrom: '2034-01-01' });
       expect(next.body.version).toBe(2);
-      await expect(db.query(`UPDATE accounts.posting_rules SET credit_ledger_key = 'x' WHERE public_id = $1`, [id])).rejects.toThrow(/ACCOUNTS_APPEND_ONLY/);
+      await expect(db.query(`UPDATE accounts.posting_rules SET credit_ledger_key = 'bank.operating' WHERE public_id = $1`, [id])).rejects.toThrow(/ACCOUNTS_APPEND_ONLY/);
     });
 
     it('a rule must debit and credit different ledgers', async () => {
-      const res = await http().post('/api/accounts/posting-rules').set(ceo).send({ company: 'ATPL', eventType: 'expense_paid', debitLedgerKey: 'bank', creditLedgerKey: 'bank', effectiveFrom: '2033-01-01' });
+      const res = await http().post('/api/accounts/posting-rules').set(ceo).send({ company: 'ATPL', eventType: 'expense_paid', debitLedgerKey: 'bank.operating', creditLedgerKey: 'bank.operating', effectiveFrom: '2033-01-01' });
       expect([res.status, res.body.code]).toEqual([400, 'ACCOUNTS_RULE_INVALID']);
+    });
+  });
+
+  describe('Tally company', () => {
+    const draft = { company: 'ATPL', tallyCompanyName: 'Ageless Technologies Pvt Ltd', booksFrom: '2026-04-01' };
+
+    it('starts unset; the maker drafts it, a different person approves; changing it withdraws the approval', async () => {
+      const before = await http().get('/api/accounts/tally-company').query({ company: 'ATPL' }).set(hr);
+      expect([before.status, before.body.state]).toEqual([200, 'unset']);
+      expect((await http().post('/api/accounts/tally-company').set(tech).send(draft)).status).toBe(403);
+      expect((await http().post('/api/accounts/tally-company').set(ceo).send(draft)).status).toBe(403);   // the checker does not draft
+
+      const id = randomUUID();
+      const made = await http().post('/api/accounts/tally-company').set(hr).send({ ...draft, publicId: id });
+      expect([made.status, made.body.state, made.body.publicId, made.body.booksFrom]).toEqual([201, 'draft', id, '2026-04-01']);
+      expect((await http().post('/api/accounts/tally-company').set(hr).send({ ...draft, publicId: id })).status).toBe(200);   // a resend
+      expect((await http().post(`/api/accounts/tally-company/${id}/approve`).set(hr).send()).status).toBe(403);               // the maker cannot approve
+      const approved = await http().post(`/api/accounts/tally-company/${id}/approve`).set(ceo).send();
+      expect(approved.body).toMatchObject({ state: 'approved', tallyCompanyName: 'Ageless Technologies Pvt Ltd', approvedBy: { displayName: 'Demo CEO' } });
+
+      const changed = await http().post('/api/accounts/tally-company').set(hr).send({ ...draft, booksFrom: '2026-04-02' });
+      expect(changed.body).toMatchObject({ publicId: id, state: 'draft', booksFrom: '2026-04-02', approvedBy: null });
+      await http().post('/api/accounts/tally-company').set(hr).send(draft).expect(200);
+      expect((await http().post(`/api/accounts/tally-company/${id}/approve`).set(ceo).send()).body.state).toBe('approved');
+    });
+
+    it('there is one per company, and the database refuses a second or an approval by the drafter', async () => {
+      const row = (await db.query(`SELECT public_id, drafted_by FROM accounts.tally_companies WHERE legal_entity_id = $1`, [companyId])).rows[0];
+      await expect(db.query(`INSERT INTO accounts.tally_companies (tenant_id, public_id, legal_entity_id, tally_company_name, books_from, drafted_by)
+        VALUES (1, gen_random_uuid(), $1, 'Another', '2026-04-01', $2)`, [companyId, row.drafted_by])).rejects.toThrow(/tally_companies_legal_entity_id_unique/);
+      await expect(db.query(`UPDATE accounts.tally_companies SET state = 'approved', approved_by = drafted_by, approved_at = now() WHERE public_id = $1`, [row.public_id]))
+        .rejects.toThrow(/tally_companies_not_own_approval/);
+    });
+
+    it('a ledger cannot be mapped for a company with no Tally company yet', async () => {
+      const res = await http().post('/api/accounts/ledger-map').set(hr).send({ company: 'AE', ledgerKey: 'bank.operating', tallyLedgerName: 'HDFC Current' });
+      expect([res.status, res.body.code]).toEqual([409, 'ACCOUNTS_TALLY_COMPANY_MISSING']);
+    });
+
+    it('the ledger map has no company name of its own any more', async () => {
+      const cols = await db.query(`SELECT 1 FROM information_schema.columns WHERE table_schema = 'accounts' AND table_name = 'tally_ledger_map' AND column_name = 'tally_company'`);
+      expect(cols.rowCount).toBe(0);
+    });
+  });
+
+  describe('ledger keys', () => {
+    it('the database accepts exactly the list in shared/', async () => {
+      const def = (await db.query(`SELECT pg_get_functiondef('accounts.is_ledger_key(text)'::regprocedure) AS d`)).rows[0].d as string;
+      const inDb = [...def.matchAll(/'([a-z_.]+)'/g)].map((m) => m[1]).sort();
+      expect(inDb).toEqual([...LEDGER_KEYS].sort());
+    });
+
+    it('an unknown key is refused: in a posting rule, a ledger mapping, a journal line, and by the database directly', async () => {
+      const rule = { company: 'ATPL', eventType: 'salary_paid', debitLedgerKey: 'payable.salary', creditLedgerKey: 'bank.salary', effectiveFrom: '2033-01-01' };
+      for (const bad of [{ creditLedgerKey: 'bank' }, { debitLedgerKey: 'salary_payable' }, { deductionLedgerKey: 'deduction:pt' }, { creditLedgerKey: 'expense:fuel' }]) {
+        const res = await http().post('/api/accounts/posting-rules').set(ceo).send({ ...rule, ...bad });
+        expect([res.status, res.body.code], JSON.stringify(bad)).toEqual([400, 'VALIDATION']);
+      }
+      const map = await http().post('/api/accounts/ledger-map').set(hr).send({ company: 'ATPL', ledgerKey: 'made_up', tallyLedgerName: 'Anything' });
+      expect([map.status, map.body.code]).toEqual([400, 'VALIDATION']);
+      expect(map.body.message).toMatch(/ledger key/i);
+
+      await expect(post('2033-08-01', lines(100, 'made_up', 'payable.vendors'))).rejects.toThrow();
+      await db.query('BEGIN');
+      try {
+        await expect(db.query(`INSERT INTO accounts.posting_rules (tenant_id, public_id, legal_entity_id, event_type, debit_ledger_key, credit_ledger_key, version, effective_from, created_by)
+          VALUES (1, gen_random_uuid(), $1, 'salary_paid', 'payable.salary', 'bank', 99, '2033-01-01', (SELECT id FROM core.persons ORDER BY id LIMIT 1))`, [companyId]))
+          .rejects.toThrow(/posting_rules_credit_key_check/);
+      } finally { await db.query('ROLLBACK'); }
+      await db.query('BEGIN');
+      try {
+        const e = await db.query(`INSERT INTO accounts.journal_entries (tenant_id, legal_entity_id, source_type, source_public_id, entry_date)
+          VALUES (1, $1, 'expense_approved', gen_random_uuid(), '2033-08-02') RETURNING id`, [companyId]);
+        await expect(db.query(`INSERT INTO accounts.journal_lines (tenant_id, entry_id, legal_entity_id, line_no, ledger_key, debit_minor, credit_minor)
+          VALUES (1, $1, $2, 1, 'made_up', 5, 0)`, [e.rows[0].id, companyId])).rejects.toThrow(/journal_lines_key_check/);
+      } finally { await db.query('ROLLBACK'); }
+    });
+
+    it('every list key is accepted, and payroll deductions can use the stat.* keys', async () => {
+      for (const k of LEDGER_KEYS) expect((await db.query(`SELECT accounts.is_ledger_key($1) AS ok`, [k])).rows[0].ok, k).toBe(true);
+      const res = await http().post('/api/accounts/posting-rules').set(ceo).send({ company: 'ATPL', eventType: 'payroll_approved', debitLedgerKey: 'salary.expense',
+        creditLedgerKey: 'payable.salary', deductionLedgerKey: 'stat.pt', effectiveFrom: '2035-01-01' });
+      expect([res.status, res.body.deductionLedgerKey]).toEqual([201, 'stat.pt']);
+    });
+
+    it('an expense category cannot be created without a ledger key, nor with one that is not an expense.* key', async () => {
+      const insert = (cols: string, vals: string) => db.query(`INSERT INTO hrms.expense_categories (tenant_id, code, name, ${cols}) VALUES (1, 'keytest', 'Key test', ${vals})`);
+      await db.query('BEGIN');
+      try {
+        await db.query('SAVEPOINT s');
+        await expect(insert('receipt_required', 'true')).rejects.toThrow(/ledger_key/);
+        await db.query('ROLLBACK TO s');
+        await expect(insert('ledger_key', `'bank.operating'`)).rejects.toThrow(/expense_categories_ledger_key_check/);
+        await db.query('ROLLBACK TO s');
+        await expect(insert('ledger_key', `'expense.made_up'`)).rejects.toThrow(/expense_categories_ledger_key_check/);
+        await db.query('ROLLBACK TO s');
+        await expect(insert('ledger_key', `'expense.travel'`)).resolves.toBeDefined();
+      } finally { await db.query('ROLLBACK'); }
+    });
+
+    it('every expense category has an expense.* key (the five seeded ones map to their own)', async () => {
+      const rows = (await db.query(`SELECT code, ledger_key FROM hrms.expense_categories WHERE tenant_id = 1`)).rows;
+      expect(rows.length).toBeGreaterThan(0);
+      for (const r of rows) expect(EXPENSE_LEDGER_KEYS as readonly string[], r.code).toContain(r.ledger_key);
+      for (const code of ['fuel', 'travel', 'food', 'materials', 'other']) expect(rows.find((r) => r.code === code)?.ledger_key).toBe(`expense.${code}`);
     });
   });
 
   describe('Tally ledger map', () => {
     it('keys the rules use start unmapped; the maker drafts, a different person approves', async () => {
       const before = await http().get('/api/accounts/ledger-map').query({ company: 'ATPL' }).set(hr);
-      expect(before.body.find((m: { ledgerKey: string }) => m.ledgerKey === 'staff_reimbursements_payable')).toMatchObject({ state: 'unmapped', publicId: null });
+      expect(before.body.find((m: { ledgerKey: string }) => m.ledgerKey === 'payable.reimbursements')).toMatchObject({ state: 'unmapped', publicId: null, tallyCompany: 'Ageless Technologies Pvt Ltd' });
 
-      const draft = { company: 'ATPL', ledgerKey: 'staff_reimbursements_payable', tallyCompany: 'Ageless Technologies', tallyLedgerName: 'Staff Reimbursements Payable' };
+      const draft = { company: 'ATPL', ledgerKey: 'payable.reimbursements', tallyLedgerName: 'Staff Reimbursements Payable' };
       expect((await http().post('/api/accounts/ledger-map').set(tech).send(draft)).status).toBe(403);
       expect((await http().post('/api/accounts/ledger-map').set(ceo).send(draft)).status).toBe(403);   // the checker does not draft
       const id = randomUUID();
@@ -239,7 +345,7 @@ describe('Accounts API', () => {
 
     it('someone holding both roles cannot approve their own draft; the database says so too', async () => {
       const id = randomUUID();
-      await http().post('/api/accounts/ledger-map').set(both).send({ publicId: id, company: 'ATPL', ledgerKey: 'bank', tallyCompany: 'Ageless Technologies', tallyLedgerName: 'HDFC Current' }).expect(201);
+      await http().post('/api/accounts/ledger-map').set(both).send({ publicId: id, company: 'ATPL', ledgerKey: 'bank.operating', tallyLedgerName: 'HDFC Current' }).expect(201);
       const own = await http().post(`/api/accounts/ledger-map/${id}/approve`).set(both).send();
       expect([own.status, own.body.code]).toEqual([403, 'ACCOUNTS_SELF_APPROVAL']);
       await expect(db.query(`UPDATE accounts.tally_ledger_map SET state = 'approved', approved_by = drafted_by, approved_at = now() WHERE public_id = $1`, [id]))

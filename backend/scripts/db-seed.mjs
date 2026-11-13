@@ -26,13 +26,13 @@ const people = [
   { n: 5, display: 'Demo Admin', full: 'Demo Admin Five', company: 'ATPL', code: 'ATPL-D002', phone: null, email: 'demo.admin@example.com', role: 'system_admin', scope: 'all', grantedBy: 4 },
   { n: 6, display: 'Demo CEO', full: 'Demo CEO Six', company: 'AE', code: 'AE-D004', phone: null, email: 'demo.ceo@example.com', role: 'ceo', scope: 'team' },
   // Designing (ATPL): Demo Head heads the department; Demo Manager reports to Demo Head. Both lead with the Manager role;
-  // a department head is whoever is set as head of the department (no separate role). (n 7 is skipped: …0107 is in use.)
-  { n: 8, display: 'Demo Head', full: 'Demo Head Eight', company: 'ATPL', code: 'ATPL-D004', phone: '+910000000008', email: 'demo.head@example.com', role: 'manager', scope: 'team',
+  // a department head is whoever is set as head of the department (no separate role).
+  { n: 8, display: 'Demo Head', full: 'Demo Head Eight', company: 'ATPL', code: 'ATPL-D006', phone: '+910000000008', email: 'demo.head@example.com', role: 'manager', scope: 'team',
     department: 'ATD', designation: 'Senior Designer', heads: 'ATD' },
   { n: 9, display: 'Demo Manager', full: 'Demo Manager Nine', company: 'ATPL', code: 'ATPL-D005', phone: '+910000000009', email: 'demo.manager@example.com', role: 'manager', scope: 'team',
     department: 'ATD', designation: 'Designer', manager: 8 },
   // An employee (own records) who also holds Accounts executive at scope all (see extraRoles). (n 10 is skipped: …0110 is in use.)
-  { n: 11, display: 'Demo Accountant', full: 'Demo Accountant Eleven', company: 'ATPL', code: 'ATPL-D006', phone: null, email: 'demo.accountant@example.com', role: 'employee', scope: 'own' },
+  { n: 7, display: 'Demo Accountant', full: 'Demo Accountant Seven', company: 'ATPL', code: 'ATPL-D004', phone: null, email: 'demo.accountant@example.com', role: 'employee', scope: 'own' },
 ];
 
 // Roles for tenant 1 and their permissions (the permission list itself comes from migration 0005).
@@ -80,7 +80,7 @@ const roles = [
 // (n 227, Manager for Demo Supervisor, is no longer given: older databases have it ended below.)
 const extraRoles = [{ n: 214, person: 4, role: 'payroll' }, { n: 216, person: 6, role: 'payroll_approver' }, { n: 226, person: 6, role: 'management' },
   // Accounts permissions only count at scope all, so the accountant holds Accounts executive as a second role.
-  { n: 228, person: 11, role: 'accounts_executive' }];
+  { n: 228, person: 7, role: 'accounts_executive' }];
 
 const client = new pg.Client({ connectionString: url.toString() });
 await client.connect();
@@ -121,8 +121,9 @@ try {
   for (const [code, name, receiptRequired] of [
     ['fuel', 'Fuel', true], ['travel', 'Travel', true], ['food', 'Food', false], ['materials', 'Materials', true], ['other', 'Other', true],
   ]) {
-    await client.query(`INSERT INTO hrms.expense_categories (tenant_id, code, name, receipt_required) VALUES (1, $1, $2, $3)
-      ON CONFLICT (tenant_id, code) DO NOTHING`, [code, name, receiptRequired]);
+    // ledger_key: the Accounts ledger the category posts to (fixed list LEDGER_KEYS in shared/src/accounts.ts)
+    await client.query(`INSERT INTO hrms.expense_categories (tenant_id, code, name, receipt_required, ledger_key) VALUES (1, $1, $2, $3, $4)
+      ON CONFLICT (tenant_id, code) DO NOTHING`, [code, name, receiptRequired, `expense.${code}`]);
   }
 
   for (const r of roles) {

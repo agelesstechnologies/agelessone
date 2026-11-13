@@ -1,6 +1,9 @@
 /** The zod instance these schemas are built with (tools that extend zod, like the OpenAPI builder, must use this one). */
 export { z } from 'zod';
 export * from './accounts';
+export * from './accounts-tally';
+export * from './accounts-connector';
+export * from './tally-response';
 export * from './errors';
 export * from './common';
 export * from './core/auth';

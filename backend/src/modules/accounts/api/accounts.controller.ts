@@ -1,8 +1,8 @@
 import { Body, Controller, Get, Inject, Param, Post, Query, Res } from '@nestjs/common';
 import { z } from 'zod';
 import {
-  AccountsAccess, DraftLedgerMapRequest, JournalEntriesQuery, JournalEntry, JournalEntryPage, JournalSourceType, LedgerMapEntry, LedgerMapQuery,
-  NewPostingRuleRequest, Period, PeriodRequest, PeriodsQuery, PostingRule, PostingRulesQuery, ReopenRequest, ReverseEntryRequest,
+  AccountsAccess, DraftLedgerMapRequest, DraftTallyCompanyRequest, JournalEntriesQuery, JournalEntry, JournalEntryPage, JournalSourceType, LedgerMapEntry, LedgerMapQuery,
+  NewPostingRuleRequest, Period, PeriodRequest, PeriodsQuery, PostingRule, PostingRulesQuery, ReopenRequest, ReverseEntryRequest, TallyCompany, TallyCompanyQuery,
 } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../platform/http/zod-validation.pipe';
 import { Ctx, Public, RequestContext, SignedIn } from '../../../platform/http/request-context';
@@ -99,6 +99,28 @@ export class AccountsController {
     const { entry, created } = await this.service.reverseEntry(ctx, publicId, body);
     if (!created) res.status(200);
     return entry;
+  }
+
+  // ---- Tally company ----
+
+  @Doc({ summary: 'The Tally company of a legal entity (state unset until a maker drafts it)', response: TallyCompany, description: WHO })
+  @SignedIn() @Get('tally-company')
+  tallyCompany(@Ctx() ctx: RequestContext, @Query(new ZodValidationPipe(TallyCompanyQuery)) q: TallyCompanyQuery) { return this.service.tallyCompany(ctx, q); }
+
+  @Doc({ summary: 'Draft (or change) the Tally company name and the first day of the books', response: TallyCompany, resend: true,
+    description: 'Accounts maker only. Changing an approved one makes it a draft again until the checker approves.' })
+  @SignedIn() @Post('tally-company')
+  async draftTallyCompany(@Ctx() ctx: RequestContext, @Body(new ZodValidationPipe(DraftTallyCompanyRequest)) body: DraftTallyCompanyRequest, @Res({ passthrough: true }) res: Created) {
+    const { entry, created } = await this.service.draftTallyCompany(ctx, body);
+    if (!created) res.status(200);
+    return entry;
+  }
+
+  @Doc({ summary: 'Approve a drafted Tally company (not your own draft: ACCOUNTS_SELF_APPROVAL)', response: TallyCompany, description: CHECKER })
+  @SignedIn() @Post('tally-company/:publicId/approve')
+  approveTallyCompany(@Ctx() ctx: RequestContext, @Param('publicId', PublicIdParam) publicId: string, @Res({ passthrough: true }) res: Created) {
+    res.status(200);
+    return this.service.approveTallyCompany(ctx, publicId);
   }
 
   // ---- Tally ledger map ----

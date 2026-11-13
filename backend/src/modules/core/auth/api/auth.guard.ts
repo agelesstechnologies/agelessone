@@ -32,6 +32,11 @@ export class AuthGuard implements CanActivate {
       throw new AppError('FORBIDDEN', 403, 'This action is not available (no access rule is set for it). Tell support.');
     }
     const anyOf = Array.isArray(required) ? required : [required];
+    // A machine credential (the Tally connector) may use only routes that name its own permission: never @SignedIn() routes,
+    // never a route it shares only through a person's permission.
+    if (req.context.machine && !anyOf.includes(req.context.machine.permission)) {
+      throw new AppError('FORBIDDEN', 403, 'A machine credential cannot use this route.');
+    }
     const permissions = req.context.permissions;
     if (required !== ANY_SIGNED_IN && !anyOf.some((p) => permissions[p])) {
       throw new AppError('FORBIDDEN', 403, `You do not have permission to do this. Ask HR or an admin for access (${anyOf.join(' or ')}).`, { needs: anyOf });

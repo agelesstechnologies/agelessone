@@ -16,6 +16,11 @@ export interface RequestContext {
   permissions: Record<string, Scope>;
   /** someone else chose the password: only routes marked @DuringPasswordSetup() may be used until the person sets their own */
   mustChangePassword?: boolean;
+  /**
+   * Set when the caller is a machine credential (the Tally connector), not a person: personId is 0 and there is no person or
+   * login. The guard lets it use only routes that name its one permission, never @SignedIn() routes.
+   */
+  machine?: { credentialId: number; publicId: string; name: string; permission: string };
 }
 
 export const IS_PUBLIC = 'access:public';

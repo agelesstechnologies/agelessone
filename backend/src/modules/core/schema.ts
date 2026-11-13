@@ -75,6 +75,29 @@ export const users = core.table('users', {
   check('users_has_login', sql`login_phone IS NOT NULL OR login_email IS NOT NULL`),
 ]);
 
+/**
+ * A program (not a person) that may call a few routes: the Tally connector on the Tally server PC. Bound to one tenant and
+ * to one permission. client_id is public; only a bcrypt hash of the secret is stored, and the secret is shown once when
+ * the credential is made. Revoked, never deleted.
+ */
+export const machineCredentials = core.table('machine_credentials', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
+  publicId: uuid('public_id').notNull().defaultRandom().unique(),
+  name: text('name').notNull(),
+  clientId: text('client_id').notNull().unique(),
+  secretHash: text('secret_hash').notNull(),
+  permission: text('permission').notNull(),
+  isActive: boolean('is_active').notNull().default(true),
+  createdBy: bigint('created_by', { mode: 'number' }).notNull().references(() => persons.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+}, (t) => [
+  check('machine_credentials_permission_check', sql`permission IN ('accounts.tally.connector')`),
+  check('machine_credentials_revoked_check', sql`is_active = (revoked_at IS NULL)`),
+]);
+
 export const roles = core.table('roles', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),

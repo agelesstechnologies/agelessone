@@ -8,6 +8,7 @@ import { api, errText } from '../api';
 import { useAuth } from '../auth';
 import { rupees, useLoad, words } from '../hooks';
 import { Badge, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs, type Tone } from '../ui';
+import TallySync from './AccountsTally';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const COMPANIES = [{ code: 'ATPL', name: 'Ageless Technologies' }, { code: 'AE', name: 'Ageless Entertainments' }];
@@ -16,14 +17,10 @@ const MAP_TONE: Record<string, Tone> = { unmapped: 'red', draft: 'amber', approv
 const dateIn = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
 
 type Tab = 'periods' | 'ledger' | 'journal' | 'requests' | 'batches' | 'bank' | 'tally' | 'reports';
-/** Screens whose backend is not built yet. */
-const SOON: { key: Tab; label: string }[] = [
-  { key: 'requests', label: 'Payment requests' }, { key: 'batches', label: 'Payment batches' }, { key: 'bank', label: 'Bank' },
-  { key: 'tally', label: 'Tally sync' }, { key: 'reports', label: 'Reports' },
-];
 const TABS: { key: Tab; label: string }[] = [
-  ...SOON.slice(0, 3), ...SOON.slice(3, 4), { key: 'ledger', label: 'Ledger mapping' }, { key: 'journal', label: 'Journal entries' },
-  { key: 'periods', label: 'Periods' }, SOON[4]!,
+  { key: 'requests', label: 'Payment requests' }, { key: 'batches', label: 'Payment batches' }, { key: 'bank', label: 'Bank' },
+  { key: 'tally', label: 'Tally sync' }, { key: 'ledger', label: 'Ledger mapping' }, { key: 'journal', label: 'Journal entries' },
+  { key: 'periods', label: 'Periods' }, { key: 'reports', label: 'Reports' },
 ];
 
 export default function Accounts() {
@@ -47,6 +44,7 @@ export default function Accounts() {
           tab === 'periods' ? <Periods company={company} access={a} /> :
           tab === 'ledger' ? <LedgerMap company={company} access={a} /> :
           tab === 'journal' ? <Journal company={company} access={a} /> :
+          tab === 'tally' ? <TallySync company={company} access={a} /> :
           <Empty title="Coming soon" text={`${TABS.find((t) => t.key === tab)?.label} will appear here when its backend is ready.`} />}
       </div>
     </Panel>
@@ -161,7 +159,7 @@ function LedgerForm({ company, entry, onClose, onSaved }: { company: string; ent
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    const parsed = DraftLedgerMapRequest.safeParse({ company, ledgerKey: entry.ledgerKey, tallyCompany: String(f.get('tallyCompany')), tallyLedgerName: String(f.get('tallyLedgerName')) });
+    const parsed = DraftLedgerMapRequest.safeParse({ company, ledgerKey: entry.ledgerKey, tallyLedgerName: String(f.get('tallyLedgerName')) });
     if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Check the form'); return; }
     setSaving(true); setError('');
     try { await api('/accounts/ledger-map', { method: 'POST', json: parsed.data }); onSaved(); }
@@ -171,8 +169,7 @@ function LedgerForm({ company, entry, onClose, onSaved }: { company: string; ent
     <form onSubmit={submit}>
       {error && <Notice>{error}</Notice>}
       <div className="form-grid one">
-        <label>Company name in Tally<input id="map-company" name="tallyCompany" required maxLength={120} defaultValue={entry.tallyCompany ?? ''} autoFocus /></label>
-        <label>Ledger name in Tally<input id="map-ledger" name="tallyLedgerName" required maxLength={120} defaultValue={entry.tallyLedgerName ?? ''} /></label>
+        <label>Ledger name in Tally{entry.tallyCompany && <small className="sub">in the Tally company {entry.tallyCompany}</small>}<input id="map-ledger" name="tallyLedgerName" required maxLength={120} defaultValue={entry.tallyLedgerName ?? ''} autoFocus /></label>
       </div>
       <div className="modal-foot"><button type="button" className="outline-btn" onClick={onClose}>Cancel</button>
         <button className="primary-btn" disabled={saving}>{saving ? 'Saving…' : 'Save draft'}</button></div>
@@ -209,7 +206,7 @@ function Journal({ company, access }: { company: string; access: AccountsAccess 
         <select id="je-source" className="input" value={sourceType} onChange={(e) => reset(setSourceType)(e.target.value)}>
           <option value="">All</option>{SOURCES.map((s) => <option key={s} value={s}>{words(s)}</option>)}</select></label>
       <label className="inline-field">Ledger
-        <input id="je-ledger" className="input" placeholder="e.g. bank" value={ledgerKey} onChange={(e) => reset(setLedgerKey)(e.target.value)} /></label>
+        <input id="je-ledger" className="input" placeholder="e.g. bank.operating" value={ledgerKey} onChange={(e) => reset(setLedgerKey)(e.target.value)} /></label>
     </div>
     {q.error && <Notice>{q.error}</Notice>}
     {q.loading && !q.data ? <Loading /> : !q.data?.items.length ? <Empty title="No journal entries" text="Entries appear when expenses and payroll are approved and paid." /> : <>

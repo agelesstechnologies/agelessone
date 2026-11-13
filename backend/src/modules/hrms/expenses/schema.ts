@@ -12,7 +12,12 @@ export const expenseCategories = hrms.table('expense_categories', {
   code: text('code').notNull(),
   name: text('name').notNull(),
   receiptRequired: boolean('receipt_required').notNull().default(true),
-}, (t) => [unique('expense_categories_tenant_code_unique').on(t.tenantId, t.code)]);
+  /** The ledger this category posts to in Accounts: one of the expense.* keys of LEDGER_KEYS (@ageless/shared). */
+  ledgerKey: text('ledger_key').notNull(),
+}, (t) => [
+  unique('expense_categories_tenant_code_unique').on(t.tenantId, t.code),
+  check('expense_categories_ledger_key_check', sql`ledger_key LIKE 'expense.%' AND accounts.is_ledger_key(ledger_key)`),
+]);
 
 /** submitted → approved → paid, or submitted → rejected. A paid claim never changes (trigger in migration 0006). */
 export const expenseClaims = hrms.table('expense_claims', {

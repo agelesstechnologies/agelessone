@@ -40,6 +40,7 @@ security is in [../security.md](../security.md); the database in [../database/sc
 | Method | Path | Who may call | Summary |
 | --- | --- | --- | --- |
 | `POST` | `/api/auth/login` | public (no sign-in) | Sign in with a login phone or email and password |
+| `POST` | `/api/auth/machine-token` | public | A machine credential (the Tally connector) signs in with its client id and secret; a 15-minute token that opens only that credential's own routes |
 | `GET` | `/api/auth/me` | any signed-in user | Who am I: person, login, roles and permissions (widest scope per permission) |
 | `POST` | `/api/auth/password` | any signed-in user | Change my password; older tokens stop working |
 | `POST` | `/api/core/role-assignments` | `core.users.manage` | Give a person a role with a scope (own / team / all); never to yourself |

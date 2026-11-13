@@ -1,15 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  AccountsAccess, DraftLedgerMapRequest, JournalEntriesQuery, JournalEntry, JournalEntryPage, LedgerMapEntry, LedgerMapQuery, NewPostingRuleRequest,
-  Period, PeriodRequest, PeriodsQuery, PostingEvent, PostingRule, PostingRulesQuery, ReopenRequest, ReverseEntryRequest,
+  AccountsAccess, DraftLedgerMapRequest, DraftTallyCompanyRequest, JournalEntriesQuery, JournalEntry, JournalEntryPage, LedgerMapEntry, LedgerMapQuery, NewPostingRuleRequest,
+  Period, PeriodRequest, PeriodsQuery, PostingEvent, PostingRule, PostingRulesQuery, ReopenRequest, ReverseEntryRequest, TallyCompany, TallyCompanyQuery,
 } from '@ageless/shared';
 import { DB, Db, Tx, databaseMessage, violatedConstraint } from '../../../platform/db/db.module';
 import { AppError } from '../../../platform/http/app-error';
 import { RequestContext, isManagement } from '../../../platform/http/request-context';
 import { todayIst } from '../../../platform/time';
 import { CoreFacade } from '../../core/core.facade';
-import { AccountsRepository, EntryRow, NewEntry } from '../infrastructure/accounts.repository';
+import { AccountsRepository, EntryRow, NewEntry, TallyCompanyRow } from '../infrastructure/accounts.repository';
 import { DEFAULT_RULES, Line, ruleInForce, isFixedKey, reverseLines, unbalanced } from '../domain/ledger';
 import { ACCOUNTS } from '../domain/permissions';
 
@@ -54,7 +54,8 @@ export class AccountsService {
     return this.access(ctx, companyCode ? (await this.company(ctx, companyCode)).id : null);
   }
 
-  private async require(ctx: RequestContext, companyId: number | null, who: keyof AccountsAccess | 'makerOrChecker'): Promise<AccountsAccess> {
+  /** Refuses the caller (403) unless they hold the Accounts role `who` for the company. Also used by TallySyncService. */
+  async require(ctx: RequestContext, companyId: number | null, who: keyof AccountsAccess | 'makerOrChecker'): Promise<AccountsAccess> {
     const a = await this.access(ctx, companyId);
     const ok = who === 'makerOrChecker' ? a.maker || a.checker : a[who];
     if (!ok) {
@@ -64,7 +65,7 @@ export class AccountsService {
     return a;
   }
 
-  private async company(ctx: RequestContext, code: string) {
+  async company(ctx: RequestContext, code: string) {
     const c = await this.repo.findCompany(ctx.tenantId, code);
     if (!c) throw new AppError('NOT_FOUND', 404, `No company ${code}`);
     return c;
@@ -282,6 +283,60 @@ export class AccountsService {
     return { entry: await this.oneEntry(ctx.tenantId, { publicId: result.publicId }), created: result.created };
   }
 
+  // ---- Tally company ----
+
+  async tallyCompany(ctx: RequestContext, q: TallyCompanyQuery): Promise<TallyCompany> {
+    const c = await this.company(ctx, q.company);
+    await this.require(ctx, c.id, 'view');
+    return this.oneTallyCompany(c);
+  }
+
+  private async oneTallyCompany(c: { id: number; code: string }, conn: Db | Tx = this.db): Promise<TallyCompany> {
+    return toTallyCompany(c.code, await this.repo.tallyCompanyOf(conn, c.id));
+  }
+
+  /** The maker drafts the company's Tally company (name, first day of the books). Changing an approved one withdraws the approval. */
+  async draftTallyCompany(ctx: RequestContext, req: DraftTallyCompanyRequest): Promise<{ entry: TallyCompany; created: boolean }> {
+    const c = await this.company(ctx, req.company);
+    await this.require(ctx, c.id, 'maker');
+    if (req.publicId) {
+      const found = await this.repo.tallyCompanyTenantOf(req.publicId);
+      if (found && found.tenantId !== ctx.tenantId) throw new AppError('ACCOUNTS_DUPLICATE_ID', 409, 'This publicId is already used');
+      if (found) return { entry: await this.oneTallyCompany(c), created: false };
+    }
+    const created = await this.atomic(async (tx) => {
+      const existing = await this.repo.lockTallyCompany(tx, ctx.tenantId, { legalEntityId: c.id });
+      if (!existing) {
+        await this.repo.insertTallyCompany(tx, { tenantId: ctx.tenantId, publicId: req.publicId ?? randomUUID(), legalEntityId: c.id,
+          tallyCompanyName: req.tallyCompanyName, booksFrom: req.booksFrom, draftedBy: ctx.personId });
+        return true;
+      }
+      if (existing.tallyCompanyName === req.tallyCompanyName && existing.booksFrom === req.booksFrom) return false;
+      await this.repo.updateTallyCompany(tx, existing.id, { tallyCompanyName: req.tallyCompanyName, booksFrom: req.booksFrom, state: 'draft',
+        draftedBy: ctx.personId, draftedAt: new Date(), approvedBy: null, approvedAt: null });
+      return false;
+    });
+    return { entry: await this.oneTallyCompany(c), created };
+  }
+
+  /** The checker approves a draft someone else made. Approving an approved one changes nothing. */
+  async approveTallyCompany(ctx: RequestContext, publicId: string): Promise<TallyCompany> {
+    const found = await this.repo.tallyCompanyTenantOf(publicId);
+    if (!found || found.tenantId !== ctx.tenantId) throw new AppError('NOT_FOUND', 404, 'No such Tally company');
+    await this.require(ctx, found.legalEntityId, 'checker');
+    await this.atomic(async (tx) => {
+      const t = await this.repo.lockTallyCompany(tx, ctx.tenantId, { publicId });
+      if (!t) throw new AppError('NOT_FOUND', 404, 'No such Tally company');
+      if (t.state === 'approved') return;
+      if (t.draftedBy === ctx.personId) throw new AppError('ACCOUNTS_SELF_APPROVAL', 403, 'Someone else must approve what you drafted');
+      await this.repo.updateTallyCompany(tx, t.id, { state: 'approved', approvedBy: ctx.personId, approvedAt: new Date() });
+      await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'accounts.tally_company_approved', entity: 'tally_company',
+        entityPublicId: publicId, legalEntityId: t.legalEntityId, summary: `Approved the Tally company "${t.tallyCompanyName}", books from ${t.booksFrom}` });
+    });
+    const code = (await this.repo.companyCodeOf(ctx.tenantId, found.legalEntityId))!;
+    return this.oneTallyCompany({ id: found.legalEntityId, code });
+  }
+
   // ---- Tally ledger map ----
 
   /** Stored mappings, plus the ledger keys that are used (by a posting rule or an entry) and have none yet. */
@@ -289,6 +344,7 @@ export class AccountsService {
     const c = await this.company(ctx, q.company);
     await this.require(ctx, c.id, 'view');
     const stored = await this.repo.ledgerMap(c.id);
+    const tallyCompany = (await this.repo.tallyCompanyOf(this.db, c.id))?.tallyCompanyName ?? null;
     const out: LedgerMapEntry[] = stored.map((m) => ({
       publicId: m.publicId, company: c.code, ledgerKey: m.ledgerKey, tallyCompany: m.tallyCompany, tallyLedgerName: m.tallyLedgerName, state: m.state as 'draft' | 'approved',
       draftedBy: person(m.makerPublicId, m.makerName), approvedBy: person(m.checkerPublicId, m.checkerName), approvedAt: m.approvedAt?.toISOString() ?? null,
@@ -298,7 +354,7 @@ export class AccountsService {
     for (const r of rules) for (const k of [r.debitLedgerKey, r.creditLedgerKey]) if (isFixedKey(k)) wanted.add(k);
     const have = new Set(out.map((m) => m.ledgerKey));
     const missing: LedgerMapEntry[] = [...wanted].filter((k) => !have.has(k)).sort().map((ledgerKey) => ({
-      publicId: null, company: c.code, ledgerKey, tallyCompany: null, tallyLedgerName: null, state: 'unmapped', draftedBy: null, approvedBy: null, approvedAt: null }));
+      publicId: null, company: c.code, ledgerKey, tallyCompany, tallyLedgerName: null, state: 'unmapped', draftedBy: null, approvedBy: null, approvedAt: null }));
     return [...missing, ...out];
   }
 
@@ -311,15 +367,18 @@ export class AccountsService {
       if (found && found.tenantId !== ctx.tenantId) throw new AppError('ACCOUNTS_DUPLICATE_ID', 409, 'This publicId is already used');
       if (found) return { entry: await this.mapEntry(ctx, c.code, req.ledgerKey), created: false };
     }
+    if (!(await this.repo.tallyCompanyOf(this.db, c.id))) {
+      throw new AppError('ACCOUNTS_TALLY_COMPANY_MISSING', 409, `Set the Tally company of ${c.code} first (POST /api/accounts/tally-company)`);
+    }
     const created = await this.atomic(async (tx) => {
       const existing = await this.repo.lockMapByKey(tx, c.id, req.ledgerKey);
       if (!existing) {
         await this.repo.insertMap(tx, { tenantId: ctx.tenantId, publicId: req.publicId ?? randomUUID(), legalEntityId: c.id, ledgerKey: req.ledgerKey,
-          tallyCompany: req.tallyCompany, tallyLedgerName: req.tallyLedgerName, draftedBy: ctx.personId });
+          tallyLedgerName: req.tallyLedgerName, draftedBy: ctx.personId });
         return true;
       }
-      if (existing.tallyCompany === req.tallyCompany && existing.tallyLedgerName === req.tallyLedgerName) return false;
-      await this.repo.updateMap(tx, existing.id, { tallyCompany: req.tallyCompany, tallyLedgerName: req.tallyLedgerName, state: 'draft',
+      if (existing.tallyLedgerName === req.tallyLedgerName) return false;
+      await this.repo.updateMap(tx, existing.id, { tallyLedgerName: req.tallyLedgerName, state: 'draft',
         draftedBy: ctx.personId, draftedAt: new Date(), approvedBy: null, approvedAt: null });
       return false;
     });
@@ -351,6 +410,13 @@ export class AccountsService {
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const monthLabel = (year: number, month: number) => `${MONTHS[month - 1]} ${year}`;
+
+function toTallyCompany(company: string, t: TallyCompanyRow | undefined): TallyCompany {
+  if (!t) return { publicId: null, company, tallyCompanyName: null, booksFrom: null, state: 'unset', draftedBy: null, approvedBy: null, approvedAt: null, connectorCheckedAt: null, connectorMissing: null };
+  return { publicId: t.publicId, company, tallyCompanyName: t.tallyCompanyName, booksFrom: t.booksFrom, state: t.state as 'draft' | 'approved',
+    draftedBy: person(t.makerPublicId, t.makerName), approvedBy: person(t.checkerPublicId, t.checkerName), approvedAt: t.approvedAt?.toISOString() ?? null,
+    connectorCheckedAt: t.connectorCheckedAt?.toISOString() ?? null, connectorMissing: t.connectorMissing ?? null };
+}
 
 function toEntry(r: EntryRow, lines: Line[]): JournalEntry {
   return {

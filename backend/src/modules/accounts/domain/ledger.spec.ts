@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { balances, DEFAULT_RULES, fillKey, reverseLines, ruleInForce, StoredRule, unbalanced } from './ledger';
+import { DEDUCTION_LEDGER_KEYS, LEDGER_KEYS, deductionLedgerKey } from '@ageless/shared';
+import { balances, DEFAULT_RULES, isFixedKey, reverseLines, ruleInForce, StoredRule, unbalanced } from './ledger';
 
 const L = (ledgerKey: string, debitMinor: number, creditMinor: number) => ({ ledgerKey, debitMinor, creditMinor });
 
@@ -13,7 +14,7 @@ describe('journal lines', () => {
     expect(unbalanced([L('a', 5.5, 0), L('b', 0, 5.5)])).toMatch(/whole paise/);
   });
   it('a reversal restores every balance to zero', () => {
-    const lines = [L('expense:fuel', 1200, 0), L('payable', 0, 1200)];
+    const lines = [L('expense.fuel', 1200, 0), L('payable.reimbursements', 0, 1200)];
     expect([...balances([...lines, ...reverseLines(lines)]).values()]).toEqual([0, 0]);
     expect(unbalanced(reverseLines(lines))).toBeNull();
   });
@@ -31,5 +32,20 @@ describe('posting rules', () => {
     expect(ruleInForce(rules, 1, 'expense_paid', '2026-12-01').rule.debitLedgerKey).toBe('c2');
     expect(ruleInForce(rules, 2, 'expense_paid', '2026-11-07').rule.debitLedgerKey).toBe('g1');
   });
-  it('fills the variable part of a key', () => expect(fillKey('expense:<category>', 'category', ' Fuel ')).toBe('expense:fuel'));
+  it('every key a built-in rule names is on the fixed list (the expense.<category> placeholder is filled from the category)', () => {
+    for (const r of Object.values(DEFAULT_RULES)) {
+      for (const k of [r.debitLedgerKey, r.creditLedgerKey]) expect(isFixedKey(k) ? (LEDGER_KEYS as readonly string[]).includes(k) : k === 'expense.<category>', k).toBe(true);
+      expect(r.deductionLedgerKey).toBeNull();   // deductions use the stat.* key of their label, not a label
+    }
+  });
+});
+
+describe('payroll deductions', () => {
+  it('post to stat.* (or asset) keys by label, whatever the case; an unknown label has no key', () => {
+    expect(deductionLedgerKey('PT')).toBe('stat.pt');
+    expect(deductionLedgerKey(' Tds ')).toBe('stat.tds');
+    expect(deductionLedgerKey('Advance')).toBe('asset.staff_advance');
+    expect(deductionLedgerKey('Canteen')).toBeNull();
+    for (const k of Object.values(DEDUCTION_LEDGER_KEYS)) expect((LEDGER_KEYS as readonly string[]).includes(k)).toBe(true);
+  });
 });

@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { aliasedTable, and, asc, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { Conn, DB, Db, Tx } from '../../../platform/db/db.module';
 import { legalEntities, persons } from '../../core/schema';
-import { journalEntries, journalLines, periods, postingRules, tallyLedgerMap } from '../schema';
+import { journalEntries, journalLines, periods, postingRules, tallyCompanies, tallyLedgerMap } from '../schema';
 import type { Line, StoredRule } from '../domain/ledger';
 
 const closer = aliasedTable(persons, 'closer');
@@ -19,6 +19,11 @@ export interface EntryRow {
 }
 export interface LedgerMapRow {
   publicId: string; ledgerKey: string; tallyCompany: string; tallyLedgerName: string; state: string; approvedAt: Date | null;
+  makerPublicId: string; makerName: string; checkerPublicId: string | null; checkerName: string | null;
+}
+export interface TallyCompanyRow {
+  id: number; publicId: string; legalEntityId: number; tallyCompanyName: string; booksFrom: string; state: string; approvedAt: Date | null; draftedBy: number;
+  connectorCheckedAt: Date | null; connectorMissing: { ledgers: string[]; costCentres: string[] } | null;
   makerPublicId: string; makerName: string; checkerPublicId: string | null; checkerName: string | null;
 }
 export interface NewEntry {
@@ -171,14 +176,50 @@ export class AccountsRepository {
     return rows.map((r) => r.k);
   }
 
+  // ---- Tally company ----
+
+  private tallyCompanySelect(conn: Conn) {
+    return conn.select({
+      id: tallyCompanies.id, publicId: tallyCompanies.publicId, legalEntityId: tallyCompanies.legalEntityId, tallyCompanyName: tallyCompanies.tallyCompanyName,
+      booksFrom: tallyCompanies.booksFrom, state: tallyCompanies.state, approvedAt: tallyCompanies.approvedAt, draftedBy: tallyCompanies.draftedBy,
+      connectorCheckedAt: tallyCompanies.connectorCheckedAt, connectorMissing: tallyCompanies.connectorMissing,
+      makerPublicId: maker.publicId, makerName: maker.displayName, checkerPublicId: checker.publicId, checkerName: checker.displayName,
+    }).from(tallyCompanies).innerJoin(maker, eq(maker.id, tallyCompanies.draftedBy)).leftJoin(checker, eq(checker.id, tallyCompanies.approvedBy));
+  }
+
+  async tallyCompanyOf(conn: Conn, legalEntityId: number): Promise<TallyCompanyRow | undefined> {
+    const [row] = await this.tallyCompanySelect(conn).where(eq(tallyCompanies.legalEntityId, legalEntityId));
+    return row as TallyCompanyRow | undefined;
+  }
+
+  async tallyCompanyTenantOf(publicId: string) {
+    const [row] = await this.db.select({ tenantId: tallyCompanies.tenantId, legalEntityId: tallyCompanies.legalEntityId }).from(tallyCompanies).where(eq(tallyCompanies.publicId, publicId));
+    return row;
+  }
+
+  async lockTallyCompany(tx: Tx, tenantId: number, where: { publicId?: string; legalEntityId?: number }) {
+    const [row] = await tx.select().from(tallyCompanies).where(and(eq(tallyCompanies.tenantId, tenantId),
+      where.publicId ? eq(tallyCompanies.publicId, where.publicId) : eq(tallyCompanies.legalEntityId, where.legalEntityId!))).for('update');
+    return row;
+  }
+
+  async insertTallyCompany(tx: Tx, v: typeof tallyCompanies.$inferInsert) {
+    await tx.insert(tallyCompanies).values(v);
+  }
+
+  async updateTallyCompany(tx: Tx, id: number, patch: Partial<typeof tallyCompanies.$inferInsert>) {
+    await tx.update(tallyCompanies).set(patch).where(eq(tallyCompanies.id, id));
+  }
+
   // ---- Tally ledger map ----
 
   ledgerMap(legalEntityId: number): Promise<LedgerMapRow[]> {
     return this.db.select({
-      publicId: tallyLedgerMap.publicId, ledgerKey: tallyLedgerMap.ledgerKey, tallyCompany: tallyLedgerMap.tallyCompany,
+      publicId: tallyLedgerMap.publicId, ledgerKey: tallyLedgerMap.ledgerKey, tallyCompany: tallyCompanies.tallyCompanyName,
       tallyLedgerName: tallyLedgerMap.tallyLedgerName, state: tallyLedgerMap.state, approvedAt: tallyLedgerMap.approvedAt,
       makerPublicId: maker.publicId, makerName: maker.displayName, checkerPublicId: checker.publicId, checkerName: checker.displayName,
     }).from(tallyLedgerMap)
+      .innerJoin(tallyCompanies, eq(tallyCompanies.legalEntityId, tallyLedgerMap.legalEntityId))
       .innerJoin(maker, eq(maker.id, tallyLedgerMap.draftedBy)).leftJoin(checker, eq(checker.id, tallyLedgerMap.approvedBy))
       .where(eq(tallyLedgerMap.legalEntityId, legalEntityId)).orderBy(asc(tallyLedgerMap.ledgerKey)) as unknown as Promise<LedgerMapRow[]>;
   }

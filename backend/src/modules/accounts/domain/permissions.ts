@@ -6,4 +6,6 @@ export const ACCOUNTS = {
   check: 'accounts.check',
   /** read the Accounts screens */
   view: 'accounts.view',
+  /** the Tally connector (a machine credential, never a person): outbox, results, ledger name check */
+  tallyConnector: 'accounts.tally.connector',
 } as const;

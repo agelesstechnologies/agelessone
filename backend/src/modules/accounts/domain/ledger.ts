@@ -9,21 +9,19 @@ export interface Rule {
 
 /**
  * Built-in rules, used when no version is stored. // CA TO CONFIRM: every ledger below is a placeholder until the
- * accounts team and the CA say which entries are debited and credited. <category> and <label> are filled at posting.
+ * accounts team and the CA say which entries are debited and credited. Keys come from the fixed list LEDGER_KEYS.
+ * 'expense.<category>' is not a key: the claim's expense category says which expense.* key it posts to
+ * (hrms.expense_categories.ledger_key). Each payroll deduction posts to the stat.* key of its label (deductionLedgerKey
+ * in @ageless/shared), never to the label itself.
  */
 export const DEFAULT_RULES: Record<PostingEvent, Rule> = {
-  expense_approved: { eventType: 'expense_approved', debitLedgerKey: 'expense:<category>', creditLedgerKey: 'staff_reimbursements_payable', deductionLedgerKey: null },
-  expense_paid: { eventType: 'expense_paid', debitLedgerKey: 'staff_reimbursements_payable', creditLedgerKey: 'bank', deductionLedgerKey: null },
-  payroll_approved: { eventType: 'payroll_approved', debitLedgerKey: 'salary_expense', creditLedgerKey: 'salary_payable', deductionLedgerKey: 'deduction:<label>' },
-  salary_paid: { eventType: 'salary_paid', debitLedgerKey: 'salary_payable', creditLedgerKey: 'bank', deductionLedgerKey: null },
+  expense_approved: { eventType: 'expense_approved', debitLedgerKey: 'expense.<category>', creditLedgerKey: 'payable.reimbursements', deductionLedgerKey: null },
+  expense_paid: { eventType: 'expense_paid', debitLedgerKey: 'payable.reimbursements', creditLedgerKey: 'bank.operating', deductionLedgerKey: null },
+  payroll_approved: { eventType: 'payroll_approved', debitLedgerKey: 'salary.expense', creditLedgerKey: 'payable.salary', deductionLedgerKey: null },
+  salary_paid: { eventType: 'salary_paid', debitLedgerKey: 'payable.salary', creditLedgerKey: 'bank.salary', deductionLedgerKey: null },
 };
 
-/** Fills the variable part of a ledger key: ("expense:<category>", "category", "fuel") → "expense:fuel". */
-export function fillKey(template: string, name: string, value: string): string {
-  return template.replace(`<${name}>`, value.trim().toLowerCase().replace(/[^a-z0-9_ -]+/g, '_'));
-}
-
-/** Ledger keys that need no variable part (these can be mapped to Tally before any entry exists). */
+/** A real ledger key, not the 'expense.<category>' placeholder of a default rule (only real keys are mapped to Tally). */
 export const isFixedKey = (key: string) => !key.includes('<');
 
 export interface StoredRule extends Rule { companyId: number | null; version: number; effectiveFrom: string }

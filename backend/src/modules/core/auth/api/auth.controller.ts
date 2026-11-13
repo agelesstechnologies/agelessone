@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Inject, Ip, Post } from '@nestjs/common';
 import {
-  ChangePasswordRequest, CodeSent, CompleteFirstLoginRequest, ForgotPasswordRequest, ForgotPasswordResponse, LoginRequest, LoginResponse, Me,
+  ChangePasswordRequest, CodeSent, CompleteFirstLoginRequest, ForgotPasswordRequest, ForgotPasswordResponse, LoginRequest, LoginResponse, MachineTokenRequest, MachineTokenResponse, Me,
   ResetWithCodeRequest,
 } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
@@ -21,6 +21,13 @@ export class AuthController {
   @Public() @Post('login') @HttpCode(200)
   login(@Body(new ZodValidationPipe(LoginRequest)) body: LoginRequest, @Ip() ip: string) {
     return this.service.login(body, ip);
+  }
+
+  @Doc({ summary: 'A machine credential (the Tally connector) signs in with its client id and secret; the token lasts 15 minutes and opens only that credential\'s own routes', response: MachineTokenResponse,
+    description: 'Same AUTH_FAILED for an unknown client, a wrong secret and a revoked credential. Failures are throttled like person sign-ins (429 AUTH_LOCKED).' })
+  @Public() @Post('machine-token') @HttpCode(200)
+  machineToken(@Body(new ZodValidationPipe(MachineTokenRequest)) body: MachineTokenRequest, @Ip() ip: string) {
+    return this.service.machineToken(body, ip);
   }
 
   @Doc({ summary: 'Who am I: person, login (mustChangePassword), roles and permissions (widest scope per permission)', response: Me })

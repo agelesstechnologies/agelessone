@@ -274,6 +274,41 @@
       "when": 1794450116204,
       "tag": "0038_accounts_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1794544998891,
+      "tag": "0039_accounts_tally_company_ledger_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794545862318,
+      "tag": "0040_accounts_tally_exports",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794546676665,
+      "tag": "0041_accounts_tally_batches_drop_unused",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1794546683112,
+      "tag": "0042_accounts_tally_batch_workflow",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1794547647449,
+      "tag": "0043_machine_credentials_tally_connector",
+      "breakpoints": true
     }
   ]
 }
