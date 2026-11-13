@@ -24,7 +24,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(() => getToken() !== null);
 
-  const logout = useCallback(() => { setToken(null); setMe(null); }, []);
+  const resetPage = () => { if (window.location.hash) window.location.hash = 'overview'; };
+  const logout = useCallback(() => { setToken(null); setMe(null); resetPage(); }, []);
   const refresh = useCallback(async () => { setMe(await api<Me>('/auth/me')); }, []);
 
   useEffect(() => { setUnauthorizedHandler(logout); }, [logout]);
@@ -38,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (loginName: string, password: string) => {
     const r = await api<LoginResponse>('/auth/login', { method: 'POST', json: { login: loginName, password } });
     setToken(r.token);
+    resetPage();
     await refresh();
   }, [refresh]);
 
