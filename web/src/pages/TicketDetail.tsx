@@ -15,6 +15,7 @@ import { addDays, dayLabel, devicePosition, hm, timeIst, todayIst, useLoad, uuid
 import JobPicker from '../JobPicker';
 import { TICKETS } from '../permissions';
 import { TicketUpdates } from './TicketTime';
+import { BillingBadge, TicketBillingBox, useTicketBilling } from '../modules/intercompany/TicketBilling';
 import { Badge, DAY_TONE, Empty, Loading, Modal, Notice, type Tone } from '../ui';
 
 export const STATUS_TONE: Record<string, Tone> = { open: 'gray', assigned: 'blue', in_progress: 'amber', on_hold: 'red', completed: 'green', cancelled: 'gray' };
@@ -53,6 +54,8 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
   const mayPunch = live && can(TICKETS.work) && assignee;
   const running = useLoad(() => (mayPunch ? api<RunningTicket[]>('/tickets/time/running') : Promise.resolve([] as RunningTicket[])), [mayPunch]);
   const timer = running.data?.find((r) => r.ticket.publicId === id);
+  // intercompany billing: answered to the department head and the CEO only (null for everyone else)
+  const billing = useTicketBilling(id);
 
   async function act(fn: () => Promise<Detail | void>, done?: string) {
     setBusy(true); setError(''); setNote('');
@@ -142,6 +145,7 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
             <Badge tone={STATUS_TONE[t.status] ?? 'gray'}>{statusLabel(t.status)}</Badge>
             <Badge tone={t.priority <= 2 ? 'red' : t.priority === 3 ? 'amber' : 'gray'}>P{t.priority}</Badge>
             {t.overdue && <Badge tone="red">overdue</Badge>}
+            <BillingBadge billing={billing.data} />
           </div>
         </div>
         <h2 className="tp-name">{t.title}</h2>
@@ -163,6 +167,7 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
           {t.cancelReason && t.status === 'cancelled' && <Row icon={<FileText size={16} />} label="Cancelled because">{t.cancelReason}</Row>}
         </dl>
       </section>
+      {billing.data && <TicketBillingBox ticketId={id} billing={billing.data} onChange={(b) => billing.setData(b)} />}
       {t.warnings.map((w, i) => <Notice key={i}>{w.message}</Notice>)}
 
       <div className="tp-tiles">{tiles.map((x) => <button key={x.key} className="tp-tile" onClick={() => setView(x.key)}>

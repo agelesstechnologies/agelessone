@@ -137,6 +137,8 @@ Supervisor = team, HR = all.
 | `hrms.skills.manage` | Keep the skills list; see expiring certificates and any certificate file |  |  |  |  | ✓ |  |  |  |  |
 | `hrms.skills.verify` | Verify skills and certificates (team: people you manage); never your own |  | ✓ |  |  | ✓ |  |  |  |  |
 | `hrms.skills.view` | Skills matrix (own: yourself; team: people you manage) | ✓ | ✓ |  |  | ✓ |  |  |  | ✓ |
+| `intercompany.manage` | Intercompany (scope all): create and change agreements, add rates, mark months billed, record passed-on costs on any agreement, set any ticket (not) billable |  |  |  |  |  |  |  |  | ✓ |
+| `intercompany.view` | Intercompany (scope all): see every agreement, its rates, billed months, passed-on costs and ticket billing |  |  |  |  |  |  |  |  | ✓ |
 | `payroll.approve` | Approve a payroll run prepared by someone else; see salaries and runs |  |  |  | ✓ |  |  |  |  |  |
 | `payroll.payslip.own` | See and download your own payslips | ✓ | ✓ | ✓ | ✓ | ✓ |  |  | ✓ | ✓ |
 | `payroll.prepare` | Salaries, bank details and payroll runs: prepare, adjust, mark paid; see them and their files |  |  | ✓ |  |  |  |  |  |  |
@@ -150,6 +152,14 @@ Supervisor = team, HR = all.
 | `tickets.work` | Work on tickets you are assigned to: start, checklist, files, sign-off, daily updates, ask for reassignment; complete as primary | ✓ | ✓ |  |  |  |  |  |  |  |
 
 Payroll is split across two roles on purpose: the person who prepares a run cannot approve it (see below).
+
+Intercompany agreements (ATPL → AE) are seen only by the two company heads named on each agreement (while they still
+hold that job; no permission needed, as for a department head) and by holders of `intercompany.view` / `manage` with
+scope all (the CEO). For anyone else an agreement does not exist (404). The provider's head records passed-on costs; the
+head of a ticket's department links it to the other company's work and sets it (not) billable. Monthly statements are
+also seen by the agreement's two approvers and the heads of departments with ticket time on them; the receiver's head or
+approver accepts or disputes them; **payroll costs (cost per hour, margin) are shown to the CEO only**. See
+[api/intercompany.md](api/intercompany.md).
 
 ## Separation of tenants and companies
 
@@ -178,6 +188,7 @@ Enforced by the services **and** by database CHECK constraints, so no code path 
 | A manager is never their own manager | `employments_manager_not_self` |
 | Ticket reassignment: never decided by the person who asked | `reassign_requests_not_own_approver`, `reassign_requests_not_own_decision` |
 | Ticket time: nobody adjusts their own (Management included) | `ticket_time_adjustments_not_own` |
+| Intercompany statement: never approved by whoever prepared it last (built or rebuilt it) | `ic_statements_not_own_approval` |
 
 The services add the rules that need more context: a head's ticket approval is refused if they are assigned to the
 ticket; nobody but Management assigns themselves to a ticket or picks themselves when approving a reassignment. The
@@ -197,7 +208,13 @@ triggers** refuse changes whatever code runs. Examples (the full list is in
   updates and time adjustments are append-only; a ticket timer is only closed, once; tickets, assignments and
   reassignment requests are never deleted;
 - staff can never edit their own punches or ticket time: corrections go through a request approved by someone else,
-  and ticket time only through a head's adjustment with a reason.
+  and ticket time only through a head's adjustment with a reason;
+- intercompany rate cards and billed months are append-only; nothing in a billed month changes (no passed-on cost,
+  no rate reaching back, no ticket billing with time in it); an ended agreement never changes; agreements, passed-on
+  costs and ticket billing are never deleted;
+- intercompany statements are never deleted; after the draft their lines change only by the receiver's answer and the
+  provider's correction (the amount only goes down) or explanation; a closed statement never changes; credits
+  (corrections after invoicing) are append-only.
 
 ## Personal and sensitive data
 

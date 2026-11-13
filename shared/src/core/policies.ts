@@ -54,6 +54,18 @@ export const POLICIES = {
     value: z.number().int().min(0).max(92), default: 7,
     description: 'How many days back an outside worker\'s attendance on a ticket may be recorded or corrected (0: today only)',
   },
+  'intercompany.review_days': {
+    value: z.number().int().min(1).max(60), default: 5,
+    description: 'Days the receiving company has to review a monthly intercompany bill (the default for a new agreement)',
+  },
+  'intercompany.payment_terms_days': {
+    value: z.number().int().min(0).max(365), default: 30,
+    description: 'Days after an intercompany bill within which it is paid (the default for a new agreement)',
+  },
+  'intercompany.cost.hours_per_month': {
+    value: z.number().int().min(1).max(744), default: 208,
+    description: 'Hours a monthly salary pays for, to give a person\'s cost per hour (salary ÷ hours) for cost plus pricing and the margin report (26 days × 8 h for now)',
+  },
   'payroll.lop_basis': {
     value: z.enum(['calendar_days', 'fixed_30']), default: 'calendar_days' as 'calendar_days' | 'fixed_30',
     description: 'Days a monthly salary is divided by for loss of pay and part months: calendar days of the month, or always 30',

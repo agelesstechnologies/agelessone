@@ -27,6 +27,9 @@ backend/
         hrms.module.ts        registers the sub-modules
         hrms.facade.ts        the ONLY entry point for other modules
         people/ skills/ attendance/ leave/ expenses/ reports/
+      payroll/                salaries, monthly runs, payslips
+      intercompany/           services one company provides another (ATPL → AE): agreements, rates, billed months,
+                              passed-on costs, billable tickets, monthly statements, reports (docs/api/intercompany.md)
       sales/ operations/ ...  later modules (README only)
     test/                     test setup and helpers (not part of the build)
   drizzle/                    migrations for the whole database, committed, applied in order

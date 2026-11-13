@@ -9,6 +9,7 @@ import { HBars, Kpi, OverviewCharts } from './OverviewCharts';
 import { STATUS_TONE, statusLabel } from './TicketDetail';
 import { openTicket } from './Tickets';
 import OverdueAlerts from './OverdueAlerts';
+import { IcCards } from '../modules/intercompany/Reports';
 
 /**
  * The CEO's dashboard for one company. First version: Ageless Technologies only. When the other companies come,
@@ -44,6 +45,8 @@ export default function CeoDashboard() {
     <PayrollSection company={COMPANY.code} month={month} />
     <h2 className="section-title">Tickets</h2>
     <TicketsSection company={COMPANY.code} month={month} />
+    <h2 className="section-title">Intercompany <a className="text-btn" href="#intercompany">Open</a></h2>
+    <IcCards />
   </>;
 }
 

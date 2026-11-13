@@ -64,11 +64,11 @@ const roles = [
   { code: 'ceo', name: 'CEO', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.attendance.approve', 'hrms.leave.approve', 'hrms.leave.report',
     'payroll.payslip.own', 'tickets.types.view'] },
   // Management (the CEO, scope all): reads every HRMS record and payroll, decides any pending request (never their own),
-  // sees private details masked and may reveal them (audited).
+  // sees private details masked and may reveal them (audited); sees and manages every intercompany agreement.
   { code: 'management', name: 'Management', permissions: ['hrms.management', 'hrms.people.view', 'hrms.attendance.view', 'hrms.attendance.approve',
     'hrms.leave.approve', 'hrms.leave.report', 'hrms.expenses.approve', 'hrms.expenses.report', 'hrms.skills.view', 'hrms.dashboard.view',
     'hrms.private.view', 'hrms.private.reveal', 'hrms.letters.manage', 'payroll.payslip.own', 'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage', 'tickets.time.adjust',
-    'tickets.report'] },
+    'tickets.report', 'intercompany.view', 'intercompany.manage'] },
 ];
 // Second roles: Demo HR runs payroll, Demo CEO approves it and has Management access (granted by Demo Admin).
 // (n 227, Manager for Demo Supervisor, is no longer given: older databases have it ended below.)

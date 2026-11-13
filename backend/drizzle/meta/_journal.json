@@ -281,6 +281,27 @@
       "when": 1794559924315,
       "tag": "0039_ticket_overdue_escalation",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794567307788,
+      "tag": "0040_intercompany",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794569481666,
+      "tag": "0041_intercompany_statements",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1794570835485,
+      "tag": "0042_intercompany_line_events",
+      "breakpoints": true
     }
   ]
 }

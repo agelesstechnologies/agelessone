@@ -17,6 +17,11 @@ export const DASHBOARD = { view: 'hrms.dashboard.view' } as const;
 /** Management (the CEO, scope all): every HRMS record and payroll, any pending decision, the CEO dashboard. */
 export const MANAGEMENT = 'hrms.management';
 export const USERS = { manage: 'core.users.manage', team: 'core.users.team' } as const;
+/**
+ * Intercompany (scope all: the CEO). Company heads and approvers hold no permission: they are named on the agreement,
+ * so the menu asks GET /intercompany/access.
+ */
+export const INTERCOMPANY = { view: 'intercompany.view', manage: 'intercompany.manage' } as const;
 /** Joining letters and their templates: HR and Management (the CEO). */
 export const LETTERS = { manage: 'hrms.letters.manage' } as const;
 

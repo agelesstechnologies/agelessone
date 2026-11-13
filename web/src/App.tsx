@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Activity, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, CircleHelp, ClipboardCheck, Crown, KeyRound, LayoutDashboard, LoaderCircle, Lock, LogOut, Menu, SlidersHorizontal, Users, Wallet, Wrench, X } from 'lucide-react';
+import { Activity, ArrowLeftRight, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, CircleHelp, ClipboardCheck, Crown, KeyRound, LayoutDashboard, LoaderCircle, Lock, LogOut, Menu, SlidersHorizontal, Users, Wallet, Wrench, X } from 'lucide-react';
+import type { IcAccess } from '@ageless/shared';
+import { api } from './api';
 import { AuthProvider, useAuth } from './auth';
-import { ATTENDANCE, EXPENSES, LEAVE, MANAGEMENT, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
+import { useLoad } from './hooks';
+import { ATTENDANCE, EXPENSES, INTERCOMPANY, LEAVE, MANAGEMENT, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
+import Intercompany from './modules/intercompany/Intercompany';
 import Approvals from './pages/Approvals';
 import Attendance from './pages/Attendance';
 import CeoDashboard from './pages/CeoDashboard';
@@ -21,9 +25,13 @@ import Tickets from './pages/Tickets';
 import ChangePassword from './ChangePassword';
 import { Modal } from './ui';
 
-type PageKey = 'overview' | 'ceo' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies';
+type PageKey = 'overview' | 'ceo' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'intercompany' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies';
 type GroupKey = 'hrms' | 'accounts' | 'operations';
-interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | GroupKey | 'manage'; show: (can: (p: string) => boolean, others: boolean, scopeOf: (p: string) => string | null) => boolean }
+interface NavItem {
+  key: PageKey; label: string; icon: ReactNode; section: 'workspace' | GroupKey | 'manage';
+  /** ic: what the person sees of Intercompany (heads and approvers are named on agreements, they hold no permission) */
+  show: (can: (p: string) => boolean, others: boolean, scopeOf: (p: string) => string | null, ic: IcAccess | null) => boolean;
+}
 
 /** Every menu item lists the permission that shows it; the backend still checks each request. */
 const NAV: NavItem[] = [
@@ -36,6 +44,8 @@ const NAV: NavItem[] = [
   { key: 'calendar', label: 'Calendar', icon: <CalendarRange size={18} />, section: 'hrms', show: (can) => can(PEOPLE.view) },
   { key: 'approvals', label: 'Approvals', icon: <ClipboardCheck size={18} />, section: 'workspace', show: (can) => can(LEAVE.approve) || can(EXPENSES.approve) || can(ATTENDANCE.approve) },
   { key: 'payroll', label: 'Payroll', icon: <Wallet size={18} />, section: 'accounts', show: (can) => can(PAYROLL.payslip) || can(PAYROLL.prepare) || can(PAYROLL.approve) },
+  { key: 'intercompany', label: 'Intercompany', icon: <ArrowLeftRight size={18} />, section: 'accounts',
+    show: (can, _others, _scopeOf, ic) => can(INTERCOMPANY.view) || can(INTERCOMPANY.manage) || !!ic && (ic.agreements > 0 || ic.statements) },
   { key: 'skills', label: 'Skills', icon: <Award size={18} />, section: 'hrms', show: (can) => can(SKILLS.view) || can(SKILLS.manage) },
   { key: 'tickets', label: 'Tickets', icon: <Ticket size={18} />, section: 'operations', show: (can) => can(TICKETS.view) || can(TICKETS.work) || can(TICKETS.manage) || can(TICKET_TYPES.view) || can(TICKETS.numbering) },
   { key: 'organisation', label: 'Organisation', icon: <Network size={18} />, section: 'workspace', show: (can, others) => others && (can(PEOPLE.manageEmployments) || can(PEOPLE.managePositions) || can(PEOPLE.view)) },
@@ -67,6 +77,8 @@ function Shell() {
   const [confirmOut, setConfirmOut] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
   const [openGroups, setOpenGroups] = useState(readOpenGroups);
+  // Intercompany is shown to company heads, approvers and department heads named on its records (no permission of their own)
+  const ic = useLoad(() => (me ? api<IcAccess>('/intercompany/access').catch(() => null) : Promise.resolve(null)), [me?.person.publicId]);
   const go = useCallback((p: string) => { window.location.hash = p; setMobileNav(false); }, []);
   useEffect(() => {
     const onHash = () => setPage(pageFromHash());
@@ -75,7 +87,7 @@ function Shell() {
   }, []);
   if (!me) return null;
 
-  const items = NAV.filter((n) => n.show(can, seesOthers, scopeOf));
+  const items = NAV.filter((n) => n.show(can, seesOthers, scopeOf, ic.data));
   // A page the person may not open (typed in the address bar) falls back to the overview.
   const current = items.find((n) => n.key === page) ?? items[0]!;
   const role = me.roles[0]?.name ?? 'No role';
@@ -137,6 +149,7 @@ function Shell() {
         {current.key === 'calendar' && <Calendar />}
         {current.key === 'approvals' && <Approvals />}
         {current.key === 'payroll' && <Payroll />}
+        {current.key === 'intercompany' && <Intercompany />}
         {current.key === 'skills' && <Skills />}
         {current.key === 'organisation' && <Organisation />}
         {current.key === 'tickets' && <Tickets />}

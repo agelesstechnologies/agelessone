@@ -495,3 +495,51 @@ td:empty::after{content:'—';color:#c3c9d3}
 .nav-chevron{margin-left:auto;transition:transform .15s}.nav-chevron.open{transform:rotate(180deg)}
 .nav-sub{display:grid;gap:4px;margin:0 0 2px 18px;padding-left:8px;border-left:1px solid #ffffff1f}
 .nav-sub a{height:36px}
+
+/* Intercompany: agreements, statements, invoices and bills */
+.kv-grid{display:grid;grid-template-columns:minmax(120px,max-content) 1fr;gap:8px 18px;font-size:11px;margin:0}
+.kv-grid>span{color:#9a9ba4}
+.kv-grid>b{color:#3c3d46;font-weight:500}
+.ic-chip{display:inline-flex;align-items:baseline;gap:6px;border:1px solid #eef1f6;background:#fffdf8;border-radius:6px;padding:6px 9px;font-size:11px;color:#4b4c55}
+.ic-chip small{color:#9a9ba4}
+fieldset.check-row{border:0;padding:0;margin:0;flex-wrap:wrap;gap:14px}
+fieldset.check-row legend{font-size:10px;font-weight:600;color:#555660;padding:0;margin-bottom:6px}
+fieldset.check-row label{display:flex;align-items:center;gap:6px;font-weight:500}
+.ic-billing{display:flex;flex-direction:column;gap:10px}
+.ic-billing-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ic-billing-head svg{color:#ca8000}
+.ic-lines td{vertical-align:top;padding-top:12px;padding-bottom:12px;height:auto}
+.ic-removed td{opacity:.55}
+.ic-was{text-decoration:line-through}
+.ic-tickets{display:flex;flex-wrap:wrap;gap:4px 10px}
+.ic-tickets .link-btn{font-size:11px}
+tr.ic-sub-row td{border-top:0;padding-top:0!important;padding-bottom:12px;height:auto}
+.ic-reason{width:100%}
+.ic-dispute{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#a84b43;font-weight:600}
+.ic-thread{list-style:none;margin:0;padding:0 0 2px 12px;border-left:2px solid #f1e3c4;display:grid;gap:7px;font-size:10px;color:#747580}
+.ic-thread b{color:#4b4c55}
+.ic-thread span{display:block;color:#4b4c55;margin-top:2px}
+.ic-thread .ic-disputed b{color:#a84b43}
+.ic-answer-bar{position:sticky;bottom:12px;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#0b1727;color:#fff;
+  border-radius:9px;padding:10px 12px 10px 16px;margin-top:12px;font-size:12px;box-shadow:0 8px 24px #0b172733}
+tr.ic-total td{font-weight:700;color:#19283b;background:#fffdf8}
+.ic-invoice{border:1px solid #eef1f5;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:14px}
+.ic-invoice table{min-width:0}
+.ic-invoice h3{font:800 18px Manrope;color:#19283b;letter-spacing:-.4px}
+.ic-invoice-head{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.ic-invoice-head small{display:block;font-size:9px;letter-spacing:.8px;color:#9a9ba4;font-weight:700;margin-top:6px}
+.ic-invoice-head b{display:block;font:700 13px Manrope;color:#19283b}
+.ic-invoice-no{text-align:right}
+@media(max-width:760px){
+  .kv-grid{grid-template-columns:1fr;gap:2px}
+  .kv-grid>span{margin-top:8px}
+  .ic-invoice-no{text-align:left}
+  .ic-answer-bar{flex-direction:column;align-items:stretch}
+  table.stack-mobile tbody tr.ic-sub-row{border-top:0;padding-top:0}
+}
+/* printing an invoice or bill: only the document */
+@media print{
+  body *{visibility:hidden}
+  .ic-invoice,.ic-invoice *{visibility:visible}
+  .ic-invoice{position:absolute;inset:0 auto auto 0;width:100%;border:0}
+}
