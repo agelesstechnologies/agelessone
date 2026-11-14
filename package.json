@@ -3,7 +3,9 @@
   "private": true,
   "packageManager": "pnpm@9.12.3",
   "scripts": {
+    "dev": "pnpm --filter @ageless/shared build && pnpm --parallel --filter @ageless/backend --filter @ageless/web dev",
     "dev:backend": "pnpm --filter @ageless/backend dev",
+    "dev:web": "pnpm --filter @ageless/web dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",

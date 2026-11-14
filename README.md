@@ -20,9 +20,10 @@ ageless/
 4. `cp backend/.env.example backend/.env` and set `DATABASE_URL` (and `TEST_DATABASE_URL` for tests) to your databases
    (local: `postgres://ageless:ageless_dev@localhost:5432/ageless_dev`, office: `postgres://dev_anu:<password>@192.168.1.50:5432/dev_anu`).
 5. `pnpm install`, then `pnpm db:migrate`, then `pnpm db:seed` (fictional starter data)
-6. `pnpm --filter @ageless/backend dev` → API on http://localhost:3000/api/hrms/people/health
+6. `pnpm dev` → builds `shared`, then starts the API on http://localhost:3000/api/hrms/people/health and the web app on
+   http://localhost:5173 in one terminal (`pnpm dev:backend` or `pnpm dev:web` starts only one of them)
 
-Every day: `git pull` → `pnpm install` → `pnpm db:migrate`.
+Every day: `git pull` → `pnpm install` → `pnpm db:migrate` → `pnpm dev`.
 Start your database again from empty: `pnpm db:reset` (only works on development databases named `dev_*` or `ageless_dev`).
 
 ## Who owns what (edit `.github/CODEOWNERS` with real usernames)

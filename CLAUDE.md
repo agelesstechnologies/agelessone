@@ -31,7 +31,8 @@ ageless/
 
 ## Commands (run from the repository root)
 - `pnpm install` — install everything
-- `pnpm --filter @ageless/backend dev` — start the API on http://localhost:3000/api
+- `pnpm dev` — build `shared`, then start the API (http://localhost:3000/api) and the web app (http://localhost:5173) together
+- `pnpm dev:backend` — only the API; `pnpm dev:web` — only the web app
 - `pnpm typecheck`, `pnpm test`, `pnpm build` — every app
 - `pnpm boundaries` — check the backend's module boundary rules
 - `pnpm db:generate -- --name <what_changed>`, `pnpm db:migrate`, `pnpm db:reset`, `pnpm db:seed` — see `backend/CLAUDE.md`
