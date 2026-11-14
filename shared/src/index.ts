@@ -20,6 +20,7 @@ export * from './hrms/overtime';
 export * from './hrms/people';
 export * from './hrms/punch';
 export * from './hrms/skills';
+export * from './inventory';
 export * from './payroll';
 export * from './tickets';
 export * from './ticket-records';

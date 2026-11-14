@@ -54,6 +54,11 @@ export const POLICIES = {
     value: z.number().int().min(0).max(92), default: 7,
     description: 'How many days back an outside worker\'s attendance on a ticket may be recorded or corrected (0: today only)',
   },
+  'inventory.parts.ticket_types': {
+    value: z.array(z.string().regex(/^[a-z][a-z0-9_]{1,39}$/, 'Use ticket type codes (lower case, e.g. production)')).max(40),
+    default: ['production', 'workshop', 'installation', 'service', 'site_work'] as string[],
+    description: 'Ticket types (by code) whose assignees may request parts, when they also hold the Parts requester role',
+  },
   'payroll.lop_basis': {
     value: z.enum(['calendar_days', 'fixed_30']), default: 'calendar_days' as 'calendar_days' | 'fixed_30',
     description: 'Days a monthly salary is divided by for loss of pay and part months: calendar days of the month, or always 30',

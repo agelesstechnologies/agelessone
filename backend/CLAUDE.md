@@ -27,6 +27,8 @@ backend/
         hrms.module.ts        registers the sub-modules
         hrms.facade.ts        the ONLY entry point for other modules
         people/ skills/ attendance/ leave/ expenses/ reports/
+      payroll/                salaries, monthly runs, payslips
+      inventory/              each company's units, categories, items, locations (docs/api/inventory.md)
       sales/ operations/ ...  later modules (README only)
     test/                     test setup and helpers (not part of the build)
   drizzle/                    migrations for the whole database, committed, applied in order

@@ -49,7 +49,7 @@ const roles = [
     'hrms.attendance.punch', 'hrms.attendance.view', 'hrms.attendance.approve', 'hrms.leave.apply', 'hrms.leave.approve', 'hrms.leave.report',
     'hrms.skills.add', 'hrms.skills.verify', 'hrms.skills.view', 'hrms.dashboard.view', 'payroll.payslip.own',
     'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.work', 'tickets.manage', 'tickets.create', 'tickets.time.adjust', 'tickets.report',
-    'core.users.team'] },
+    'core.users.team', 'inventory.department.view'] },
   // Supervisor: on site only: own self-service plus the site work of the tickets they supervise (tickets.site).
   { code: 'supervisor', name: 'Supervisor', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.leave.apply',
     'hrms.skills.add', 'hrms.skills.view', 'payroll.payslip.own', 'tickets.types.view', 'tickets.view', 'tickets.work', 'tickets.site'] },
@@ -62,17 +62,31 @@ const roles = [
   // Last approver (after the manager, department head and HR); scope team: decides requests that name them.
   // Their own requests need no approval (policy hrms.approvals.auto_approve_roles). The CEO does not apply for leave.
   { code: 'ceo', name: 'CEO', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.attendance.approve', 'hrms.leave.approve', 'hrms.leave.report',
-    'payroll.payslip.own', 'tickets.types.view'] },
+    'payroll.payslip.own', 'tickets.types.view', 'inventory.view'] },
   // Management (the CEO, scope all): reads every HRMS record and payroll, decides any pending request (never their own),
   // sees private details masked and may reveal them (audited).
   { code: 'management', name: 'Management', permissions: ['hrms.management', 'hrms.people.view', 'hrms.attendance.view', 'hrms.attendance.approve',
     'hrms.leave.approve', 'hrms.leave.report', 'hrms.expenses.approve', 'hrms.expenses.report', 'hrms.skills.view', 'hrms.dashboard.view',
     'hrms.private.view', 'hrms.private.reveal', 'hrms.letters.manage', 'payroll.payslip.own', 'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage', 'tickets.time.adjust',
-    'tickets.report'] },
+    'tickets.report', 'inventory.view'] },
+  // Inventory is need-to-know: staff roles hold no inventory permission. Store roles hold the same permissions until the
+  // stock steps give each its own approvals; the scope given with the role decides the reach (own: the locations the
+  // person looks after; team: every location of the companies they work in; all: every company).
+  ...[['storekeeper', 'Storekeeper'], ['store_incharge', 'Store in-charge'], ['inventory_controller', 'Inventory controller']].map(([code, name]) => (
+    { code, name, permissions: ['inventory.view', 'inventory.items.manage', 'inventory.locations.manage', 'inventory.stock.post'] })),
+  // Parts requester: requests parts on tickets they are assigned to whose type uses parts (policy inventory.parts.ticket_types).
+  { code: 'parts_requester', name: 'Parts requester', permissions: ['inventory.request'] },
+  // Accounts (the Accounts module's role codes): read inventory here; the Accounts module adds its own permissions.
+  { code: 'accounts_executive', name: 'Accounts executive', permissions: ['inventory.view'] },
+  { code: 'accounts_manager', name: 'Accounts manager', permissions: ['inventory.view'] },
 ];
-// Second roles: Demo HR runs payroll, Demo CEO approves it and has Management access (granted by Demo Admin).
+// Second roles: Demo HR runs payroll, Demo CEO approves it and has Management access (granted by Demo Admin). Inventory:
+// Demo Engineer is the storekeeper of the ATPL locations they look after (scope own), Demo Head the ATPL store in-charge
+// (scope team: every ATPL location), Demo Technician (AE) a parts requester for service and site work.
 // (n 227, Manager for Demo Supervisor, is no longer given: older databases have it ended below.)
-const extraRoles = [{ n: 214, person: 4, role: 'payroll' }, { n: 216, person: 6, role: 'payroll_approver' }, { n: 226, person: 6, role: 'management' }];
+const extraRoles = [{ n: 214, person: 4, role: 'payroll' }, { n: 216, person: 6, role: 'payroll_approver' }, { n: 226, person: 6, role: 'management' },
+  { n: 228, person: 3, role: 'storekeeper', scope: 'own' }, { n: 229, person: 8, role: 'store_incharge', scope: 'team' },
+  { n: 230, person: 2, role: 'parts_requester', scope: 'own' }];
 
 const client = new pg.Client({ connectionString: url.toString() });
 await client.connect();
@@ -278,6 +292,53 @@ try {
        ON CONFLICT (public_id) DO NOTHING`,
       [id(x.n), id(x.person), x.role, id(5), x.scope ?? 'all']);
   }
+  // Inventory (fictional): ATPL's units, item categories, store locations and a few items, added by Demo Engineer (the
+  // ATPL storekeeper). Fixed public ids (n 601+); a record that exists is left alone. AE sets up its own later.
+  const atpl = `(SELECT id FROM core.legal_entities WHERE tenant_id = 1 AND code = 'ATPL')`;
+  const keeper = `(SELECT id FROM core.persons WHERE public_id = '${id(3)}')`;
+  for (const [n, code, name, decimals] of [[601, 'pcs', 'Pieces', 0], [602, 'm', 'Metres', 2], [603, 'kg', 'Kilograms', 3], [604, 'l', 'Litres', 3], [605, 'box', 'Box', 0]]) {
+    await client.query(`INSERT INTO inventory.units (tenant_id, public_id, legal_entity_id, code, name, decimals, created_by)
+      VALUES (1, $1, ${atpl}, $2, $3, $4, ${keeper}) ON CONFLICT DO NOTHING`, [id(n), code, name, decimals]);
+  }
+  for (const [n, name, prefix] of [[611, 'Electronic components', 'EC'], [612, 'Cables and fittings', 'CF'], [613, '3D printing and fabrication consumables', 'PR'],
+    [614, 'Prototype parts', 'PP'], [615, 'Small IT accessories', 'IT']]) {
+    await client.query(`INSERT INTO inventory.item_categories (tenant_id, public_id, legal_entity_id, name, code_prefix, created_by)
+      VALUES (1, $1, ${atpl}, $2, $3, ${keeper}) ON CONFLICT DO NOTHING`, [id(n), name, prefix]);
+  }
+  // [n, type, code, name, parent n, custodian job n (Demo Engineer's ATPL job 103, Demo Head's 108; null: the parent's)]
+  for (const [n, type, code, name, parent, custodianJob] of [
+    [631, 'store', 'STORE', 'ATPL office store', null, 103], [632, 'rack', 'STORE-A', 'Rack A', 631, null], [633, 'bin', 'STORE-A-03', 'Bin 3', 632, null],
+    [634, 'work_area', 'LAB', 'Hardware & IoT lab bench', null, 108], [635, 'work_area', 'PRINT', '3D printing area', null, 103],
+    [636, 'testing', 'TESTING', 'Robotics testing space', null, 108], [637, 'transit', 'TRANSIT', 'In transit', null, 103],
+    [638, 'quarantine', 'QUARANTINE', 'Damaged / to inspect', null, 103], [639, 'scrap', 'SCRAP', 'Scrap', null, 103],
+  ]) {
+    await client.query(`INSERT INTO inventory.locations (tenant_id, public_id, legal_entity_id, type, code, name, parent_id, custodian_employment_id, created_by)
+      VALUES (1, $1, ${atpl}, $2, $3, $4, (SELECT id FROM inventory.locations WHERE public_id = $5),
+              (SELECT id FROM hrms.employments WHERE public_id = $6), ${keeper})
+      ON CONFLICT DO NOTHING`, [id(n), type, code, name, parent ? id(parent) : null, custodianJob ? id(custodianJob) : null]);
+  }
+  // [n, code, name, category n, base unit n, tracking, HSN/SAC, stocked, reorder level, reorder qty, default location n]
+  for (const [n, code, name, category, base, tracking, hsn, stocked, level, qty, location] of [
+    [621, 'EC-0001', 'Microcontroller board, 32-bit', 611, 601, 'serial', '8473', true, 2, 5, 631],
+    [622, 'EC-0002', 'Relay module, 5 V, 4 channel', 611, 601, 'none', '8536', true, 10, 20, 633],
+    [623, 'CF-0001', 'Hook-up wire, 0.5 sq mm, red', 612, 602, 'none', '8544', true, 50, 100, 631],
+    [624, 'CF-0002', 'Cable ties, assorted (bought as needed)', 612, 601, 'none', null, false, null, null, null],
+    [625, 'PR-0001', 'PLA filament, 1.75 mm, white', 613, 603, 'none', '3916', true, 2, 5, 635],
+    [626, 'PR-0002', 'Resin, clear', 613, 604, 'batch', '3907', true, 1, 2, 635],
+  ]) {
+    await client.query(`INSERT INTO inventory.items (tenant_id, public_id, legal_entity_id, code, name, category_id, base_unit_id, tracking, hsn_code,
+        is_stocked, reorder_level, reorder_qty, default_location_id, created_by)
+      SELECT 1, $1, c.legal_entity_id, $2, $3, c.id, b.id, $6, $7, $8, $9, $10, (SELECT id FROM inventory.locations WHERE public_id = $11), ${keeper}
+        FROM inventory.item_categories c JOIN inventory.units b ON b.public_id = $5
+       WHERE c.public_id = $4
+      ON CONFLICT DO NOTHING`, [id(n), code, name, id(category), id(base), tracking, hsn, stocked, level, qty, location ? id(location) : null]);
+  }
+  // Relays are bought in boxes of 10 (left alone once the item has a current conversion for the box).
+  await client.query(`INSERT INTO inventory.item_uom_conversions (tenant_id, legal_entity_id, item_id, unit_id, factor, created_by)
+    SELECT 1, i.legal_entity_id, i.id, u.id, 10, ${keeper} FROM inventory.items i, inventory.units u
+     WHERE i.public_id = $1 AND u.public_id = $2
+    ON CONFLICT DO NOTHING`, [id(622), id(605)]);
+
   // Older seeds also gave Demo Supervisor the Manager role (n 227). Supervisors are on site only, so end it (ended, never
   // deleted; left alone once ended), as ending a role in the app does.
   await client.query(
@@ -293,7 +354,8 @@ try {
     (SELECT count(*) FROM core.persons) AS persons, (SELECT count(*) FROM hrms.employments) AS employments,
     (SELECT count(*) FROM core.users) AS logins, (SELECT count(*) FROM core.role_assignments) AS role_assignments,
     (SELECT count(*) FROM hrms.expense_categories) AS expense_categories, (SELECT count(*) FROM hrms.weekly_off_rules) AS weekly_off_rules,
-    (SELECT count(*) FROM core.policies) AS policies`);
+    (SELECT count(*) FROM core.policies) AS policies, (SELECT count(*) FROM inventory.items) AS inventory_items,
+    (SELECT count(*) FROM inventory.locations) AS inventory_locations`);
   console.log(`Seeded "${dbName}":`, rows[0]);
 } catch (err) {
   await client.query('ROLLBACK');

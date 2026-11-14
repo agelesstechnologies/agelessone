@@ -281,6 +281,13 @@
       "when": 1794559924315,
       "tag": "0039_ticket_overdue_escalation",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794639448631,
+      "tag": "0040_inventory_items_locations",
+      "breakpoints": true
     }
   ]
 }
