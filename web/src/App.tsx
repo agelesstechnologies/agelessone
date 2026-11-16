@@ -41,7 +41,7 @@ const NAV: NavItem[] = [
   { key: 'approvals', label: 'Approvals', icon: <ClipboardCheck size={18} />, section: 'workspace', show: (can) => can(LEAVE.approve) || can(EXPENSES.approve) || can(ATTENDANCE.approve) },
   { key: 'payroll', label: 'Payroll', icon: <Wallet size={18} />, section: 'accounts', show: (can) => can(PAYROLL.payslip) || can(PAYROLL.prepare) || can(PAYROLL.approve) },
   // Periods, the journal and the Tally ledger map (the Accounts module), inside the Accounts menu group.
-  { key: 'accounts', label: 'Ledger', icon: <Landmark size={18} />, section: 'accounts', show: (_can, _others, _scopeOf, accountsView) => accountsView },
+  { key: 'accounts', label: 'Accounts', icon: <Landmark size={18} />, section: 'accounts', show: (_can, _others, _scopeOf, accountsView) => accountsView },
   { key: 'skills', label: 'Skills', icon: <Award size={18} />, section: 'hrms', show: (can) => can(SKILLS.view) || can(SKILLS.manage) },
   { key: 'tickets', label: 'Tickets', icon: <Ticket size={18} />, section: 'operations', show: (can) => can(TICKETS.view) || can(TICKETS.work) || can(TICKETS.manage) || can(TICKET_TYPES.view) || can(TICKETS.numbering) },
   { key: 'organisation', label: 'Organisation', icon: <Network size={18} />, section: 'workspace', show: (can, others) => others && (can(PEOPLE.manageEmployments) || can(PEOPLE.managePositions) || can(PEOPLE.view)) },
