@@ -121,3 +121,21 @@ export const TicketDashboard = z.object({
   })),
 });
 export type TicketDashboard = z.infer<typeof TicketDashboard>;
+
+/** GET /api/tickets/overdue-alerts?company= — overdue tickets the caller is alerted about. */
+export const OverdueAlertsQuery = z.object({ company: emptyToUndefined(company) });
+export type OverdueAlertsQuery = z.infer<typeof OverdueAlertsQuery>;
+
+/**
+ * An overdue ticket and how far it went: the department head (and the ticket's supervisor) are alerted the day after the
+ * due date; after policy tickets.overdue.ceo_after_days days overdue it is also sent to the CEO.
+ */
+export const OverdueAlert = z.object({
+  ticket: TicketRef, company: z.string(), status: TicketStatus, priority: z.number().int(),
+  department: z.object({ publicId: PublicId, name: z.string() }), supervisor: PersonRef, primaryAssignee: PersonRef.nullable(),
+  dueDate: DateOnly, daysOverdue: z.number().int(),
+  headAlertedAt: Instant,
+  /** null until it is sent to the CEO */
+  sentToCeoAt: Instant.nullable(),
+});
+export type OverdueAlert = z.infer<typeof OverdueAlert>;

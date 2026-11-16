@@ -1,11 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import {
   AddContactRequest, AddEmploymentRequest, ExitEmploymentRequest, UpdateEmploymentRequest, UpdatePersonRequest,
-  type PersonDetail, type SharedContacts,
+  type CreatedId, type PersonDetail, type SharedContacts,
 } from '@ageless/shared';
 import { api, downloadFile, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { todayIst, useLoad } from '../hooks';
+import { PersonPicker } from '../JobPicker';
+import DepartmentAndId, { type JobCodes } from './DepartmentAndId';
 import { PEOPLE, PRIVATE } from '../permissions';
 import PersonPrivate from './PersonPrivate';
 import { Loading, Modal, Notice } from '../ui';
@@ -115,6 +117,12 @@ function Form({ title, subtitle, submitLabel, onClose, run, children }: {
 
 type Step = { onClose: () => void; onDone: (p: PersonDetail) => void };
 const send = async <T,>(method: string, path: string, json: T, onDone: Step['onDone']) => { const p = await api<PersonDetail>(path, { method, json }); onDone(p); return p; };
+/** Adding a contact or a job answers with the new record's ID only, so the profile is loaded again afterwards. */
+const add = async <T,>(personPublicId: string, path: string, json: T, onDone: Step['onDone']) => {
+  await api<CreatedId>(path, { method: 'POST', json });
+  const p = await api<PersonDetail>(`/hrms/people/${personPublicId}`);
+  onDone(p); return p;
+};
 const COMPANIES = <><option value="AE">AE · Ageless Entertainments</option><option value="ATPL">ATPL · Ageless Technologies</option></>;
 
 function EditPerson({ person, onClose, onDone }: Step & { person: PersonDetail }) {
@@ -130,7 +138,7 @@ function EditPerson({ person, onClose, onDone }: Step & { person: PersonDetail }
 function AddContact({ person, onClose, onDone }: Step & { person: PersonDetail }) {
   return <Form title="Add a contact" subtitle="A new primary replaces the current primary of that kind." submitLabel="Add contact" onClose={onClose} run={(d) => {
     const parsed = AddContactRequest.safeParse({ kind: text(d, 'kind'), value: text(d, 'value'), label: orUndef(text(d, 'label')), isPrimary: d.get('primary') === 'on' });
-    return parsed.success ? send('POST', `/hrms/people/${person.publicId}/contacts`, parsed.data, onDone) : formError(parsed.error, 'Check the form');
+    return parsed.success ? add(person.publicId, `/hrms/people/${person.publicId}/contacts`, parsed.data, onDone) : formError(parsed.error, 'Check the form');
   }}>
     <label>Type<select id="ac-kind" name="kind"><option value="phone">Phone</option><option value="email">Email</option><option value="other">Other</option></select></label>
     <label>Label <span className="optional">optional</span><input id="ac-label" name="label" maxLength={40} placeholder="e.g. Home" /></label>
@@ -140,27 +148,37 @@ function AddContact({ person, onClose, onDone }: Step & { person: PersonDetail }
 }
 
 function AddJob({ person, onClose, onDone }: Step & { person: PersonDetail }) {
-  return <Form title="Add an employment" subtitle="Another job for this person, for example in a second company." submitLabel="Add employment" onClose={onClose} run={(d) => {
+  const { scopeOf } = useAuth();
+  const [company, setCompany] = useState('ATPL');   // only Ageless Technologies has staff for now
+  const [codes, setCodes] = useState<JobCodes>({});   // the employee ID is automatic (HR may type an existing one)
+  const [manager, setManager] = useState('');
+  // one company at a time (policy hrms.people.one_company_per_person): moving company is exit, then a new job
+  const current = person.employments.filter((j) => j.status !== 'exited');
+  const subtitle = current.length
+    ? `${person.displayName} works for ${current.map((j) => `${j.company.code} (${j.employeeCode})`).join(' and ')}. One company at a time: to move them, record an exit on that job first, then add the new job here.`
+    : 'A new job for this person, for example after a transfer or when they are re-hired.';
+  return <Form title="Add an employment" subtitle={subtitle} submitLabel="Add employment" onClose={onClose} run={(d) => {
+    if (!codes.departmentCode) return 'Choose a department: the employee ID is made from it';
     const parsed = AddEmploymentRequest.safeParse({
-      legalEntityCode: text(d, 'company'), employeeCode: text(d, 'code'), engagementType: text(d, 'type'), joinedOn: text(d, 'joined'),
-      departmentCode: orUndef(text(d, 'department')), designation: orUndef(text(d, 'designation')), managerPublicId: orUndef(text(d, 'manager')),
+      legalEntityCode: company, employeeCode: codes.employeeCode, engagementType: text(d, 'type'), joinedOn: text(d, 'joined'),
+      departmentCode: codes.departmentCode, designation: orUndef(text(d, 'designation')), managerPublicId: orUndef(manager),
     });
-    return parsed.success ? send('POST', `/hrms/people/${person.publicId}/employments`, parsed.data, onDone) : formError(parsed.error, 'Check the form');
+    return parsed.success ? add(person.publicId, `/hrms/people/${person.publicId}/employments`, parsed.data, onDone) : formError(parsed.error, 'Check the form');
   }}>
-    <label>Company<select id="aj-company" name="company">{COMPANIES}</select></label>
-    <label>Employee ID<input id="aj-code" name="code" required maxLength={20} /></label>
+    <label className="span-two">Company<select id="aj-company" value={company} onChange={(e) => setCompany(e.target.value)}>{COMPANIES}</select></label>
+    <DepartmentAndId company={company} idPrefix="aj" mayTypeId={scopeOf(PEOPLE.manageEmployments) === 'all'} onChange={setCodes} />
     <label>Designation <span className="optional">optional</span><input id="aj-designation" name="designation" maxLength={80} /></label>
-    <label>Department code <span className="optional">optional</span><input id="aj-department" name="department" maxLength={6} /></label>
     <label>Engagement<select id="aj-type" name="type"><option value="permanent">Permanent</option><option value="probation">Probation</option><option value="contract">Contract</option><option value="intern">Intern</option><option value="external">External</option></select></label>
     <label>Joined<input id="aj-joined" name="joined" type="date" required defaultValue={todayIst()} /></label>
-    <label className="span-two">Manager public ID <span className="optional">optional</span><input id="aj-manager" name="manager" placeholder="Manager UUID" /></label>
+    <PersonPicker idPrefix="aj-mgr" label="Manager" hint="optional" onChange={setManager} />
   </Form>;
 }
 
 function EditJob({ job, onClose, onDone }: Step & { job: Job }) {
+  const [manager, setManager] = useState(job.manager?.publicId ?? '');
   return <Form title="Edit employment" subtitle={`${job.company.code} · ${job.employeeCode}. Clear a box to remove the value.`} submitLabel="Save" onClose={onClose} run={(d) => {
     const body: Record<string, unknown> = {};
-    const designation = text(d, 'designation'), department = text(d, 'department'), manager = text(d, 'manager');
+    const designation = text(d, 'designation'), department = text(d, 'department');
     if (designation !== (job.designation ?? '')) body.designation = designation || null;
     if (department !== (job.department?.code ?? '')) body.departmentCode = department || null;
     if (manager !== (job.manager?.publicId ?? '')) body.managerPublicId = manager || null;
@@ -170,7 +188,7 @@ function EditJob({ job, onClose, onDone }: Step & { job: Job }) {
   }}>
     <label>Designation<input id="ej-designation" name="designation" maxLength={80} defaultValue={job.designation ?? ''} /></label>
     <label>Department code<input id="ej-department" name="department" maxLength={6} defaultValue={job.department?.code ?? ''} /></label>
-    <label className="span-two">Manager public ID<input id="ej-manager" name="manager" defaultValue={job.manager?.publicId ?? ''} placeholder="Manager UUID" /></label>
+    <PersonPicker idPrefix="ej-mgr" label="Manager" hint="optional — × removes the manager" initial={job.manager} onChange={setManager} />
     {!job.isPrimary && <label className="span-two check-row"><input name="primary" type="checkbox" /> Make this the primary employment</label>}
   </Form>;
 }

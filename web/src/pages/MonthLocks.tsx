@@ -17,8 +17,7 @@ export default function MonthLocks() {
   const [unlocking, setUnlocking] = useState<MonthLock | null>(null);
   const q = useLoad(() => api<MonthLock[]>(`/hrms/month-locks?year=${year}`), [year]);
   return <>
-    <PageHead eyebrow="HRMS • ATTENDANCE" title="Month locks" subtitle="Lock a finished month so attendance cannot change before payroll."
-      action={can(ATTENDANCE.lockMonth) ? <button className="primary-btn" onClick={() => setLocking(true)}><Lock size={15} /> Lock a month</button> : undefined} />
+    <PageHead eyebrow="HRMS • ATTENDANCE" title="Month locks"      action={can(ATTENDANCE.lockMonth) ? <button className="primary-btn" onClick={() => setLocking(true)}><Lock size={15} /> Lock a month</button> : undefined} />
     <Panel>
       <div className="panel-body">
         <div className="filters"><label className="inline-field">Year

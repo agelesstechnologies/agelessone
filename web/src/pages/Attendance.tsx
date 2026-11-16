@@ -6,7 +6,8 @@ import {
 import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { addDays, dayLabel, devicePosition, hm, timeIst, todayIst, useLoad, useMyEmployments, uuidv7, words } from '../hooks';
-import { ATTENDANCE } from '../permissions';
+import { ATTENDANCE, TICKETS } from '../permissions';
+import { TodaySplit } from './SplitSuggestions';
 import { Badge, DAY_TONE, Empty, Loading, Notice, PageHead, Panel, Tabs, CsvButton } from '../ui';
 import { CorrectionModal, MyRequests, OvertimeModal, RequestApprovals } from './AttendanceRequests';
 
@@ -21,7 +22,7 @@ export default function Attendance() {
   ];
   const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'today');
   return <>
-    <PageHead eyebrow="HRMS • ATTENDANCE" title="Attendance" subtitle="Daily punch, work hours history, corrections, overtime and the team register." />
+    <PageHead eyebrow="HRMS • ATTENDANCE" title="Attendance" />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'today' && <MyDay />}
     {tab === 'history' && <MyHistory />}
@@ -36,7 +37,9 @@ export default function Attendance() {
 const position = devicePosition;
 
 export function MyDay() {
+  const { can } = useAuth();
   const { jobs, error: jobsError } = useMyEmployments();
+  const [punchedOut, setPunchedOut] = useState(false);   // after the daily punch-out: today's ticket time, to suggest a different split
   const today = useLoad(() => api<TodayAttendance>('/hrms/attendance/today'));
   const [jobId, setJobId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -60,6 +63,7 @@ export function MyDay() {
       await api('/hrms/attendance/punches', { method: 'POST', json: parsed.data });
       pending.current = null;
       setOk(kind === 'in' ? 'You are punched in.' : 'You are punched out.');
+      setPunchedOut(kind === 'out');
       today.reload();
     } catch (e) { setError(errText(e)); }
     finally { setBusy(false); }
@@ -82,6 +86,7 @@ export function MyDay() {
         <button className="primary-btn big" disabled={busy || (!t.punchedIn && !jobId)} onClick={() => void punch()}>
           {t.punchedIn ? <LogOut size={16} /> : <LogIn size={16} />}{t.punchedIn ? 'Punch out' : 'Punch in'}</button>
       </div>}
+      {punchedOut && can(TICKETS.work) && <TodaySplit />}
     </div>
   </Panel>;
 }

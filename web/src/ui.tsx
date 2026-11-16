@@ -19,8 +19,8 @@ export function Tabs<K extends string>({ tabs, value, onChange }: { tabs: { key:
     <button key={t.key} role="tab" aria-selected={t.key === value} className={`tab ${t.key === value ? 'on' : ''}`} onClick={() => onChange(t.key)}>{t.label}</button>)}</div>;
 }
 
-export function PageHead({ eyebrow, title, subtitle, action }: { eyebrow: string; title: string; subtitle: string; action?: ReactNode }) {
-  return <div className="heading-row"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{subtitle}</p></div>{action}</div>;
+export function PageHead({ eyebrow, title, subtitle, action }: { eyebrow: string; title: string; subtitle?: string; action?: ReactNode }) {
+  return <div className="heading-row"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>{action}</div>;
 }
 
 export function Panel({ title, note, action, children }: { title?: string; note?: string; action?: ReactNode; children: ReactNode }) {

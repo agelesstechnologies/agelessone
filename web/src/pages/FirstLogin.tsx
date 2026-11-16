@@ -44,7 +44,6 @@ export default function FirstLogin() {
       <div className="login-brand"><div className="login-mark">a<span>.</span></div><div><b>ageless</b><small>PEOPLE PLATFORM</small></div></div>
       <div className="login-pitch"><h2>Welcome, {me?.person.displayName}.</h2>
         <ul><li><span><MailCheck size={16} /></span>Confirm the code we emailed you</li><li><span><Eye size={16} /></span>Choose a password only you know</li></ul></div>
-      <small className="login-foot">© 2026 Ageless Universe</small>
     </aside>
     <main className="login-main">
       <form className="login-form" onSubmit={submit} noValidate>

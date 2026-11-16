@@ -4,7 +4,7 @@ import {
   AdjustTimeRequest, AllocationQuery, DailyUpdate, DailyUpdateRequest, DayAllocation, MissingUpdate, MissingUpdatesQuery, PunchNotice, RunningTicket,
   TicketField, TicketPunchConfirmation, TicketPunchInRequest, TicketPunchOutRequest, TicketPunchResult, type TicketTimelog, type TicketTimelogs,
 } from '@ageless/shared';
-import { DB, Db, Tx, violatedConstraint } from '../../../platform/db/db.module';
+import { Conn, DB, Db, Tx, violatedConstraint } from '../../../platform/db/db.module';
 import { AppError } from '../../../platform/http/app-error';
 import { isManagement, RequestContext } from '../../../platform/http/request-context';
 import { addDays, istDayStart, todayIst } from '../../../platform/time';
@@ -295,44 +295,65 @@ export class TicketTimeService {
   async adjust(ctx: RequestContext, req: AdjustTimeRequest): Promise<DayAllocation> {
     const person = await this.ticketsRepo.findPerson(ctx.tenantId, req.personPublicId);
     if (!person) throw new AppError('TICKETS_UNKNOWN_PERSON', 404, 'Unknown person');
+    await this.db.transaction((tx) => this.applyAdjustments(tx, ctx, { id: person.id, publicId: req.personPublicId }, req.date, req.changes, req.reason));
+    return this.dayView(ctx.tenantId, person.id, req.date);
+  }
+
+  /**
+   * Stores one batch of adjustment rows for a person's day, inside the caller's transaction, with the checks of adjust():
+   * never the caller's own time; each ticket of a department they head or a ticket they supervise (Management: any); the
+   * person assigned to it once; each ticket at 0 or more and the day within its attended minutes. Used by adjust() and by
+   * an approved split suggestion. Returns the batch id.
+   */
+  async applyAdjustments(tx: Tx, ctx: RequestContext, person: { id: number; publicId: string }, date: string,
+    changes: { ticketPublicId: string; minutes: number }[], reason: string): Promise<string> {
     if (person.id === ctx.personId) throw new AppError('TICKETS_SELF_ADJUST', 403, 'Nobody adjusts their own time');
     const management = isManagement(ctx) || ctx.permissions[TICKETS.timeAdjust] === 'all';
-    await this.db.transaction(async (tx) => {
-      await this.repo.lockPerson(tx, person.id);
-      const planned: { t: NonNullable<Awaited<ReturnType<TicketsRepository['findTicket']>>>; employmentId: number; minutes: number }[] = [];
-      for (const c of req.changes) {
-        const t = await this.ticketsRepo.findTicket(tx, ctx.tenantId, c.ticketPublicId);
-        if (!t) throw new AppError('TICKETS_NOT_FOUND', 404, 'Unknown ticket');
-        if (!management && t.supervisorPersonId !== ctx.personId && (await this.ticketsRepo.departmentHead(tx, t.departmentId)) !== ctx.personId) {
-          throw new AppError('TICKETS_FORBIDDEN', 403, `${t.number} is not a ticket of a department you head`);
-        }
-        const job = await this.repo.assignmentOf(tx, t.id, person.id);
-        if (!job) throw new AppError('TICKETS_NOT_ON_TICKET', 400, `That person has never been assigned to ${t.number}`);
-        planned.push({ t, employmentId: job.employmentId, minutes: c.minutes });
+    await this.repo.lockPerson(tx, person.id);
+    const planned: { t: NonNullable<Awaited<ReturnType<TicketsRepository['findTicket']>>>; employmentId: number; minutes: number }[] = [];
+    for (const c of changes) {
+      const t = await this.ticketsRepo.findTicket(tx, ctx.tenantId, c.ticketPublicId);
+      if (!t) throw new AppError('TICKETS_NOT_FOUND', 404, 'Unknown ticket');
+      if (!management && t.supervisorPersonId !== ctx.personId && (await this.ticketsRepo.departmentHead(tx, t.departmentId)) !== ctx.personId) {
+        throw new AppError('TICKETS_FORBIDDEN', 403, `${t.number} is not a ticket of a department you head`);
       }
-      const totals = new Map<number, number>();
-      for (const a of await this.repo.allocations(tx, person.id, req.date)) totals.set(a.ticketId, (totals.get(a.ticketId) ?? 0) + a.minutes);
-      for (const a of await this.repo.adjustments(tx, person.id, req.date)) totals.set(a.ticketId, (totals.get(a.ticketId) ?? 0) + a.minutes);
-      for (const p of planned) {
-        const next = (totals.get(p.t.id) ?? 0) + p.minutes;
-        if (next < 0) throw new AppError('TICKETS_ADJUST_NEGATIVE', 400, `${p.t.number} would have less than 0 minutes`, { ticket: p.t.publicId, minutes: next });
-        totals.set(p.t.id, next);
-      }
-      const { workedMinutes } = await this.hrms.attendedPeriods(tx, person.id, req.date);
-      const total = [...totals.values()].reduce((a, b) => a + b, 0);
-      if (total > workedMinutes) {
-        throw new AppError('TICKETS_ADJUST_OVER_ATTENDANCE', 400, `Ticket time would be ${total} minutes; the day has ${workedMinutes} attended minutes`,
-          { totalMinutes: total, attendanceMinutes: workedMinutes });
-      }
-      const batchId = randomUUID();
-      const adjustedAs = isManagement(ctx) ? 'management' : 'head';
-      await this.repo.insertAdjustments(tx, planned.map((p) => ({ tenantId: ctx.tenantId, batchId, ticketId: p.t.id, employmentId: p.employmentId,
-        legalEntityId: p.t.legalEntityId, personId: person.id, workDate: req.date, minutes: p.minutes, reason: req.reason, adjustedBy: ctx.personId, adjustedAs })));
-      for (const p of planned) {
-        await this.tickets.event(tx, ctx.personId, p.t, 'time_adjusted', { person: req.personPublicId, date: req.date, minutes: p.minutes, reason: req.reason, adjustedAs });
-      }
-    });
-    return this.dayView(ctx.tenantId, person.id, req.date);
+      const job = await this.repo.assignmentOf(tx, t.id, person.id);
+      if (!job) throw new AppError('TICKETS_NOT_ON_TICKET', 400, `That person has never been assigned to ${t.number}`);
+      planned.push({ t, employmentId: job.employmentId, minutes: c.minutes });
+    }
+    const totals = new Map<number, number>();
+    for (const a of await this.repo.allocations(tx, person.id, date)) totals.set(a.ticketId, (totals.get(a.ticketId) ?? 0) + a.minutes);
+    for (const a of await this.repo.adjustments(tx, person.id, date)) totals.set(a.ticketId, (totals.get(a.ticketId) ?? 0) + a.minutes);
+    for (const p of planned) {
+      const next = (totals.get(p.t.id) ?? 0) + p.minutes;
+      if (next < 0) throw new AppError('TICKETS_ADJUST_NEGATIVE', 400, `${p.t.number} would have less than 0 minutes`, { ticket: p.t.publicId, minutes: next });
+      totals.set(p.t.id, next);
+    }
+    const { workedMinutes } = await this.hrms.attendedPeriods(tx, person.id, date);
+    const total = [...totals.values()].reduce((a, b) => a + b, 0);
+    if (total > workedMinutes) {
+      throw new AppError('TICKETS_ADJUST_OVER_ATTENDANCE', 400, `Ticket time would be ${total} minutes; the day has ${workedMinutes} attended minutes`,
+        { totalMinutes: total, attendanceMinutes: workedMinutes });
+    }
+    const batchId = randomUUID();
+    const adjustedAs = isManagement(ctx) ? 'management' : 'head';
+    await this.repo.insertAdjustments(tx, planned.map((p) => ({ tenantId: ctx.tenantId, batchId, ticketId: p.t.id, employmentId: p.employmentId,
+      legalEntityId: p.t.legalEntityId, personId: person.id, workDate: date, minutes: p.minutes, reason, adjustedBy: ctx.personId, adjustedAs })));
+    for (const p of planned) {
+      await this.tickets.event(tx, ctx.personId, p.t, 'time_adjusted', { person: person.publicId, date, minutes: p.minutes, reason, adjustedAs });
+    }
+    return batchId;
+  }
+
+  /** The person's minutes per ticket on a day now (calculated + adjustments), with the job each ticket's time is on. */
+  async minutesOfDay(conn: Conn, personId: number, date: string): Promise<Map<number, { minutes: number; employmentId: number; legalEntityId: number }>> {
+    const day = new Map<number, { minutes: number; employmentId: number; legalEntityId: number }>();
+    for (const a of [...await this.repo.allocations(conn, personId, date), ...await this.repo.adjustments(conn, personId, date)]) {
+      const row = day.get(a.ticketId) ?? { minutes: 0, employmentId: a.employmentId, legalEntityId: a.legalEntityId };
+      row.minutes += a.minutes;
+      day.set(a.ticketId, row);
+    }
+    return day;
   }
 
   // ---- helpers ----

@@ -16,6 +16,10 @@ export const POLICIES = {
   'hrms.attendance.half_day_minutes': { value: z.number().int().min(1).max(1440), default: 240, description: 'Minutes worked for a half day' },
   'hrms.attendance.max_open_punch_hours': { value: z.number().int().min(1).max(48), default: 16, description: 'After this long an open punch-in stops counting as working' },
   'hrms.attendance.auto_punch_out_hours': { value: z.number().int().min(1).max(24), default: 8, description: 'A forgotten punch-out is closed this many hours after the punch-in (when the next punch-in arrives)' },
+  'hrms.people.one_company_per_person': {
+    value: z.boolean(), default: true,
+    description: 'A person works for one company at a time: a job in another company is added only after the current job ends (a transfer)',
+  },
   'hrms.leave.balance_check': { value: z.boolean(), default: false, description: 'Refuse leave that would take the balance below zero' },
   'hrms.overtime.payable': { value: z.boolean(), default: false, description: 'Overtime is paid' },
   'hrms.approvals.auto_approve_roles': {
@@ -37,6 +41,14 @@ export const POLICIES = {
   'tickets.time.split': {
     value: z.enum(['equal']), default: 'equal' as 'equal',
     description: 'How time is shared between tickets running at the same moment: equal = each of n tickets gets 1/n of that period',
+  },
+  'tickets.overdue.ceo_after_days': {
+    value: z.number().int().min(1).max(60), default: 3,
+    description: 'An overdue ticket alerts its department head the day after its due date; once it is this many days overdue it is also sent to the CEO',
+  },
+  'tickets.time.suggest_days': {
+    value: z.number().int().min(0).max(31), default: 7,
+    description: 'How many days back a person may suggest another split of their ticket time for the department head to approve (0: today only)',
   },
   'tickets.external_attendance.backdate_days': {
     value: z.number().int().min(0).max(92), default: 7,

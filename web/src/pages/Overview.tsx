@@ -4,9 +4,10 @@ import type { ReactNode } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { useLoad } from '../hooks';
-import { ATTENDANCE, DASHBOARD, EXPENSES, PEOPLE } from '../permissions';
+import { ATTENDANCE, DASHBOARD, EXPENSES, PEOPLE, TICKETS } from '../permissions';
 import { PageHead } from '../ui';
 import { MyDay } from './Attendance';
+import OverdueAlerts from './OverdueAlerts';
 import { OverviewCharts } from './OverviewCharts';
 
 function Card({ icon, title, text, onClick }: { icon: ReactNode; title: string; text: string; onClick: () => void }) {
@@ -19,11 +20,11 @@ export default function Overview({ go }: { go: (page: string) => void }) {
   const approve = can(EXPENSES.approve);
   const waiting = useLoad(() => (approve ? api<ExpenseClaim[]>('/hrms/expenses/to-approve') : Promise.resolve(null)), [approve]);
   if (!me) return null;
-  const roles = me.roles.map((r) => r.name).join(', ') || 'No role yet';
 
   return <>
-    <PageHead eyebrow="OVERVIEW" title={`Hello, ${me.person.displayName}`} subtitle={`Signed in as ${roles}.`} />
+    <PageHead eyebrow="OVERVIEW" title={`Hello, ${me.person.displayName}`} />
     {punch && <MyDay />}
+    {(can(TICKETS.view) || can(TICKETS.work) || can(TICKETS.manage)) && <OverdueAlerts />}
     {can(DASHBOARD.view) && <OverviewCharts />}
     <div className="area-grid">
       {punch && <Card icon={<Activity size={18} />} title="Attendance" text="History, corrections and overtime" onClick={() => go('attendance')} />}

@@ -1,19 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import type { PersonDetail, PersonList } from '@ageless/shared';
+import type { PersonDetail, PersonList, PersonRef } from '@ageless/shared';
 import { api, errText } from './api';
 
 type Found = PersonList['items'][number];
+/** The person shown in the box: one picked from the results, or the one the form started with. */
+type Chosen = PersonRef & { primaryEmployment?: Found['primaryEmployment'] };
 
 /**
  * One search box: type 2+ letters of a name or employee code, matching people drop down, click one. The chosen person
- * shows in the box with × to clear. onPick gets the person (or null when cleared).
+ * shows in the box with × to clear. `initial` starts the box on a person (an edit form). onPick gets the person (or null when cleared).
  */
-function PersonSearch({ id, label, hint, onPick }: { id: string; label: string; hint?: string; onPick: (p: Found | null) => void }) {
+function PersonSearch({ id, label, hint, initial, onPick }: { id: string; label: string; hint?: string; initial?: PersonRef | null; onPick: (p: Found | null) => void }) {
   const [text, setText] = useState('');
   const [found, setFound] = useState<Found[]>([]);
   const [open, setOpen] = useState(false);
-  const [chosen, setChosen] = useState<Found | null>(null);
+  const [chosen, setChosen] = useState<Chosen | null>(initial ?? null);
   const [error, setError] = useState('');
   const box = useRef<HTMLLabelElement>(null);
 
@@ -36,7 +38,7 @@ function PersonSearch({ id, label, hint, onPick }: { id: string; label: string; 
   }, []);
 
   const pick = (p: Found | null) => { setChosen(p); setText(p ? p.displayName : ''); setOpen(false); onPick(p); };
-  const code = (p: Found) => p.primaryEmployment?.employeeCode;
+  const code = (p: Chosen) => p.primaryEmployment?.employeeCode;
 
   return <label className="span-two person-search" ref={box}>{label}{hint && <span className="optional">{hint}</span>}
     <span className="person-search-box">
@@ -54,19 +56,21 @@ function PersonSearch({ id, label, hint, onPick }: { id: string; label: string; 
   </label>;
 }
 
-/** Pick a person; onChange gets their public ID, or '' while none is chosen. */
-export function PersonPicker({ idPrefix, label, hint, onChange }: { idPrefix: string; label: string; hint?: string; onChange: (publicId: string) => void }) {
-  return <PersonSearch id={`${idPrefix}-search`} label={label} hint={hint} onPick={(p) => onChange(p?.publicId ?? '')} />;
+/** Pick a person; onChange gets their public ID, or '' while none is chosen. `initial`: the person already chosen (edit forms). */
+export function PersonPicker({ idPrefix, label, hint, initial, onChange }: { idPrefix: string; label: string; hint?: string; initial?: PersonRef | null; onChange: (publicId: string) => void }) {
+  return <PersonSearch id={`${idPrefix}-search`} label={label} hint={hint} initial={initial} onPick={(p) => onChange(p?.publicId ?? '')} />;
 }
 
 /**
  * Pick one job: search for the person; a person with one current job is done, one with several also picks the job.
+ * `company` (a company code, e.g. a ticket's): only jobs in that company are offered.
  * onChange gets the job's public ID, or '' while nothing is chosen.
  */
-export default function JobPicker({ onChange, idPrefix = 'job', label = 'Person', hint }: { onChange: (employmentPublicId: string) => void; idPrefix?: string; label?: string; hint?: string }) {
+export default function JobPicker({ onChange, idPrefix = 'job', label = 'Person', hint, company }: { onChange: (employmentPublicId: string) => void; idPrefix?: string; label?: string; hint?: string; company?: string }) {
   const [person, setPerson] = useState<PersonDetail | null>(null);
   const [error, setError] = useState('');
-  const jobs = person?.employments.filter((j) => j.status !== 'exited') ?? [];
+  const current = (d: PersonDetail) => d.employments.filter((j) => j.status !== 'exited' && (!company || j.company.code === company));
+  const jobs = person ? current(person) : [];
 
   async function choose(p: Found | null) {
     setError(''); setPerson(null); onChange('');
@@ -74,9 +78,9 @@ export default function JobPicker({ onChange, idPrefix = 'job', label = 'Person'
     try {
       const detail = await api<PersonDetail>(`/hrms/people/${p.publicId}`);
       setPerson(detail);
-      const live = detail.employments.filter((j) => j.status !== 'exited');
+      const live = current(detail);
       if (live.length === 1) onChange(live[0]!.publicId);
-      if (!live.length) setError('This person has no current job');
+      if (!live.length) setError(company ? `This person has no current job in ${company}` : 'This person has no current job');
     } catch (e) { setError(errText(e)); }
   }
 

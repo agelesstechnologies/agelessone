@@ -111,6 +111,58 @@ export const AdjustTimeRequest = z.object({
 });
 export type AdjustTimeRequest = z.infer<typeof AdjustTimeRequest>;
 
+// ---- split suggestions: the person suggests, the department head decides ----
+
+const ticketMinutes = z.array(z.object({ ticketPublicId: z.string().uuid(), minutes: z.number().int().min(0).max(1440) }))
+  .max(20).refine((t) => new Set(t.map((x) => x.ticketPublicId)).size === t.length, 'Each ticket once');
+
+/**
+ * POST /api/tickets/time/suggestions — the person suggests another split of their own ticket time for one day (minutes per
+ * ticket, e.g. from 70 / 20 / 10 %). It only moves time: the minutes add up to what those tickets have now. Nothing changes
+ * until the department head approves (then it is stored as their adjustment). publicId: made on the device (a resend is stored once).
+ */
+export const SuggestSplitRequest = z.object({
+  publicId: z.string().uuid(),
+  date: isoDate,
+  note: emptyToUndefined(z.string().trim().min(3, 'At least 3 characters').max(300)),
+  tickets: ticketMinutes.refine((t) => t.length >= 2, 'A split needs at least two tickets'),
+});
+export type SuggestSplitRequest = z.infer<typeof SuggestSplitRequest>;
+
+export const SplitStatus = z.enum(['pending', 'approved', 'rejected', 'cancelled']);
+export type SplitStatus = z.infer<typeof SplitStatus>;
+
+export const SplitSuggestion = z.object({
+  publicId: PublicId, person: PersonRef, date: DateOnly, note: z.string().nullable(), status: SplitStatus,
+  rows: z.array(z.object({
+    ticket: TicketRef,
+    /** the ticket's minutes when the suggestion was made */
+    beforeMinutes: z.number().int(),
+    suggestedMinutes: z.number().int(),
+    /** what was stored on approval (the head may change the split) */
+    approvedMinutes: z.number().int().nullable(),
+  })),
+  createdAt: Instant,
+  decidedBy: PersonRef.nullable(), decidedAs: z.enum(['head', 'management']).nullable(), decidedAt: Instant.nullable(), decisionReason: z.string().nullable(),
+  /** the caller may approve or reject it (never the person themselves) */
+  canDecide: z.boolean(),
+});
+export type SplitSuggestion = z.infer<typeof SplitSuggestion>;
+
+/** GET /api/tickets/time/suggestions?status= — mine, and the ones I decide. */
+export const SplitSuggestionsQuery = z.object({ status: emptyToUndefined(SplitStatus) });
+export type SplitSuggestionsQuery = z.infer<typeof SplitSuggestionsQuery>;
+
+/**
+ * POST /api/tickets/time/suggestions/:id/approve — as suggested (applied in proportion to the tickets' minutes now), or
+ * the head's own minutes per ticket (same tickets, same total), with a reason for the change.
+ */
+export const ApproveSplitRequest = z.object({
+  reason: emptyToUndefined(z.string().trim().min(3, 'At least 3 characters').max(300)),
+  tickets: ticketMinutes.optional(),
+}).refine((r) => !r.tickets || r.reason !== undefined, { message: 'Say why you changed the split', path: ['reason'] });
+export type ApproveSplitRequest = z.infer<typeof ApproveSplitRequest>;
+
 /** GET /api/tickets/:publicId/timelogs: everyone's ticket punches on one ticket, newest first, and the time each person has on it. */
 export const TicketTimelog = z.object({
   publicId: PublicId, person: PersonRef, employeeCode: z.string(),

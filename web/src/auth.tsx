@@ -24,11 +24,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(() => getToken() !== null);
 
-  // Forget the page too, so the next sign-in (and the address bar) does not show the last route.
-  const logout = useCallback(() => {
-    setToken(null); setMe(null);
-    try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch { /* ignore */ }
-  }, []);
+  // Forget the last page (sign-out and sign-in), so the address bar and the next session start clean.
+  const resetPage = () => { try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch { /* ignore */ } };
+  const logout = useCallback(() => { setToken(null); setMe(null); resetPage(); }, []);
   const refresh = useCallback(async () => { setMe(await api<Me>('/auth/me')); }, []);
 
   useEffect(() => { setUnauthorizedHandler(logout); }, [logout]);
@@ -42,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (loginName: string, password: string) => {
     const r = await api<LoginResponse>('/auth/login', { method: 'POST', json: { login: loginName, password } });
     setToken(r.token);
+    resetPage();
     await refresh();
   }, [refresh]);
 

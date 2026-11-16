@@ -21,7 +21,7 @@ export default function Calendar() {
   ];
   const [tab, setTab] = useState<TabKey>('calendar');
   return <>
-    <PageHead eyebrow="HRMS • CALENDAR" title="Calendar" subtitle="Working days, holidays and weekly offs." />
+    <PageHead eyebrow="HRMS • CALENDAR" title="Calendar" />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'calendar' && <MyCalendar />}
     {tab === 'holidays' && <Holidays />}

@@ -70,6 +70,18 @@ export class PeopleRepository {
     return row?.personId;
   }
 
+  /** Locks the person row, so two changes to the same person's jobs (two new jobs at once) can't interleave. */
+  async lockPerson(tx: Tx, personId: number): Promise<void> {
+    await tx.select({ id: persons.id }).from(persons).where(eq(persons.id, personId)).for('update');
+  }
+
+  /** The person's current jobs (joining, active or on notice) with their company code. */
+  async currentEmployments(tx: Tx, personId: number) {
+    return tx.select({ publicId: employments.publicId, legalEntityId: employments.legalEntityId, company: legalEntities.code, employeeCode: employments.employeeCode })
+      .from(employments).innerJoin(legalEntities, eq(legalEntities.id, employments.legalEntityId))
+      .where(and(eq(employments.personId, personId), inArray(employments.status, ['joining', 'active', 'notice'])));
+  }
+
   async clearPrimaryEmployment(tx: Tx, personId: number): Promise<void> {
     await tx.update(employments).set({ isPrimary: false }).where(and(eq(employments.personId, personId), eq(employments.isPrimary, true)));
   }

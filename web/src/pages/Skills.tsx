@@ -20,8 +20,7 @@ export default function Skills() {
   const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'matrix');
   const [adding, setAdding] = useState(false);
   return <>
-    <PageHead eyebrow="HRMS • SKILLS" title="Skills and certificates" subtitle="Who can do what, and which certificates are running out."
-      action={can(SKILLS.manage) ? <button className="primary-btn" onClick={() => setAdding(true)}><Plus size={16} /> New skill</button> : undefined} />
+    <PageHead eyebrow="HRMS • SKILLS" title="Skills and certificates"      action={can(SKILLS.manage) ? <button className="primary-btn" onClick={() => setAdding(true)}><Plus size={16} /> New skill</button> : undefined} />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'matrix' && <Matrix />}
     {tab === 'expiring' && <Expiring />}

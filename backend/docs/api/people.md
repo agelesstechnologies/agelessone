@@ -76,9 +76,16 @@ For HR review (`hrms.contacts.review`, all): everyone currently using this phone
 
 ## Employments
 
-### Add a job in the other company — `POST /hrms/people/:publicId/employments`
-Same fields as `employment` above, plus `isPrimary: true` to move primary to this job. One active (or joining) job per
-company per person (`HRMS_DUPLICATE_EMPLOYMENT`).
+### Add a job — `POST /hrms/people/:publicId/employments`
+Same fields as `employment` above, plus `isPrimary: true` to move primary to this job. One current (joining, active or
+notice) job per company per person (`HRMS_DUPLICATE_EMPLOYMENT`).
+
+**One company at a time** — policy `hrms.people.one_company_per_person` (on by default; the version in force for the new
+job's company on its joining date): while the person has a current job in another company the new job is refused with `409 HRMS_ONE_COMPANY_ONLY`
+(`details.employmentPublicId`: that job). Moving company is a **transfer**: exit the current job, then add the new one.
+When the person has no current job left (a transfer or a re-hire), the new job becomes **primary** (the exited job stops
+being primary) and the person is **active** again, so they can sign in. People who already hold jobs in two companies
+keep them until one is exited.
 
 ### Change a job — `PATCH /hrms/employments/:publicId`
 Any of: `managerPublicId` (or `null`), `departmentCode` (or `null`; a **transfer keeps the employee code**),
@@ -95,7 +102,7 @@ Download: the file itself, for the person themselves or whoever may manage their
 ### Exit — `POST /hrms/employments/:publicId/exit`
 `{ "exitOn": "2026-06-30", "exitReason": "Moved to ATPL full time" }`. In one transaction: the job is `exited` (kept);
 if it was primary, the most recently joined other active job becomes primary — **the other company's job stays
-active**; if no active job is left, the person becomes `inactive` and can no longer sign in.
+active**; if no active job is left, the person becomes `inactive` and can no longer sign in (until a new job is added).
 Errors: `HRMS_EXIT_BEFORE_JOIN`, `HRMS_EMPLOYMENT_NOT_ACTIVE` (already exited).
 
 ## Departments, designations, positions
