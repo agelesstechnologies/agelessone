@@ -9,10 +9,12 @@ export interface StockDifference {
   /** from the moves */
   expectedQty: string; storedQty: string; expectedValue?: string; storedValue?: string;
 }
-export interface RebuildResult { balances: StockDifference[]; valuations: StockDifference[] }
+/** balances: on hand vs the moves; valuations: quantity and value vs the moves; reserved: reserved vs the open reservations. */
+export interface RebuildResult { balances: StockDifference[]; valuations: StockDifference[]; reserved: StockDifference[] }
 
 /**
- * The nightly check (inventory:daily): rebuilds every balance and valuation from the stock moves, fixes any that differ,
+ * The nightly check (inventory:daily): rebuilds every balance and valuation from the stock moves (and each balance's reserved
+ * quantity from the open reservations), fixes any that differ,
  * and alerts (an audit entry per company with the differences). Moves are the truth; a difference means something wrote
  * the balances outside posting. Posting waits while it runs (the two tables are locked for the rebuild).
  */
@@ -68,14 +70,29 @@ export class StockRebuildService {
         }
       }
 
+      // reserved = what the open reservations hold (never more than on hand)
+      const reserved = (await tx.execute<{ id: string; tenant_id: string; legal_entity_id: string; item_id: string; location_id: string; expected: string; stored: string; on_hand: string }>(sql`
+        WITH r AS (
+          SELECT legal_entity_id, item_id, location_id, coalesce(batch_id, 0) AS batch, sum(quantity) AS q
+            FROM inventory.stock_reservations WHERE released_at IS NULL GROUP BY legal_entity_id, item_id, location_id, coalesce(batch_id, 0))
+        SELECT b.id, b.tenant_id, b.legal_entity_id, b.item_id, b.location_id, coalesce(r.q, 0)::text AS expected, b.reserved::text AS stored, b.on_hand::text AS on_hand
+          FROM inventory.stock_balances b
+          LEFT JOIN r ON r.legal_entity_id = b.legal_entity_id AND r.item_id = b.item_id AND r.location_id = b.location_id AND r.batch = coalesce(b.batch_id, 0)
+         WHERE coalesce(r.q, 0) <> b.reserved`)).rows;
+      for (const d of reserved) {
+        await tx.execute(sql`UPDATE inventory.stock_balances SET reserved = least(${d.expected}::numeric, on_hand), updated_at = now() WHERE id = ${d.id}`);
+      }
+
       const result: RebuildResult = {
         balances: balances.map((d) => ({ tenantId: Number(d.tenant_id), legalEntityId: Number(d.legal_entity_id), itemId: Number(d.item_id),
           locationId: Number(d.location_id), expectedQty: d.expected, storedQty: d.stored })),
         valuations: valuations.map((d) => ({ tenantId: Number(d.tenant_id), legalEntityId: Number(d.legal_entity_id), itemId: Number(d.item_id), locationId: null,
           expectedQty: d.qty, storedQty: d.stored_qty, expectedValue: d.value, storedValue: d.stored_value })),
+        reserved: reserved.map((d) => ({ tenantId: Number(d.tenant_id), legalEntityId: Number(d.legal_entity_id), itemId: Number(d.item_id),
+          locationId: Number(d.location_id), expectedQty: d.expected, storedQty: d.stored })),
       };
       const byCompany = new Map<string, StockDifference[]>();
-      for (const d of [...result.balances, ...result.valuations]) {
+      for (const d of [...result.balances, ...result.valuations, ...result.reserved]) {
         const k = `${d.tenantId}:${d.legalEntityId}`;
         byCompany.set(k, [...(byCompany.get(k) ?? []), d]);
       }

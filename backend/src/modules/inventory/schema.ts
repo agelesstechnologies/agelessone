@@ -186,6 +186,135 @@ export const stockBatches = inventorySchema.table('stock_batches', {
 ]);
 
 /**
+ * A cross-company requester: the store in-charge of the company that owns the stock lets a person from another company
+ * request parts for one of its tickets until valid_until (inclusive). Requests only: no values, no approvals. Ended,
+ * never deleted; one open grant per person and ticket.
+ */
+export const crossCompanyGrants = inventorySchema.table('cross_company_grants', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  publicId: uuid('public_id').notNull().unique(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
+  personId: bigint('person_id', { mode: 'number' }).notNull().references(() => persons.id),
+  ticketId: bigint('ticket_id', { mode: 'number' }).notNull(),
+  validUntil: date('valid_until').notNull(),
+  grantedBy: bigint('granted_by', { mode: 'number' }).notNull().references(() => persons.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  endedBy: bigint('ended_by', { mode: 'number' }).references(() => persons.id),
+  endedAt: timestamp('ended_at', { withTimezone: true }),
+}, (t) => [
+  foreignKey({ name: 'cross_company_grants_ticket_company_fk', columns: [t.ticketId, t.legalEntityId], foreignColumns: [tickets.id, tickets.legalEntityId] }),
+  unique('cross_company_grants_id_company_unique').on(t.id, t.legalEntityId),
+  uniqueIndex('cross_company_grants_one_open').on(t.personId, t.ticketId).where(sql`ended_at IS NULL`),
+  check('cross_company_grants_not_self', sql`granted_by <> person_id`),
+  check('cross_company_grants_ended_fields', sql`(ended_by IS NULL) = (ended_at IS NULL)`),
+]);
+
+/**
+ * A request for parts for a ticket (projects come later), like Froid's "Parts required". The store in-charge approves it;
+ * when its estimated value is above the company's limit the ticket's department head must approve too. Fully approved,
+ * its stock is reserved (stock_reservations) until reserve_until. Nobody decides their own request.
+ */
+export const partRequests = inventorySchema.table('part_requests', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  publicId: uuid('public_id').notNull().unique(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
+  number: text('number').notNull(),
+  ticketId: bigint('ticket_id', { mode: 'number' }).notNull(),
+  /** projects come later (no table yet) */
+  projectId: bigint('project_id', { mode: 'number' }),
+  requestedBy: bigint('requested_by', { mode: 'number' }).notNull().references(() => persons.id),
+  /** asked through a cross-company grant */
+  grantId: bigint('grant_id', { mode: 'number' }),
+  status: text('status').notNull().default('pending'),
+  note: text('note'),
+  estimatedValueMinor: bigint('estimated_value_minor', { mode: 'bigint' }).notNull(),
+  currency: char('currency', { length: 3 }).notNull().default('INR'),
+  needsHeadApproval: boolean('needs_head_approval').notNull(),
+  storeApprovedBy: bigint('store_approved_by', { mode: 'number' }).references(() => persons.id),
+  storeApprovedAt: timestamp('store_approved_at', { withTimezone: true }),
+  headApprovedBy: bigint('head_approved_by', { mode: 'number' }).references(() => persons.id),
+  headApprovedAt: timestamp('head_approved_at', { withTimezone: true }),
+  reserveUntil: date('reserve_until'),
+  /** who rejected or cancelled it, and why */
+  decidedBy: bigint('decided_by', { mode: 'number' }).references(() => persons.id),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decisionReason: text('decision_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  foreignKey({ name: 'part_requests_ticket_company_fk', columns: [t.ticketId, t.legalEntityId], foreignColumns: [tickets.id, tickets.legalEntityId] }),
+  foreignKey({ name: 'part_requests_grant_company_fk', columns: [t.grantId, t.legalEntityId], foreignColumns: [crossCompanyGrants.id, crossCompanyGrants.legalEntityId] }),
+  unique('part_requests_company_number_unique').on(t.legalEntityId, t.number),
+  unique('part_requests_id_company_unique').on(t.id, t.legalEntityId),
+  index('idx_part_requests_ticket').on(t.ticketId),
+  index('idx_part_requests_company_status').on(t.legalEntityId, t.status),
+  check('part_requests_status_check', sql`status IN ('pending','approved','fulfilled','rejected','cancelled','expired','closed')`),
+  check('part_requests_money_check', sql`estimated_value_minor >= 0 AND currency = 'INR'`),
+  check('part_requests_not_own_decision', sql`(store_approved_by IS NULL OR store_approved_by <> requested_by) AND (head_approved_by IS NULL OR head_approved_by <> requested_by)
+    AND (decided_by IS NULL OR status = 'cancelled' OR decided_by <> requested_by)`),
+  check('part_requests_approval_fields', sql`(store_approved_by IS NULL) = (store_approved_at IS NULL) AND (head_approved_by IS NULL) = (head_approved_at IS NULL)
+    AND (decided_by IS NULL) = (decided_at IS NULL)`),
+  check('part_requests_approved_fields', sql`status IN ('pending','rejected') OR (store_approved_by IS NOT NULL AND (NOT needs_head_approval OR head_approved_by IS NOT NULL) AND reserve_until IS NOT NULL)
+    OR (status = 'cancelled' AND decided_by IS NOT NULL) OR status = 'closed'`),
+  check('part_requests_rejected_fields', sql`status <> 'rejected' OR (decided_by IS NOT NULL AND decision_reason IS NOT NULL)`),
+  check('part_requests_note_length', sql`note IS NULL OR char_length(note) BETWEEN 1 AND 500`),
+]);
+
+/** One item of a part request: how much, where the store in-charge reserves it from, and how much has been issued. */
+export const partRequestLines = inventorySchema.table('part_request_lines', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
+  requestId: bigint('request_id', { mode: 'number' }).notNull(),
+  lineNo: integer('line_no').notNull(),
+  itemId: bigint('item_id', { mode: 'number' }).notNull(),
+  quantity: numeric('quantity', { precision: 18, scale: 4 }).notNull(),
+  locationId: bigint('location_id', { mode: 'number' }),
+  issuedQty: numeric('issued_qty', { precision: 18, scale: 4 }).notNull().default('0'),
+  /** quantity × the item's average when asked (the request's estimate is their sum) */
+  estimatedValueMinor: bigint('estimated_value_minor', { mode: 'bigint' }).notNull(),
+}, (t) => [
+  foreignKey({ name: 'part_request_lines_request_company_fk', columns: [t.requestId, t.legalEntityId], foreignColumns: [partRequests.id, partRequests.legalEntityId] }),
+  foreignKey({ name: 'part_request_lines_item_company_fk', columns: [t.itemId, t.legalEntityId], foreignColumns: [items.id, items.legalEntityId] }),
+  foreignKey({ name: 'part_request_lines_location_company_fk', columns: [t.locationId, t.legalEntityId], foreignColumns: [locations.id, locations.legalEntityId] }),
+  unique('part_request_lines_request_line_unique').on(t.requestId, t.lineNo),
+  unique('part_request_lines_request_item_unique').on(t.requestId, t.itemId),
+  unique('part_request_lines_id_company_unique').on(t.id, t.legalEntityId),
+  check('part_request_lines_quantity_check', sql`quantity > 0 AND issued_qty >= 0 AND issued_qty <= quantity AND line_no >= 1`),
+]);
+
+/**
+ * Stock held for a part request line in one location (and batch). quantity is what is still held; it goes down as the
+ * request is issued and is released (released_at, reason) when issued in full, or when the request is cancelled, expires
+ * or its ticket closes. A balance's reserved = the open quantities held in it.
+ */
+export const stockReservations = inventorySchema.table('stock_reservations', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
+  requestLineId: bigint('request_line_id', { mode: 'number' }).notNull(),
+  itemId: bigint('item_id', { mode: 'number' }).notNull(),
+  locationId: bigint('location_id', { mode: 'number' }).notNull(),
+  batchId: bigint('batch_id', { mode: 'number' }),
+  reservedQty: numeric('reserved_qty', { precision: 18, scale: 4 }).notNull(),
+  quantity: numeric('quantity', { precision: 18, scale: 4 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  releasedAt: timestamp('released_at', { withTimezone: true }),
+  releaseReason: text('release_reason'),
+}, (t) => [
+  foreignKey({ name: 'stock_reservations_line_company_fk', columns: [t.requestLineId, t.legalEntityId], foreignColumns: [partRequestLines.id, partRequestLines.legalEntityId] }),
+  foreignKey({ name: 'stock_reservations_item_company_fk', columns: [t.itemId, t.legalEntityId], foreignColumns: [items.id, items.legalEntityId] }),
+  foreignKey({ name: 'stock_reservations_location_company_fk', columns: [t.locationId, t.legalEntityId], foreignColumns: [locations.id, locations.legalEntityId] }),
+  foreignKey({ name: 'stock_reservations_batch_item_fk', columns: [t.batchId, t.itemId, t.legalEntityId], foreignColumns: [stockBatches.id, stockBatches.itemId, stockBatches.legalEntityId] }),
+  index('idx_stock_reservations_line').on(t.requestLineId),
+  index('idx_stock_reservations_open').on(t.itemId, t.locationId).where(sql`released_at IS NULL`),
+  check('stock_reservations_quantity_check', sql`reserved_qty > 0 AND quantity >= 0 AND quantity <= reserved_qty`),
+  check('stock_reservations_release_fields', sql`(released_at IS NULL) = (release_reason IS NULL) AND (release_reason IS NULL OR release_reason IN ('issued','cancelled','expired','ticket_closed'))
+    AND (released_at IS NULL OR quantity = 0)`),
+]);
+
+/**
  * A stock document: receipt (from a supplier; a direct purchase needs a reason until purchase orders exist), issue (to a
  * ticket of the same company; projects come later), return (of an issue), transfer (sent to transit, then received) or
  * reversal (undoes a posted document). Posted when created; a transfer stays in_transit until received. Never deleted:
@@ -212,6 +341,8 @@ export const stockDocuments = inventorySchema.table('stock_documents', {
   /** return: the issue it returns; reversal: the document it undoes */
   originalDocumentId: bigint('original_document_id', { mode: 'number' }),
   transitLocationId: bigint('transit_location_id', { mode: 'number' }),
+  /** issue: the part request it fills */
+  requestId: bigint('request_id', { mode: 'number' }),
   currency: char('currency', { length: 3 }).notNull().default('INR'),
   createdBy: bigint('created_by', { mode: 'number' }).notNull().references(() => persons.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -221,6 +352,7 @@ export const stockDocuments = inventorySchema.table('stock_documents', {
   foreignKey({ name: 'stock_documents_ticket_company_fk', columns: [t.ticketId, t.legalEntityId], foreignColumns: [tickets.id, tickets.legalEntityId] }),
   foreignKey({ name: 'stock_documents_original_company_fk', columns: [t.originalDocumentId, t.legalEntityId], foreignColumns: [t.id, t.legalEntityId] }),
   foreignKey({ name: 'stock_documents_transit_company_fk', columns: [t.transitLocationId, t.legalEntityId], foreignColumns: [locations.id, locations.legalEntityId] }),
+  foreignKey({ name: 'stock_documents_request_company_fk', columns: [t.requestId, t.legalEntityId], foreignColumns: [partRequests.id, partRequests.legalEntityId] }),
   unique('stock_documents_company_number_unique').on(t.legalEntityId, t.number),
   unique('stock_documents_id_company_unique').on(t.id, t.legalEntityId),
   uniqueIndex('stock_documents_one_reversal').on(t.originalDocumentId).where(sql`type = 'reversal'`),
@@ -236,6 +368,7 @@ export const stockDocuments = inventorySchema.table('stock_documents', {
   check('stock_documents_received_fields', sql`(received_by IS NULL) = (received_at IS NULL) AND (received_at IS NULL OR type = 'transfer')`),
   check('stock_documents_challan_fields', sql`(challan_path IS NULL) = (challan_type IS NULL) AND (challan_type IS NULL OR challan_type IN ('jpg','png','pdf')) AND (challan_path IS NULL OR type = 'receipt')`),
   check('stock_documents_reversal_final', sql`type <> 'reversal' OR status = 'posted'`),
+  check('stock_documents_request_on_issue', sql`request_id IS NULL OR type = 'issue'`),
   check('stock_documents_text_lengths', sql`(supplier_name IS NULL OR char_length(supplier_name) BETWEEN 2 AND 120) AND (challan_no IS NULL OR char_length(challan_no) BETWEEN 1 AND 60) AND (reason IS NULL OR char_length(reason) BETWEEN 3 AND 300) AND (note IS NULL OR char_length(note) BETWEEN 1 AND 500)`),
 ]);
 
@@ -263,8 +396,10 @@ export const stockDocumentLines = inventorySchema.table('stock_document_lines', 
   valueMinor: bigint('value_minor', { mode: 'bigint' }).notNull(),
   currency: char('currency', { length: 3 }).notNull().default('INR'),
   condition: text('condition'),
-  /** return: the issue line it returns */
+  /** return: the issue line it returns; reversal: the line it undoes */
   originalLineId: bigint('original_line_id', { mode: 'number' }),
+  /** issue against a part request: the request line it fills */
+  requestLineId: bigint('request_line_id', { mode: 'number' }),
 }, (t) => [
   foreignKey({ name: 'stock_document_lines_document_company_fk', columns: [t.documentId, t.legalEntityId], foreignColumns: [stockDocuments.id, stockDocuments.legalEntityId] }),
   foreignKey({ name: 'stock_document_lines_item_company_fk', columns: [t.itemId, t.legalEntityId], foreignColumns: [items.id, items.legalEntityId] }),
@@ -273,6 +408,7 @@ export const stockDocumentLines = inventorySchema.table('stock_document_lines', 
   foreignKey({ name: 'stock_document_lines_unit_company_fk', columns: [t.enteredUnitId, t.legalEntityId], foreignColumns: [units.id, units.legalEntityId] }),
   foreignKey({ name: 'stock_document_lines_batch_item_fk', columns: [t.batchId, t.itemId, t.legalEntityId], foreignColumns: [stockBatches.id, stockBatches.itemId, stockBatches.legalEntityId] }),
   foreignKey({ name: 'stock_document_lines_original_company_fk', columns: [t.originalLineId, t.legalEntityId], foreignColumns: [t.id, t.legalEntityId] }),
+  foreignKey({ name: 'stock_document_lines_request_line_company_fk', columns: [t.requestLineId, t.legalEntityId], foreignColumns: [partRequestLines.id, partRequestLines.legalEntityId] }),
   unique('stock_document_lines_document_line_unique').on(t.documentId, t.lineNo),
   unique('stock_document_lines_id_company_unique').on(t.id, t.legalEntityId),
   index('idx_stock_document_lines_item').on(t.itemId),
@@ -283,6 +419,7 @@ export const stockDocumentLines = inventorySchema.table('stock_document_lines', 
   check('stock_document_lines_condition_check', sql`condition IS NULL OR condition IN ('usable','repair','scrap')`),
   check('stock_document_lines_to_location_check', sql`to_location_id IS NULL OR to_location_id <> location_id`),
   check('stock_document_lines_line_no_check', sql`line_no >= 1`),
+  check('stock_document_lines_serial_one_unit', sql`serial_no IS NULL OR quantity = 1`),
 ]);
 
 /**
@@ -367,7 +504,7 @@ export const stockValuations = inventorySchema.table('stock_valuations', {
   check('stock_valuations_empty_has_no_value', sql`on_hand > 0 OR value_minor = 0`),
 ]);
 
-/** The next number of each document type per company (GRN-00001, ISS-00001 …); the row is locked while a number is taken. */
+/** The next number of each document type per company (GRN-00001, ISS-00001, REQ-00001 …); the row is locked while a number is taken. */
 export const documentSeries = inventorySchema.table('document_series', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
@@ -376,6 +513,28 @@ export const documentSeries = inventorySchema.table('document_series', {
   nextNumber: integer('next_number').notNull().default(1),
 }, (t) => [
   unique('document_series_company_type_unique').on(t.legalEntityId, t.docType),
-  check('document_series_type_check', sql`doc_type IN ('receipt','issue','return','transfer','reversal')`),
+  check('document_series_type_check', sql`doc_type IN ('receipt','issue','return','transfer','reversal','request')`),
   check('document_series_next_check', sql`next_number >= 1`),
+]);
+
+/**
+ * Serial-numbered units: one row per unit of a serial item, in exactly one location at a time (location null: not in
+ * stock: issued, or its receipt reversed). Posting moves it: a unit arriving must not be in stock anywhere, a unit
+ * leaving must be in that location. The serial number is unique per item.
+ */
+export const stockSerials = inventorySchema.table('stock_serials', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
+  itemId: bigint('item_id', { mode: 'number' }).notNull(),
+  serialNo: text('serial_no').notNull(),
+  locationId: bigint('location_id', { mode: 'number' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  foreignKey({ name: 'stock_serials_item_company_fk', columns: [t.itemId, t.legalEntityId], foreignColumns: [items.id, items.legalEntityId] }),
+  foreignKey({ name: 'stock_serials_location_company_fk', columns: [t.locationId, t.legalEntityId], foreignColumns: [locations.id, locations.legalEntityId] }),
+  unique('stock_serials_item_serial_unique').on(t.itemId, t.serialNo),
+  index('idx_stock_serials_location').on(t.locationId),
+  check('stock_serials_serial_length', sql`char_length(serial_no) BETWEEN 1 AND 80`),
 ]);

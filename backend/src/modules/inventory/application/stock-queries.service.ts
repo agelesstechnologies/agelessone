@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  LocationType, StockDocument, StockDocumentList, StockDocumentSummary, StockDocumentsQuery, StockList, StockQuery,
+  LocationType, StockBatch, StockBatchesQuery, StockDocument, StockDocumentList, StockDocumentSummary, StockDocumentsQuery, StockList, StockQuery,
 } from '@ageless/shared';
 import { Conn, DB, Db } from '../../../platform/db/db.module';
 import { AppError } from '../../../platform/http/app-error';
@@ -64,7 +64,8 @@ export class StockQueriesService {
         location: { publicId: l.locationPublicId as string, type: l.locationType, code: l.locationCode ?? '', name: l.locationName ?? '' },
         toLocation: l.toLocationPublicId === null ? null
           : { publicId: l.toLocationPublicId, type: l.toLocationType as LocationType, code: l.toLocationCode ?? '', name: l.toLocationName ?? '' },
-        condition: l.condition, returnOfLineNo: l.returnOfLineNo, unitCostMinor: Number(l.unitCost), valueMinor: Number(l.value), currency: l.currency,
+        condition: l.condition, returnOfLineNo: l.returnOfLineNo, batchNo: l.batchNo, expiryDate: l.expiryDate, serialNo: l.serialNo, requestLineNo: l.requestLineNo,
+        unitCostMinor: Number(l.unitCost), valueMinor: Number(l.value), currency: l.currency,
       })),
     };
   }
@@ -95,12 +96,31 @@ export class StockQueriesService {
           company: r.company, item: { publicId: r.itemPublicId, code: r.itemCode, name: r.itemName },
           unit: { publicId: r.unitPublicId, code: r.unitCode, name: r.unitName, decimals: r.unitDecimals },
           location: { publicId: r.locationPublicId, type: r.locationType, code: r.locationCode, name: r.locationName },
+          batch: r.batchNo === null ? null : { batchNo: r.batchNo, expiryDate: r.expiryDate },
           onHand: Number(r.onHand), reserved: Number(r.reserved), available: Number(onHand - reserved) / 10_000,
           avgCostMinor: Number(r.avg), valueMinor: Number(valueAt(onHand, toScaled(r.avg, 6))), currency: r.currency,
         };
       }),
       page: q.page, pageSize: q.pageSize, total,
     };
+  }
+
+  /** An item's batches with stock, earliest expiry first (what to take first). Scope own: only the locations looked after. */
+  async batches(ctx: RequestContext, q: StockBatchesQuery): Promise<StockBatch[]> {
+    const item = (await this.stock.items(this.db, ctx.tenantId, [q.item])).get(q.item);
+    if (!item || !(await this.access.mayUse(ctx, STOCK_READ, item.legalEntityId))) throw new AppError('INVENTORY_ITEM_NOT_FOUND', 404, 'Unknown item');
+    const company = { id: item.legalEntityId, code: '' };
+    let locationIds = await this.onlyLocations(ctx, [company]);
+    if (q.location) {
+      const loc = (await this.stock.locations(this.db, ctx.tenantId, [q.location])).get(q.location);
+      if (!loc || loc.legalEntityId !== item.legalEntityId) return [];
+      locationIds = locationIds ? locationIds.filter((id) => id === loc.id) : [loc.id];
+    }
+    return (await this.repo.batches(this.db, item.id, locationIds)).map((r) => {
+      const free = toScaled(r.onHand, 4) - toScaled(r.reserved, 4);
+      return { batchNo: r.batchNo, expiryDate: r.expiryDate, location: { publicId: r.locationPublicId, type: r.locationType, code: r.locationCode, name: r.locationName },
+        onHand: Number(r.onHand), reserved: Number(r.reserved), available: Number(free) / 10_000 };
+    });
   }
 
   /** The receipt's delivery challan file. */
@@ -146,6 +166,7 @@ function toSummary(r: SummaryRow): StockDocumentSummary {
     ticket: r.ticketPublicId === null ? null : { publicId: r.ticketPublicId, number: r.ticketNumber ?? '', title: r.ticketTitle ?? '' },
     original: r.originalPublicId === null ? null : { publicId: r.originalPublicId, number: r.originalNumber ?? '', type: r.originalType as StockDocumentSummary['type'] },
     reversal: r.reversalPublicId === null ? null : { publicId: r.reversalPublicId, number: r.reversalNumber ?? '', type: 'reversal' },
+    request: r.requestPublicId === null ? null : { publicId: r.requestPublicId, number: r.requestNumber ?? '' },
     lineCount: r.lineCount, totalValueMinor: Number(r.totalValue), currency: r.currency,
     createdBy: personRef(r.createdByPublicId, r.createdByName), createdAt: r.createdAt.toISOString(),
   };

@@ -13,9 +13,11 @@ export const INVENTORY = {
   locations: 'inventory.locations.manage',
   /** post receipts, issues, returns and transfers (store roles; the stock step) */
   stockPost: 'inventory.stock.post',
-  /** Parts requester: request parts on tickets they are assigned to whose type uses parts (the requests step) */
+  /** Parts requester: request parts on tickets they are assigned to whose type uses parts (policy inventory.parts.ticket_types) */
   request: 'inventory.request',
-  /** department heads: parts and cost on their departments' tickets, approval above the limit (the requests step) */
+  /** Store in-charge: approve, reject and cancel part requests; grant cross-company requesters */
+  requestsApprove: 'inventory.requests.approve',
+  /** department heads: parts and cost on their departments' tickets, approval above the value limit */
   departmentView: 'inventory.department.view',
 } as const;
 

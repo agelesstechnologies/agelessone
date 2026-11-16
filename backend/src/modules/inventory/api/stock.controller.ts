@@ -2,8 +2,8 @@ import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Res, Uploa
 import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import {
-  CreateIssueRequest, CreateReceiptRequest, CreateReturnRequest, CreateTransferRequest, ReverseDocumentRequest, StockDocument, StockDocumentList,
-  StockDocumentsQuery, StockList, StockQuery,
+  CreateIssueRequest, CreateReceiptRequest, CreateReturnRequest, CreateTransferRequest, ReverseDocumentRequest, StockBatch, StockBatchesQuery, StockDocument,
+  StockDocumentList, StockDocumentsQuery, StockList, StockQuery,
 } from '@ageless/shared';
 import { ZodValidationPipe } from '../../../platform/http/zod-validation.pipe';
 import { Ctx, Permission, RequestContext } from '../../../platform/http/request-context';
@@ -37,7 +37,9 @@ export class StockController {
   }
 
   @Doc({ summary: 'Issue parts to a ticket', response: StockDocument, resend: true,
-    description: `Each line takes the item's average cost at that moment; it is recorded on the line and never changes. The ticket is open, assigned, in progress or on hold. ${NOT_ENOUGH} ${POSTING}` })
+    description: 'Against an approved part request (requestPublicId + requestLines) it takes the reserved stock; a direct issue (ticketPublicId + lines) only stock that is not reserved '
+      + '(409 INVENTORY_NOT_ENOUGH_AVAILABLE). Batch items without a batch take the earliest expiry first; serial items are one unit per line with its serial number. '
+      + `Each line takes the item's average cost at that moment; it is recorded on the line and never changes. The ticket is open, assigned, in progress or on hold. ${NOT_ENOUGH} ${POSTING}` })
   @Permission(INVENTORY.stockPost) @Post('issues')
   async issue(@Ctx() ctx: RequestContext, @Body(new ZodValidationPipe(CreateIssueRequest)) body: CreateIssueRequest, @Res({ passthrough: true }) res: Created) {
     return created(res, await this.documents.issue(ctx, body));
@@ -100,6 +102,12 @@ export class StockController {
     res.setHeader('Content-Type', f.type);
     res.setHeader('Content-Disposition', `attachment; filename="${f.name}"`);
     res.send(f.data);
+  }
+
+  @Doc({ summary: 'The batches of an item with stock, earliest expiry first (what to issue first)', response: z.array(StockBatch), description: READ })
+  @Permission(...STOCK_READ) @Get('stock/batches')
+  batches(@Ctx() ctx: RequestContext, @Query(new ZodValidationPipe(StockBatchesQuery)) q: StockBatchesQuery) {
+    return this.queries.batches(ctx, q);
   }
 
   @Doc({ summary: 'Stock on hand by item and location, with the company-wide average cost and value', response: StockList,

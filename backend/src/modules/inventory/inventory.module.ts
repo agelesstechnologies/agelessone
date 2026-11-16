@@ -1,9 +1,14 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { UnitsController } from './api/units.controller';
 import { CategoriesController } from './api/categories.controller';
 import { ItemsController } from './api/items.controller';
 import { LocationsController } from './api/locations.controller';
 import { StockController } from './api/stock.controller';
+import { RequestsController } from './api/requests.controller';
+import { RequestsService } from './application/requests.service';
+import { GrantsService } from './application/grants.service';
+import { RequestsRepository } from './infrastructure/requests.repository';
+import { InventoryFacade } from './inventory.facade';
 import { CompanyAccess } from './application/company-access.service';
 import { UnitsService } from './application/units.service';
 import { CategoriesService } from './application/categories.service';
@@ -26,13 +31,15 @@ import { StockQueriesRepository } from './infrastructure/stock-queries.repositor
  * Inventory: each company's units, item categories, items (unit conversions, copy, CSV import) and store locations (CSV import).
  * The companies are kept apart: records of one company never point at another's, and people reach only the companies
  * they work in (scope all: every company). Stock moves through documents (receipt, issue, return, transfer, reversal) at the
- * moving average cost; the nightly job rebuilds balances from the moves.
+ * moving average cost; the nightly job rebuilds balances from the moves. Part requests reserve stock once approved; cross-company
+ * grants let a person of another company request for one ticket. Global: other modules use InventoryFacade.
  */
+@Global()
 @Module({
-  controllers: [UnitsController, CategoriesController, ItemsController, LocationsController, StockController],
+  controllers: [UnitsController, CategoriesController, ItemsController, LocationsController, StockController, RequestsController],
   providers: [CompanyAccess, UnitsService, CategoriesService, ItemsService, ItemImportService, LocationImportService, LocationsService,
-    ClosedMonths, StockPosting, StockDocumentsService, StockQueriesService, StockRebuildService,
-    InventoryRepository, CatalogRepository, LocationsRepository, StockRepository, StockQueriesRepository],
-  exports: [StockRebuildService],
+    ClosedMonths, StockPosting, StockDocumentsService, StockQueriesService, StockRebuildService, RequestsService, GrantsService, InventoryFacade,
+    InventoryRepository, CatalogRepository, LocationsRepository, StockRepository, StockQueriesRepository, RequestsRepository],
+  exports: [InventoryFacade, StockRebuildService, RequestsService],
 })
 export class InventoryModule {}

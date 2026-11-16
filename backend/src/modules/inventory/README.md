@@ -7,7 +7,7 @@ Stock for each company (ATPL first, AE as a completely separate company on the s
 | --- | --- | --- |
 | Set-up | Units, item categories, items (unit conversions, copy from another company), store locations, CSV import, roles | built |
 | Stock | Documents (receipt, issue, return, transfer, reversal), append-only stock moves, balances, moving average per item per company, stock events (`core.outbox`), nightly rebuild (`inventory:daily`) | built |
-| Requests | Part requests from tickets, approvals by value, reservations, serial and batch rules, cross-company requesters, intercompany charges | next |
+| Requests | Part requests from tickets, approvals by value, reservations, serial and batch rules, cross-company requesters (intercompany passed-cost lines: in the intercompany module from `stock.issued`, once merged) | built |
 | Control | Counts, adjustments, reorder alerts, reports, links to projects and Accounts | |
 
 Layout (like `tickets/` and `payroll/`): `api/` controllers · `application/` services (`CompanyAccess` decides which

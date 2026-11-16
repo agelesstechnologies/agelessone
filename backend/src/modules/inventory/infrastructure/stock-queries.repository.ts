@@ -4,7 +4,7 @@ import type { LocationType, ReturnCondition, StockDocumentStatus, StockDocumentT
 import { Conn, DB, Db } from '../../../platform/db/db.module';
 import { legalEntities, persons } from '../../core/schema';
 import { tickets } from '../../tickets/schema';
-import { items, locations, stockBalances, stockDocumentLines, stockDocuments, stockValuations, units } from '../schema';
+import { items, locations, partRequests, stockBalances, stockBatches, stockDocumentLines, stockDocuments, stockValuations, units } from '../schema';
 
 const transit = aliasedTable(locations, 'transit_location');
 const creator = aliasedTable(persons, 'creator');
@@ -36,6 +36,7 @@ export class StockQueriesRepository {
       originalNumber: sql<string | null>`(SELECT o.number FROM ${stockDocuments} o WHERE o.id = ${stockDocuments.originalDocumentId})`,
       originalType: sql<StockDocumentType | null>`(SELECT o.type FROM ${stockDocuments} o WHERE o.id = ${stockDocuments.originalDocumentId})`,
       reversalPublicId: sql<string | null>`(SELECT r.public_id::text FROM ${stockDocuments} r WHERE r.original_document_id = ${stockDocuments.id} AND r.type = 'reversal')`,
+      requestPublicId: partRequests.publicId, requestNumber: partRequests.number,
       reversalNumber: sql<string | null>`(SELECT r.number FROM ${stockDocuments} r WHERE r.original_document_id = ${stockDocuments.id} AND r.type = 'reversal')`,
       lineCount: sql<number>`(SELECT count(*) FROM ${stockDocumentLines} l WHERE l.document_id = ${stockDocuments.id})::int`,
       totalValue: sql<string>`(SELECT coalesce(sum(l.value_minor), 0) FROM ${stockDocumentLines} l WHERE l.document_id = ${stockDocuments.id})::text`,
@@ -43,7 +44,8 @@ export class StockQueriesRepository {
     }).from(stockDocuments)
       .innerJoin(legalEntities, eq(legalEntities.id, stockDocuments.legalEntityId))
       .innerJoin(creator, eq(creator.id, stockDocuments.createdBy))
-      .leftJoin(tickets, eq(tickets.id, stockDocuments.ticketId));
+      .leftJoin(tickets, eq(tickets.id, stockDocuments.ticketId))
+      .leftJoin(partRequests, eq(partRequests.id, stockDocuments.requestId));
   }
 
   private where(tenantId: number, f: DocumentFilter): SQL | undefined {
@@ -87,6 +89,8 @@ export class StockQueriesRepository {
       toLocationPublicId: toLocation.publicId, toLocationType: sql<LocationType | null>`${toLocation.type}`, toLocationCode: toLocation.code, toLocationName: toLocation.name,
       condition: sql<ReturnCondition | null>`${stockDocumentLines.condition}`,
       returnOfLineNo: sql<number | null>`(SELECT o.line_no FROM ${stockDocumentLines} o WHERE o.id = ${stockDocumentLines.originalLineId})`,
+      requestLineNo: sql<number | null>`(SELECT r.line_no FROM inventory.part_request_lines r WHERE r.id = ${stockDocumentLines.requestLineId})`,
+      batchNo: stockBatches.batchNo, expiryDate: stockBatches.expiryDate, serialNo: stockDocumentLines.serialNo,
       unitCost: stockDocumentLines.unitCostMinor, value: stockDocumentLines.valueMinor, currency: stockDocumentLines.currency,
     }).from(stockDocumentLines)
       .innerJoin(items, eq(items.id, stockDocumentLines.itemId))
@@ -95,6 +99,7 @@ export class StockQueriesRepository {
       .leftJoin(enteredUnit, eq(enteredUnit.id, stockDocumentLines.enteredUnitId))
       .leftJoin(fromLocation, eq(fromLocation.id, stockDocumentLines.locationId))
       .leftJoin(toLocation, eq(toLocation.id, stockDocumentLines.toLocationId))
+      .leftJoin(stockBatches, eq(stockBatches.id, stockDocumentLines.batchId))
       .where(eq(stockDocumentLines.documentId, documentId)).orderBy(asc(stockDocumentLines.lineNo));
     return { head, extra, lines };
   }
@@ -131,6 +136,7 @@ export class StockQueriesRepository {
         company: legalEntities.code, itemPublicId: items.publicId, itemCode: items.code, itemName: items.name,
         unitPublicId: baseUnit.publicId, unitCode: baseUnit.code, unitName: baseUnit.name, unitDecimals: baseUnit.decimals,
         locationPublicId: locations.publicId, locationType: sql<LocationType>`${locations.type}`, locationCode: locations.code, locationName: locations.name,
+        batchNo: stockBatches.batchNo, expiryDate: stockBatches.expiryDate,
         onHand: stockBalances.onHand, reserved: stockBalances.reserved, avg: sql<string>`coalesce(${stockValuations.avgCostMinor}, 0)::text`,
         currency: sql<string>`coalesce(${stockValuations.currency}, 'INR')`,
       }).from(stockBalances)
@@ -139,9 +145,20 @@ export class StockQueriesRepository {
         .innerJoin(baseUnit, eq(baseUnit.id, items.baseUnitId))
         .innerJoin(locations, eq(locations.id, stockBalances.locationId))
         .leftJoin(stockValuations, eq(stockValuations.itemId, stockBalances.itemId))
-        .where(where).orderBy(asc(legalEntities.code), asc(items.code), asc(locations.code)).limit(pageSize).offset((page - 1) * pageSize),
+        .leftJoin(stockBatches, eq(stockBatches.id, stockBalances.batchId))
+        .where(where).orderBy(asc(legalEntities.code), asc(items.code), asc(locations.code), sql`${stockBatches.expiryDate} NULLS LAST`).limit(pageSize).offset((page - 1) * pageSize),
       this.db.select({ total: count() }).from(stockBalances).where(where),
     ]);
     return { rows, total };
+  }
+
+  /** An item's batches with stock (in one location or all reached), earliest expiry first, no expiry last. */
+  batches(conn: Conn, itemId: number, locationIds: number[] | undefined) {
+    return conn.select({ batchNo: stockBatches.batchNo, expiryDate: stockBatches.expiryDate, onHand: stockBalances.onHand, reserved: stockBalances.reserved,
+      locationPublicId: locations.publicId, locationType: sql<LocationType>`${locations.type}`, locationCode: locations.code, locationName: locations.name })
+      .from(stockBalances).innerJoin(stockBatches, eq(stockBatches.id, stockBalances.batchId)).innerJoin(locations, eq(locations.id, stockBalances.locationId))
+      .where(and(eq(stockBalances.itemId, itemId), sql`${stockBalances.onHand} > 0`,
+        locationIds ? (locationIds.length ? inArray(stockBalances.locationId, locationIds) : sql`false`) : undefined))
+      .orderBy(sql`${stockBatches.expiryDate} NULLS LAST`, asc(stockBatches.id), asc(locations.code));
   }
 }

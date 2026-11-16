@@ -73,7 +73,9 @@ const roles = [
   // stock steps give each its own approvals; the scope given with the role decides the reach (own: the locations the
   // person looks after; team: every location of the companies they work in; all: every company).
   ...[['storekeeper', 'Storekeeper'], ['store_incharge', 'Store in-charge'], ['inventory_controller', 'Inventory controller']].map(([code, name]) => (
-    { code, name, permissions: ['inventory.view', 'inventory.items.manage', 'inventory.locations.manage', 'inventory.stock.post'] })),
+    { code, name, permissions: ['inventory.view', 'inventory.items.manage', 'inventory.locations.manage', 'inventory.stock.post',
+      // the store in-charge and the inventory controller approve part requests and grant cross-company requesters
+      ...(code === 'storekeeper' ? [] : ['inventory.requests.approve'])] })),
   // Parts requester: requests parts on tickets they are assigned to whose type uses parts (policy inventory.parts.ticket_types).
   { code: 'parts_requester', name: 'Parts requester', permissions: ['inventory.request'] },
   // Accounts (the Accounts module's role codes): read inventory here; the Accounts module adds its own permissions.

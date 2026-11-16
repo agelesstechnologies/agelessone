@@ -35,6 +35,11 @@ export class CompanyAccess {
     return company;
   }
 
+  /** A company's id by its code (no access check: for filters that only narrow what the caller already sees). */
+  async companyId(ctx: RequestContext, code: string): Promise<number | undefined> {
+    return (await this.repo.companies(ctx.tenantId)).find((c) => c.code === code)?.id;
+  }
+
   /** A record's company (by id), when the caller may use it with one of these permissions (403 otherwise). */
   async requireById(ctx: RequestContext, permissions: string[], legalEntityId: number): Promise<Company> {
     const company = (await this.repo.companies(ctx.tenantId)).find((c) => c.id === legalEntityId);

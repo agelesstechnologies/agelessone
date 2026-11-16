@@ -264,7 +264,7 @@ describe('Inventory stock: documents, balances, moving average', () => {
 
   it('the nightly rebuild finds stored balances equal to the moves, and fixes and reports a balance that was tampered with', async () => {
     const rebuild = app.get(StockRebuildService);
-    expect(await rebuild.rebuild()).toEqual({ balances: [], valuations: [] });
+    expect(await rebuild.rebuild()).toEqual({ balances: [], valuations: [], reserved: [] });
     const part = await item();
     await receive(part, 6, 100).expect(201);
     await db.query(`UPDATE inventory.stock_balances b SET on_hand = 9 FROM inventory.items i WHERE i.id = b.item_id AND i.public_id = $1`, [part]);
@@ -274,7 +274,7 @@ describe('Inventory stock: documents, balances, moving average', () => {
     expect(at(await stockOf(part), atpl.main).onHand).toBe(6);
     const alert = await db.query(`SELECT summary FROM core.audit_log WHERE action = 'inventory.stock.rebuilt' ORDER BY id DESC LIMIT 1`);
     expect(alert.rows[0].summary).toContain('1 stored balance differed');
-    expect(await rebuild.rebuild()).toEqual({ balances: [], valuations: [] });
+    expect(await rebuild.rebuild()).toEqual({ balances: [], valuations: [], reserved: [] });
   });
 
   it('once stock exists: no base unit, tracking or stocked change; no inactive location with stock; and other refusals', async () => {
@@ -288,7 +288,7 @@ describe('Inventory stock: documents, balances, moving average', () => {
     const notStocked = await item({ isStocked: false });
     expect((await receive(notStocked, 1, 100)).body.code).toBe('INVENTORY_ITEM_NOT_STOCKABLE');
     const serial = await item({ tracking: 'serial' });
-    expect((await receive(serial, 1, 100)).body.code).toBe('INVENTORY_ITEM_NOT_STOCKABLE');
+    expect((await receive(serial, 1, 100)).body.code).toBe('INVENTORY_TRACKING');   // a serial item needs its serial number
     expect((await receive(part, 1, 100, atpl.main, keeper.auth, { documentDate: '2099-01-01' })).body.code).toBe('INVENTORY_DATE_IN_FUTURE');
     expect((await receive(part, 1, 100, atpl.transit)).body.code).toBe('INVENTORY_LOCATION_USE');
     expect((await receive(part, 1.5, 100)).body.code).toBe('INVENTORY_QUANTITY_DECIMALS');

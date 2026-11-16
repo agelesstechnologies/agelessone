@@ -1,19 +1,20 @@
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  ArrowLeft, CalendarCheck, CalendarClock, ChevronDown, ChevronUp, Clock, Download, FileText, HardHat, History, ListChecks, MapPin, MessageSquare, Paperclip, Plus,
+  ArrowLeft, CalendarCheck, CalendarClock, ChevronDown, ChevronUp, Clock, Download, FileText, HardHat, History, ListChecks, MapPin, MessageSquare, Package, Paperclip, Plus,
   Share2, Square, Timer, User, Users,
 } from 'lucide-react';
 import {
   AddExternalStaffRequest, AssignTicketRequest, ChecklistResultRequest, EndExternalStaffRequest, LinkTicketRequest, ReasonRequest, RecordExternalAttendanceRequest,
   SignoffRequest, TicketPunchInRequest, TicketPunchOutRequest, UpdateTicketRequest,
   type ChecklistResult, type ExternalAttendance, type ExternalAttendanceStatus, type ExternalStaff, type RunningTicket, type TicketDetail as Detail,
-  type TicketPunchResult, type TicketSummary, type TicketTimelogs,
+  type TicketParts, type TicketPunchResult, type TicketSummary, type TicketTimelogs,
 } from '@ageless/shared';
 import { api, downloadFile, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { addDays, dayLabel, devicePosition, hm, timeIst, todayIst, useLoad, uuidv7, words } from '../hooks';
 import JobPicker from '../JobPicker';
-import { TICKETS } from '../permissions';
+import { anyInventory, TICKETS } from '../permissions';
+import TicketPartsView from './inventory/TicketParts';
 import { TicketUpdates } from './TicketTime';
 import { Badge, DAY_TONE, Empty, Loading, Modal, Notice, type Tone } from '../ui';
 
@@ -23,8 +24,8 @@ const stamp = (iso: string) => new Date(iso).toLocaleString('en-IN', { timeZone:
 
 type Dialog = 'edit' | 'assign' | 'link' | 'signoff' | { reason: 'hold' | 'cancel' | 'reopen' | 'reassign-request' } | null;
 const REASON_TITLE = { hold: 'Put on hold', cancel: 'Cancel ticket', reopen: 'Reopen ticket', 'reassign-request': 'Ask to be reassigned' } as const;
-type View = 'home' | 'time' | 'files' | 'notes' | 'checklist' | 'staff' | 'history';
-const VIEW_TITLE: Record<Exclude<View, 'home'>, string> = { time: 'Timelogs', files: 'Files and sign-off', notes: 'Notes', checklist: 'Checklist',
+type View = 'home' | 'time' | 'files' | 'notes' | 'checklist' | 'parts' | 'staff' | 'history';
+const VIEW_TITLE: Record<Exclude<View, 'home'>, string> = { time: 'Timelogs', files: 'Files and sign-off', notes: 'Notes', checklist: 'Checklist', parts: 'Parts',
   staff: 'External staff', history: 'History' };
 
 /**
@@ -53,6 +54,9 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
   const mayPunch = live && can(TICKETS.work) && assignee;
   const running = useLoad(() => (mayPunch ? api<RunningTicket[]>('/tickets/time/running') : Promise.resolve([] as RunningTicket[])), [mayPunch]);
   const timer = running.data?.find((r) => r.ticket.publicId === id);
+  // the Parts tile: for people with an inventory role (requesters, the store, department heads); the API decides what each sees
+  const parts = useLoad(() => (anyInventory(can) ? api<TicketParts>(`/inventory/tickets/${id}/parts`).catch(() => null) : Promise.resolve(null)), [id]);
+  const openRequests = parts.data?.requests.filter((r) => r.status === 'pending' || r.status === 'approved').length ?? 0;
 
   async function act(fn: () => Promise<Detail | void>, done?: string) {
     setBusy(true); setError(''); setNote('');
@@ -89,7 +93,7 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
   }
   function back() {
     setError(''); setNote('');
-    if (view === 'home') onBack(); else { setView('home'); q.reload(); }
+    if (view === 'home') onBack(); else { setView('home'); q.reload(); parts.reload(); }
   }
 
   const head = <div className="tp-bar">
@@ -108,6 +112,7 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
     { key: 'files', label: 'Files', icon: <Paperclip size={22} />, count: t.attachments.length ? String(t.attachments.length) : undefined },
     { key: 'notes', label: 'Notes', icon: <MessageSquare size={22} /> },
     ...(t.checklist.length ? [{ key: 'checklist' as const, label: 'Checklist', icon: <ListChecks size={22} />, count: `${answered}/${t.checklist.length}` }] : []),
+    ...(parts.data ? [{ key: 'parts' as const, label: 'Parts', icon: <Package size={22} />, count: openRequests ? String(openRequests) : undefined }] : []),
     { key: 'staff', label: 'External staff', icon: <HardHat size={22} /> },
     { key: 'history', label: 'History', icon: <History size={22} /> },
   ];
@@ -183,6 +188,7 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
     </>}
 
     {view === 'time' && <Timelogs t={t} />}
+    {view === 'parts' && <TicketPartsView ticketId={id} />}
     {view === 'notes' && <section className="tp-card"><TicketUpdates ticketId={id} label={t.number} inline /></section>}
     {view === 'staff' && <ExternalStaffSection ticketId={id} canAdd={runSite && live} canMark={t.status !== 'cancelled'} />}
     {view === 'files' && <section className="tp-card">

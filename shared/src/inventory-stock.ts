@@ -16,6 +16,8 @@ const note = z.string().trim().min(1).max(500);
 const reason = z.string().trim().min(3, 'Give a reason (at least 3 characters)').max(300);
 const lines = <T extends z.ZodTypeAny>(line: T) => z.array(line).min(1, 'Add at least one line').max(200, 'At most 200 lines in one document');
 const positive = Quantity.positive('The quantity must be more than 0');
+const batchNo = z.string().trim().min(1).max(60);
+const serialNo = z.string().trim().min(1).max(80);
 
 export const StockDocumentType = z.enum(['receipt', 'issue', 'return', 'transfer', 'reversal']);
 export type StockDocumentType = z.infer<typeof StockDocumentType>;
@@ -47,18 +49,45 @@ export const CreateReceiptRequest = z.object({
     quantity: positive,
     unitPublicId: z.string().uuid().optional(),
     unitCostMinor: z.number().int().min(0).max(10_000_000_000),
+    /** batch items: the batch received (expiry optional) */
+    batchNo: batchNo.optional(),
+    expiryDate: isoDate.optional(),
+    /** serial items: one unit per line, its serial number */
+    serialNo: serialNo.optional(),
   })),
 });
 export type CreateReceiptRequest = z.infer<typeof CreateReceiptRequest>;
 
-/** POST /api/inventory/issues — parts handed out for a ticket of the same company, at the average cost at that moment. */
+/**
+ * POST /api/inventory/issues — parts handed out for a ticket of the same company, at the average cost at that moment.
+ * Either against an approved part request (requestPublicId + requestLines: it takes the request's reserved stock), or
+ * directly (ticketPublicId + lines: only stock that is not reserved). Batch items without a batch take the earliest
+ * expiry first; serial items are one unit per line with its serial number.
+ */
 export const CreateIssueRequest = z.object({
   publicId: z.string().uuid().optional(),
   company,
   documentDate: isoDate.optional(),
-  ticketPublicId: z.string().uuid(),
+  ticketPublicId: z.string().uuid().optional(),
   note: note.optional(),
-  lines: lines(z.object({ itemPublicId: z.string().uuid(), locationPublicId: z.string().uuid(), quantity: positive })),
+  lines: lines(z.object({
+    itemPublicId: z.string().uuid(), locationPublicId: z.string().uuid(), quantity: positive,
+    batchNo: batchNo.optional(), serialNo: serialNo.optional(),
+  })).optional(),
+  requestPublicId: z.string().uuid().optional(),
+  requestLines: lines(z.object({
+    lineNo: z.number().int().min(1),
+    /** left out: everything still to issue on that line */
+    quantity: positive.optional(),
+    /** serial items: the units handed out */
+    serialNos: z.array(serialNo).min(1).max(200).optional(),
+  })).optional(),
+}).superRefine((r, c) => {
+  const direct = r.ticketPublicId !== undefined || r.lines !== undefined;
+  const against = r.requestPublicId !== undefined || r.requestLines !== undefined;
+  if (direct === against) c.addIssue({ code: z.ZodIssueCode.custom, path: ['requestPublicId'], message: 'Send either ticketPublicId with lines, or requestPublicId with requestLines' });
+  else if (direct && (!r.ticketPublicId || !r.lines)) c.addIssue({ code: z.ZodIssueCode.custom, path: ['lines'], message: 'A direct issue needs ticketPublicId and lines' });
+  else if (against && (!r.requestPublicId || !r.requestLines)) c.addIssue({ code: z.ZodIssueCode.custom, path: ['requestLines'], message: 'An issue against a request needs requestPublicId and requestLines' });
 });
 export type CreateIssueRequest = z.infer<typeof CreateIssueRequest>;
 
@@ -96,6 +125,8 @@ export const CreateTransferRequest = z.object({
     fromLocationPublicId: z.string().uuid(),
     toLocationPublicId: z.string().uuid(),
     quantity: positive,
+    batchNo: batchNo.optional(),
+    serialNo: serialNo.optional(),
   }).refine((l) => l.fromLocationPublicId !== l.toLocationPublicId, { message: 'From and to must be different locations', path: ['toLocationPublicId'] })),
 });
 export type CreateTransferRequest = z.infer<typeof CreateTransferRequest>;
@@ -137,6 +168,11 @@ export const StockDocumentLine = z.object({
   condition: ReturnCondition.nullable(),
   /** return: the issue line it returns */
   returnOfLineNo: z.number().int().nullable(),
+  batchNo: z.string().nullable(),
+  expiryDate: DateOnly.nullable(),
+  serialNo: z.string().nullable(),
+  /** issue against a request: the request line it fills */
+  requestLineNo: z.number().int().nullable(),
   /** minor units per base unit (may have decimals); recorded when posted and never changed */
   unitCostMinor: z.number(),
   valueMinor: z.number().int(),
@@ -150,6 +186,8 @@ export const StockDocumentSummary = z.object({
   publicId: PublicId, company: z.string(), type: StockDocumentType, number: z.string(), status: StockDocumentStatus, documentDate: DateOnly,
   supplierName: z.string().nullable(), ticket: z.object({ publicId: PublicId, number: z.string(), title: z.string() }).nullable(),
   original: DocumentRef.nullable(), reversal: DocumentRef.nullable(),
+  /** issue against a part request */
+  request: z.object({ publicId: PublicId, number: z.string() }).nullable(),
   lineCount: z.number().int(), totalValueMinor: z.number().int(), currency: z.string(), createdBy: PersonRef, createdAt: Instant,
 });
 export type StockDocumentSummary = z.infer<typeof StockDocumentSummary>;
@@ -186,17 +224,26 @@ export type StockQuery = z.infer<typeof StockQuery>;
  */
 export const StockRow = z.object({
   company: z.string(), item: ItemBrief, unit: UnitRef, location: LocationRef,
+  batch: z.object({ batchNo: z.string(), expiryDate: DateOnly.nullable() }).nullable(),
   onHand: z.number(), reserved: z.number(), available: z.number(), avgCostMinor: z.number(), valueMinor: z.number().int(), currency: z.string(),
 });
 export type StockRow = z.infer<typeof StockRow>;
 export const StockList = z.object({ items: z.array(StockRow), page: z.number().int(), pageSize: z.number().int(), total: z.number().int() });
 export type StockList = z.infer<typeof StockList>;
 
+/** GET /api/inventory/stock/batches?item=&location= — an item's batches with stock, earliest expiry first (no expiry last). */
+export const StockBatchesQuery = z.object({ item: z.string().uuid(), location: emptyToUndefined(z.string().uuid()) });
+export type StockBatchesQuery = z.infer<typeof StockBatchesQuery>;
+export const StockBatch = z.object({
+  batchNo: z.string(), expiryDate: DateOnly.nullable(), location: LocationRef, onHand: z.number(), reserved: z.number(), available: z.number(),
+});
+export type StockBatch = z.infer<typeof StockBatch>;
+
 // ---- events (written to core.outbox in the same transaction) ----
 
 export type StockEventType = 'stock.received' | 'stock.issued' | 'stock.returned' | 'stock.transferred' | 'stock.adjusted';
 export interface StockEventLine {
-  itemPublicId: string; itemCode: string; locationPublicId: string;
+  itemPublicId: string; itemCode: string; locationPublicId: string; batchNo: string | null; serialNo: string | null;
   /** base units; negative when stock left the location */
   quantity: number;
   unitCostMinor: number; valueMinor: number; currency: string;
@@ -207,6 +254,6 @@ export interface StockEventLine {
  */
 export type StockEvent = EventEnvelope<StockEventType, {
   company: string; documentPublicId: string; documentNumber: string; documentType: StockDocumentType; documentDate: string;
-  ticketPublicId: string | null; projectId: string | null; phase: 'dispatched' | 'received' | null;
+  ticketPublicId: string | null; projectId: string | null; requestPublicId: string | null; phase: 'dispatched' | 'received' | null;
   reason: string | null; reversalOf: string | null; lines: StockEventLine[]; totalValueMinor: number; currency: string;
 }>;

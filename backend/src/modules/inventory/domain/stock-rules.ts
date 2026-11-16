@@ -29,19 +29,32 @@ const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export const returnLocationTypes = (condition: ReturnCondition): LocationType[] =>
   condition === 'usable' ? USABLE : condition === 'repair' ? ['quarantine'] : ['scrap'];
 
-/** Why an item cannot move in stock now, or null. Non-stocked items never; batch and serial items once their rules exist. */
+/** Why an item cannot move in stock, or null: non-stocked items never do. */
 export function itemStockProblem(item: { code: string; isStocked: boolean; tracking: ItemTracking }): string | null {
   if (!item.isStocked) return `${item.code} is not a stocked item: it is bought for use and never kept in a store`;
-  if (item.tracking !== 'none') return `${item.code} is tracked by ${item.tracking}: batch and serial items get stock with part requests (next step)`;
+  return null;
+}
+
+/**
+ * Why a line's batch and serial details do not fit the item, or null. Serial items: one unit per line, with its serial
+ * number. Batch items: a batch is named where the stock is created (receipts); elsewhere it may be left out (earliest
+ * expiry first). Untracked items take neither.
+ */
+export function trackingProblem(item: { code: string; tracking: ItemTracking }, line: { quantity: number; batchNo?: string; serialNo?: string },
+  batchRequired: boolean): string | null {
+  if (item.tracking !== 'serial' && line.serialNo) return `${item.code} has no serial numbers`;
+  if (item.tracking !== 'batch' && line.batchNo) return `${item.code} has no batches`;
+  if (item.tracking === 'serial' && (!line.serialNo || line.quantity !== 1)) return `${item.code} is serial-numbered: one unit per line, with its serial number`;
+  if (item.tracking === 'batch' && batchRequired && !line.batchNo) return `${item.code} is tracked by batch: give the batch number`;
   return null;
 }
 
 /** Ticket statuses that still take parts (not completed or cancelled). */
 export const TICKET_TAKES_PARTS = ['open', 'assigned', 'in_progress', 'on_hold'];
 
-const PREFIX: Record<StockDocumentType, string> = { receipt: 'GRN', issue: 'ISS', return: 'RET', transfer: 'TRF', reversal: 'REV' };
-/** A document's number within its company: GRN-00001, ISS-00042 … */
-export const documentNumber = (type: StockDocumentType, n: number): string => `${PREFIX[type]}-${String(n).padStart(5, '0')}`;
+const PREFIX: Record<StockDocumentType | 'request', string> = { receipt: 'GRN', issue: 'ISS', return: 'RET', transfer: 'TRF', reversal: 'REV', request: 'REQ' };
+/** A document's number within its company: GRN-00001, ISS-00042, REQ-00007 … */
+export const documentNumber = (type: StockDocumentType | 'request', n: number): string => `${PREFIX[type]}-${String(n).padStart(5, '0')}`;
 
 /** Why a document date is refused, or null: never in the future (IST), never in a month Accounts has closed. */
 export function documentDateProblem(date: string, today: string, monthClosed: boolean): string | null {

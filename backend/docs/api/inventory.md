@@ -8,9 +8,9 @@ Written for developers of the web app and the backend. Base URL `http://localhos
 Covered so far:
 - the **set-up records**: units, item categories, items (with unit conversions), store locations and CSV import;
 - **stock** (see [Stock](#stock)): documents (receipt, issue, return, transfer, reversal), stock moves, balances, the moving
-  average cost, stock events and the nightly rebuild.
-
-Part requests and reservations come next.
+  average cost, batches and serial units, stock events and the nightly rebuild;
+- **part requests** (see [Part requests](#part-requests)): requests from tickets, approvals by value, reservations,
+  cross-company requesters and the ticket's parts view.
 
 ## Companies are kept apart
 
@@ -19,8 +19,8 @@ ATPL and AE (and any later company) each have their own units, categories, items
 - Every record carries its company (`company: "ATPL"` in requests and answers; `legal_entity_id` in the database).
 - Every link between records carries the company too: an item's category, base unit, default location and conversion units,
   a location's parent and custodian are all **company-safe foreign keys** `(x_id, legal_entity_id) → (id, legal_entity_id)`.
-  An ATPL record can never point at an AE record, even when written straight into the database. The stock tables and
-  documents will use the same keys.
+  An ATPL record can never point at an AE record, even when written straight into the database. Stock documents, moves,
+  balances, reservations, part requests and grants use the same keys.
 - **Who reaches a company:** a permission held with scope **all** reaches every company (Management). A narrower scope
   (own / team) reaches only the companies where the person has a **current job** (active or on notice). Inside a
   company, scope own narrows locations further (see [Who sees what](#who-sees-what)).
@@ -37,12 +37,13 @@ The scope given with a role decides the reach:
 
 | Permission | own | team | all |
 | --- | --- | --- | --- |
-| `inventory.view`: catalog, locations (and later stock, documents, values) | catalog of your companies; locations **you are responsible for** | every location of the companies you work in | every company |
+| `inventory.view`: catalog, locations, stock, documents, values | catalog of your companies; locations **you are responsible for** | every location of the companies you work in | every company |
 | `inventory.items.manage`: units, categories, items, copy, items CSV | your companies | your companies | every company |
 | `inventory.locations.manage` | change the locations you are responsible for | add, change, import every location of your companies | every company |
-| `inventory.stock.post` (stock step) | documents touching your locations | any location of your companies | every company |
-| `inventory.request` (requests step) | request on tickets you are assigned to whose type uses parts; no store browsing, no values | same | same |
-| `inventory.department.view` (requests step) | – | parts and cost on tickets of departments you head; approve above the limit | every department |
+| `inventory.stock.post` | documents touching your locations | any location of your companies | every company |
+| `inventory.request` | request on tickets you are assigned to whose type uses parts; no store browsing, no values | same | same |
+| `inventory.requests.approve` | – | approve, reject and cancel part requests; grant cross-company requesters (companies you work in) | every company |
+| `inventory.department.view` | – | parts and cost on tickets of departments you head; approve above the limit | every department |
 
 **Responsible for:** you are the location's custodian, or the custodian of the parent a rack or bin falls back to. A
 storekeeper of a store looks after its racks and bins unless those name someone else. A location you don't reach answers
@@ -52,13 +53,15 @@ importing locations needs scope team or all (**403 `INVENTORY_LOCATION_SCOPE`**)
 | Role | Holds | Usual scope |
 | --- | --- | --- |
 | Storekeeper | view, items.manage, locations.manage, stock.post | own (the locations they look after) |
-| Store in-charge, Inventory controller | the same (each gets its own approvals with the stock and requests steps) | team |
+| Store in-charge, Inventory controller | the same, plus requests.approve | team |
 | Accounts executive, Accounts manager | view | team |
 | CEO, Management | view | Management: all |
 | Parts requester | request | own |
+| (a person with a cross-company grant) | requests for that one ticket until the grant's end date; nothing else | – |
 | Manager (department heads) | department.view | team |
 
-Every role holding `inventory.view` sees cost and stock value. Parts requesters never do.
+Every role holding `inventory.view` sees cost and stock value, and so does the ticket's department head for its parts.
+Parts requesters and cross-company requesters never do.
 
 **Which ticket types use parts** is the company policy `inventory.parts.ticket_types`: ticket type codes, default
 production, workshop, installation, service, site_work. A parts requester requests only on those tickets.
@@ -280,7 +283,8 @@ mistake is undone with a reversal. Posting a document does all of the following 
 - **Quantities** are in the base unit and fit its decimals (400 `INVENTORY_QUANTITY_DECIMALS`).
 - **Items:**
   - non-stocked items never move (400 `INVENTORY_ITEM_NOT_STOCKABLE`);
-  - batch and serial items get stock with part requests (next step);
+  - batch items name the batch on a receipt (expiry optional); elsewhere a missing batch means earliest expiry first;
+  - serial items are one unit per line with its serial number (400 `INVENTORY_TRACKING` otherwise);
   - inactive items take no receipts.
 - **Locations:** they are active. Received, issued and usable stock sits in a store, rack, bin, work area or testing space
   (400 `INVENTORY_LOCATION_USE`).
@@ -305,16 +309,35 @@ mistake is undone with a reversal. Posting a document does all of the following 
 - **Unit:** `unitPublicId` is the base unit (the default) or one of the item's conversion units. The quantity is converted with
   the item's factor (2 boxes of 10 = 20 pcs). `unitCostMinor` is per that unit, and the line value is quantity × cost, half up.
 - **Location:** defaults to the item's default location (400 `INVENTORY_LOCATION_NEEDED` when it has none).
+- **Batch and serial:** a batch item needs `batchNo` (and `expiryDate` the first time the batch arrives; a different expiry
+  for a known batch is 400 `INVENTORY_BATCH_EXPIRY_DIFFERS`). A serial item is one unit per line with `serialNo`. A unit
+  already in stock anywhere is refused (409 `INVENTORY_SERIAL_IN_STOCK`).
 - **Delivery challan:** attach it once with `POST /api/inventory/documents/:id/challan` (multipart `file`: JPEG, PNG or PDF,
   up to 5 MB, told by its bytes; 409 `INVENTORY_CHALLAN_EXISTS`). Download it with `GET …/challan`.
 
 ### Issue — `POST /api/inventory/issues`
-`{ "company": "ATPL", "ticketPublicId": "…", "lines": [{ "itemPublicId", "locationPublicId", "quantity" }] }`
+Two ways:
+- **Against an approved part request:** `{ "company": "AE", "requestPublicId": "…", "requestLines": [{ "lineNo": 1, "quantity"?, "serialNos"? }] }`.
+  - Each request line takes its reserved stock first (earliest batch expiry first), then free stock where it was reserved
+    if the reservation ran short.
+  - `quantity` left out means everything still to issue on that line, and never more than that (409
+    `INVENTORY_REQUEST_LINE_EXCEEDED`).
+  - Serial items list the `serialNos` handed out.
+  - The request must be approved and its reservation still running (409 `INVENTORY_REQUEST_NOT_APPROVED`,
+    `INVENTORY_RESERVATION_EXPIRED`). It becomes `fulfilled` when every line is issued in full.
+- **Direct:** `{ "company": "ATPL", "ticketPublicId": "…", "lines": [{ "itemPublicId", "locationPublicId", "quantity", "batchNo"?, "serialNo"? }] }`.
+  - It takes only stock that is not reserved (**409 `INVENTORY_NOT_ENOUGH_AVAILABLE`**).
+  - A batch item without `batchNo` takes the earliest expiry first. The answer may then split the line over several
+    lines, one per batch.
+  - A serial item is one unit per line with its `serialNo`.
+
+Both:
 - **Ticket:** a ticket of the same company that is open, assigned, in progress or on hold (409 `INVENTORY_TICKET_CLOSED`).
   Projects come later.
 - **Cost:** each line takes the average at that moment.
 - **Not enough stock:** **409 `INVENTORY_NOT_ENOUGH_STOCK`** ("Not enough X in Y: 1 on hand, 2 needed"). Balances are
   locked while posting, so two issues of the last unit can never both pass.
+- **Serial units:** a unit not where it is issued from answers 409 `INVENTORY_SERIAL_NOT_HERE`.
 
 ### Return — `POST /api/inventory/returns`
 `{ "issuePublicId": "…", "lines": [{ "lineNo": 1, "quantity": 1, "condition": "usable", "locationPublicId"? }] }`
@@ -363,20 +386,96 @@ signed quantity, unit cost and value.
 | Event | When |
 | --- | --- |
 | `stock.received` | receipt |
-| `stock.issued` | issue (with `ticketPublicId`, `projectId`) |
+| `stock.issued` | issue (with `ticketPublicId`, `requestPublicId`, `projectId`; lines with batch, serial and unit cost) |
 | `stock.returned` | return (with the issue's ticket) |
 | `stock.transferred` | transfer sent (`phase: dispatched`) and received (`phase: received`) |
 | `stock.adjusted` | reversal (`reason: reversal`, `reversalOf`); counts and adjustments later |
 
 Outbox events are never deleted; only `published_at` is set once, when a consumer has taken one.
 
+### Batches and serial units
+- **Batches:** `GET /api/inventory/stock/batches?item=&location=` lists an item's batches with stock: earliest expiry
+  first, batches without an expiry last, with `onHand`, `reserved` and `available`. That is also the order issues,
+  transfers and reservations take them in. Stock rows (`GET /stock`) carry their `batch`.
+- **Serial units:** each serial unit of an item is in exactly one location at a time, or in none once issued (the
+  register `inventory.stock_serials`). A unit arriving must not be in stock anywhere (409 `INVENTORY_SERIAL_IN_STOCK`); a
+  unit leaving must be where it leaves from (409 `INVENTORY_SERIAL_NOT_HERE`). Returns and reversals move it back.
+
 ### Nightly check — `pnpm --filter @ageless/backend inventory:daily`
-Rebuilds every balance and valuation from the stock moves, fixes any that differ, and alerts: an audit entry
-`inventory.stock.rebuilt` for each company with a difference, and the job prints each one. Posting waits while it runs.
+- **Part requests:** releases reservations past their date (the request becomes `expired`) and closes open requests of
+  completed or cancelled tickets.
+- **Stock:** rebuilds every balance and valuation from the stock moves, and every balance's reserved quantity from the
+  open reservations, then fixes any that differ.
+- **Alerts:** an audit entry `inventory.stock.rebuilt` for each company with a difference, and the job prints each one.
+  Posting waits while it runs.
 
 ### Once stock exists
 - An item with stock moves can no longer change its base unit, tracking or stocked setting (409 `INVENTORY_ITEM_HAS_STOCK_MOVES`).
 - A location that still holds stock cannot become inactive (409 `INVENTORY_LOCATION_HAS_STOCK`).
+
+## Part requests
+
+Like Froid's "Parts required": the people working on a ticket ask the store for parts, the store approves, and the
+approved parts are held for them until they are issued.
+
+**Who may ask, on which ticket:**
+- A **Parts requester** (role, `inventory.request`) with a current job in the ticket's company, **assigned to the ticket**,
+  on a ticket whose type is listed in the company policy `inventory.parts.ticket_types`.
+- Or a person with a **cross-company grant** for that ticket (below).
+- Anyone else gets 403 `INVENTORY_CANNOT_REQUEST`.
+- The ticket must still take parts (not completed or cancelled).
+- Requesters never see values and never browse the store.
+
+| Call | |
+| --- | --- |
+| `GET /requests/items?ticket=&search=` | what may be asked for on that ticket: active stocked items of its company with `inStock` (yes/no). No quantities, no values |
+| `POST /requests` | `{ "ticketPublicId", "note"?, "lines": [{ "itemPublicId", "quantity" }] }` → `REQ-00001`, pending |
+| `GET /requests?company=&status=&ticket=&mine=` | your own requests; the store's (view or requests.approve) for its companies; a head's for the tickets of departments they head |
+| `GET /requests/:id` | one request with its lines, reservations, approvals, `canApprove` and `canCancel` for you |
+| `POST /requests/:id/approve` | `{ "locations"?: [{ "lineNo", "locationPublicId" }], "reserveUntil"? }` |
+| `POST /requests/:id/reject` | `{ "reason" }` (pending only) |
+| `POST /requests/:id/cancel` | `{ "reason"? }`: the requester or the store in-charge; reserved stock is released |
+| `GET /tickets/:id/parts` | the ticket's requests, and the parts issued and returned on it (`showsValues` says whether values are in) |
+
+**Approval:**
+- **The store in-charge** (`inventory.requests.approve` in the company) approves every request. They may choose where each
+  line is reserved from; otherwise it comes from the item's default location, then the location with the most free stock.
+- **The department head of the ticket** (holding `inventory.department.view`, or that permission with scope all) approves
+  too when the request's estimate (quantity × average cost when asked) is above the company policy
+  `inventory.requests.head_approval_above_paise` (default ₹10,000). The order doesn't matter; each approves once.
+- **Nobody approves or rejects their own request** (403 `INVENTORY_OWN_REQUEST`).
+- **Fully approved:** the stock is **reserved** (batch items earliest expiry first) until `reserveUntil` (default today +
+  policy `inventory.requests.reserve_days`, 14). If there isn't enough free stock: 409 `INVENTORY_NOT_ENOUGH_AVAILABLE`.
+
+**Reservations:**
+- `available = onHand − reserved`. Direct issues and transfers never take reserved stock; an issue against the request does.
+- **Released when:**
+  - the request is issued in full (`fulfilled`);
+  - it is cancelled (`cancelled`);
+  - its date passes (`expired`, nightly job);
+  - its ticket is completed or cancelled (`closed`, at once, from the ticket).
+- Reversing an issue against a request lowers what the request has had issued; the stock comes back free, not reserved.
+
+Statuses: `pending` → `approved` → `fulfilled`; or `rejected`, `cancelled`, `expired`, `closed`.
+
+### Cross-company requesters — `/api/inventory/grants`
+The store in-charge of the company that owns the stock lets a person from another company request parts for **one
+ticket**, until an end date (inclusive):
+- **Create:** `POST /grants { "company": "AE", "personPublicId", "ticketPublicId", "validUntil" }`.
+  - The person must work in another company; for someone who works in that company it's 400
+    `INVENTORY_GRANT_SAME_COMPANY` (give them the Parts requester role instead).
+  - One open grant per person and ticket (409 `INVENTORY_GRANT_EXISTS`).
+- **What the person can do:** request parts for that ticket, see its parts view, and see their own grants
+  (`GET /grants/mine`). They see no values, approve nothing and browse no stock.
+- **Manage:** `GET /grants?company=&active=` lists them for the store in-charge; `POST /grants/:id/end` ends one.
+  Requests already made stay.
+- **Audited:** grants and their ends are written to the audit log (`inventory.grant.created`, `inventory.grant.ended`).
+
+### Intercompany charges
+An issue to a ticket that is billable to the other company becomes a passed-cost line on that month's intercompany
+statement, at issue cost plus the agreement's handling percentage. The intercompany module is not merged into this branch
+yet, so the line itself is created there. It reads the `stock.issued` event, which carries the ticket, the request and
+each line's unit cost and value.
 
 ## Error codes
 
@@ -418,13 +517,21 @@ Rebuilds every balance and valuation from the stock moves, fixes any that differ
 | `INVENTORY_CHALLAN_EXISTS` | 409 | the receipt already has its challan |
 | `INVENTORY_NO_CHALLAN` | 404 | no challan attached |
 | `INVENTORY_ITEM_HAS_STOCK_MOVES`, `INVENTORY_LOCATION_HAS_STOCK` | 409 | once stock exists |
+| `INVENTORY_TRACKING`, `INVENTORY_BATCH_EXPIRY_DIFFERS`, `INVENTORY_UNKNOWN_BATCH` | 400 | batch and serial details of a line |
+| `INVENTORY_SERIAL_IN_STOCK`, `INVENTORY_SERIAL_NOT_HERE` | 409 | a serial unit is in one place at a time |
+| `INVENTORY_NOT_ENOUGH_AVAILABLE` | 409 | the free stock (on hand − reserved) is not enough |
+| `INVENTORY_CANNOT_REQUEST` | 403 | not a requester for that ticket |
+| `INVENTORY_REQUEST_NOT_FOUND`, `INVENTORY_TICKET_NOT_VISIBLE`, `INVENTORY_GRANT_NOT_FOUND` | 404 | unknown, or not yours to see |
+| `INVENTORY_OWN_REQUEST`, `INVENTORY_NOT_YOUR_APPROVAL`, `INVENTORY_NOT_YOURS` | 403 | approval rules; cancelling someone else's request |
+| `INVENTORY_REQUEST_NOT_PENDING`, `_REQUEST_NOT_OPEN`, `_REQUEST_NOT_APPROVED`, `_RESERVATION_EXPIRED`, `_REQUEST_LINE_EXCEEDED` | 409 | request state |
+| `INVENTORY_UNKNOWN_REQUEST`, `INVENTORY_SERIALS_NEEDED`, `INVENTORY_LOCATIONS_FOR_STORE`, `INVENTORY_RESERVE_DATE` | 400 | request input |
+| `INVENTORY_GRANT_SAME_COMPANY`, `_GRANT_NO_JOB`, `_GRANT_SELF`, `_GRANT_DATE`, `INVENTORY_UNKNOWN_PERSON` | 400 | grant input |
+| `INVENTORY_GRANT_EXISTS`, `INVENTORY_GRANT_ENDED` | 409 | grant state |
 | `VALIDATION` | 400 | request shape (`details` per field) |
 
 ## Not built yet
 
-- **Part requests and reservations:** approvals by value, expiry and release.
-- **Serial and batch rules:** batch and serial items take no stock until then.
-- **Cross-company requesters.**
-- **Intercompany charges:** from the `stock.issued` event, once the intercompany module is merged.
+- **Intercompany passed-cost lines:** from the `stock.issued` event, once the intercompany module is merged.
 - **Closed months:** the check refuses nothing until Accounts is merged.
-- **Purchase-order links, receipt validation by the store in-charge, counts, adjustments and reports.**
+- **Requests from projects:** projects come later; requests are for tickets.
+- **Purchase-order links, receipt validation by the store in-charge, counts, adjustments, reorder alerts and reports.**

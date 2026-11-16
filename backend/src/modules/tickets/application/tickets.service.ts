@@ -8,6 +8,7 @@ import { Conn, DB, Db, Tx, violatedConstraint } from '../../../platform/db/db.mo
 import { AppError } from '../../../platform/http/app-error';
 import { isManagement, RequestContext, requireAll } from '../../../platform/http/request-context';
 import { addDays, istDayStart, todayIst } from '../../../platform/time';
+import { InventoryFacade } from '../../inventory/inventory.facade';
 import { TicketTypesService } from './ticket-types.service';
 import { TicketRow, TicketsRepository, Visibility } from '../infrastructure/tickets.repository';
 import { checkDetails, FieldDef } from '../domain/type-details';
@@ -41,6 +42,7 @@ export class TicketsService {
     @Inject(DB) private readonly db: Db,
     @Inject(TicketsRepository) private readonly repo: TicketsRepository,
     @Inject(TicketTypesService) private readonly types: TicketTypesService,
+    @Inject(InventoryFacade) private readonly inventory: InventoryFacade,
   ) {}
 
   // ---- reading ----
@@ -209,6 +211,7 @@ export class TicketsService {
       if (missing.length) throw new AppError('TICKETS_COMPLETION_INCOMPLETE', 409, `Not ready to complete: ${missing.join(', ')}`, { missing });
       await this.repo.updateTicket(tx, t.id, { status: 'completed', completedAt: new Date(), holdReason: null });
       await this.event(tx, ctx.personId, t, 'completed', { from: t.status, to: 'completed' });
+      await this.inventory.ticketClosed(tx, ctx.tenantId, t.id);      // its open part requests close; reserved stock is freed
       if (type.code === 'qc') await this.reworkIfFailed(tx, ctx, t);
       return t.id;
     });
@@ -390,6 +393,7 @@ export class TicketsService {
       if (to === null) throw this.wrongStatus(t, mv);
       await this.repo.updateTicket(tx, t.id, { ...patch, status: to });
       await this.event(tx, ctx.personId, t, action, { from: t.status, to, ...details });
+      if (to === 'cancelled') await this.inventory.ticketClosed(tx, ctx.tenantId, t.id);   // its open part requests close; reserved stock is freed
       return t.id;
     });
     return this.detail(this.db, ctx, id);

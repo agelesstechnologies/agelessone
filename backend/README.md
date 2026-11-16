@@ -912,6 +912,13 @@ answer 404. Creates take an optional `publicId` (sent again: 200). Nothing is de
   moves and updates balances (never below zero, locked while posting) and the moving average per item per company, in one
   transaction. Issues record the average at that moment. Each document publishes a `stock.*` event to the new
   `core.outbox`. The nightly `inventory:daily` job rebuilds balances from the moves and alerts on any difference.
+  Batch items: batch and expiry on receipt, earliest expiry first elsewhere (`GET /stock/batches`). Serial items: one unit
+  per line, each unit in one place at a time.
+- **Part requests** (`/requests`, `/tickets/:id/parts`, `/grants`): a Parts requester assigned to a ticket whose type uses
+  parts asks for parts; the store in-charge approves, plus the ticket's department head above ₹10,000 (policy). Full
+  approval reserves the stock (available = on hand − reserved) until issued, cancelled, expired (nightly) or the ticket
+  closes. A store in-charge can let a person of another company request for one ticket until a date. Requesters never see
+  values; nobody approves their own request.
 
 **Who sees what:** inventory is need-to-know. Staff roles hold no inventory permission, so developers and designers see
 none of it. Store roles (Storekeeper, Store in-charge, Inventory controller) hold `inventory.view`, `.items.manage`,
@@ -1162,9 +1169,9 @@ in `backend/.env`.
 - **Expenses: receipt download** — receipts are saved and the path stored, but there is no endpoint yet to fetch the file.
 - **Expenses: limits per category or grade** — not checked yet (would come from `CoreFacade.getPolicy`); no link to service tickets yet.
 - **Policies** — values are checked one key at a time (nothing stops a half day longer than a full day); a new version does not rebuild work days already stored (use rebuild); `max_open_punch_hours` (16) only limits the running time shown today; with the automatic punch-out at 8 hours it has little effect.
-- **Inventory** — part requests and reservations, serial and batch rules (those items take no stock yet), cross-company
-  requesters, intercompany charges, counts, adjustments, reports. Closed Accounts months are not refused until the Accounts
-  module is merged. Value limits for approvals become policies with the steps that use them.
+- **Inventory** — intercompany passed-cost lines (the intercompany module reads `stock.issued` once merged), requests
+  from projects, counts, adjustments, reorder alerts, reports. Closed Accounts months are not refused until the Accounts
+  module is merged.
 - **Tenant isolation in the database** (row-level security) and audit log — in the reference SQL, not built.
 - **First admin on a real server** — the seed is development-only; a real server needs a one-off way to create the
   first System admin.

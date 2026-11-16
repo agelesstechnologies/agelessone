@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyChange, divRound, fromScaled, lineValue, outgoingValue, toScaled, unitCostOf, Valuation, valueAt } from './valuation';
-import { documentDateProblem, documentNumber, itemStockProblem, locationUseProblem, returnLocationTypes } from './stock-rules';
+import { documentDateProblem, documentNumber, itemStockProblem, locationUseProblem, returnLocationTypes, trackingProblem } from './stock-rules';
+import { allocateFefo, approvalRoles, fullyApproved, needsHeadApproval } from './requests';
 
 const empty: Valuation = { qty: 0n, value: 0n, avg: 0n };
 const qty = (n: number) => toScaled(n, 4);
@@ -73,7 +74,46 @@ describe('stock rules', () => {
     expect(documentDateProblem('2026-10-31', '2026-11-14', true)).toBe('Accounts has closed 2026-10: date the document in an open month');
     expect(documentDateProblem('2026-11-14', '2026-11-14', false)).toBeNull();
     expect(itemStockProblem({ code: 'X-1', isStocked: false, tracking: 'none' })).toContain('not a stocked item');
-    expect(itemStockProblem({ code: 'X-1', isStocked: true, tracking: 'serial' })).toContain('tracked by serial');
+    expect(itemStockProblem({ code: 'X-1', isStocked: true, tracking: 'serial' })).toBeNull();
+    expect(documentNumber('request', 7)).toBe('REQ-00007');
     expect(itemStockProblem({ code: 'X-1', isStocked: true, tracking: 'none' })).toBeNull();
+  });
+});
+
+describe('tracking, requests and batches', () => {
+  it('serial items are one unit per line with a number; batch items name the batch where stock is created', () => {
+    const serial = { code: 'SB-1', tracking: 'serial' as const };
+    const batch = { code: 'RB-1', tracking: 'batch' as const };
+    const none = { code: 'NB-1', tracking: 'none' as const };
+    expect(trackingProblem(serial, { quantity: 1, serialNo: 'SN1' }, true)).toBeNull();
+    expect(trackingProblem(serial, { quantity: 2, serialNo: 'SN1' }, true)).toContain('one unit per line');
+    expect(trackingProblem(serial, { quantity: 1 }, false)).toContain('serial number');
+    expect(trackingProblem(batch, { quantity: 5 }, true)).toBe('RB-1 is tracked by batch: give the batch number');
+    expect(trackingProblem(batch, { quantity: 5 }, false)).toBeNull();
+    expect(trackingProblem(none, { quantity: 1, batchNo: 'B1' }, true)).toBe('NB-1 has no batches');
+    expect(trackingProblem(none, { quantity: 1, serialNo: 'S1' }, true)).toBe('NB-1 has no serial numbers');
+  });
+  it('approvals: the head too above the limit, each once, never the requester', () => {
+    expect(needsHeadApproval(1_000_001n, 1_000_000)).toBe(true);
+    expect(needsHeadApproval(1_000_000n, 1_000_000)).toBe(false);
+    expect(fullyApproved({ needsHead: true, storeApproved: true, headApproved: false })).toBe(false);
+    expect(fullyApproved({ needsHead: false, storeApproved: true, headApproved: false })).toBe(true);
+    const r = { needsHead: true, storeApproved: false, headApproved: false };
+    expect(approvalRoles({ isRequester: false, canStore: true, canHead: true }, r)).toEqual({ asStore: true, asHead: true });
+    expect(approvalRoles({ isRequester: true, canStore: true, canHead: true }, r)).toEqual({ asStore: false, asHead: false });
+    expect(approvalRoles({ isRequester: false, canStore: true, canHead: false }, { ...r, storeApproved: true })).toEqual({ asStore: false, asHead: false });
+    expect(approvalRoles({ isRequester: false, canStore: false, canHead: true }, { ...r, needsHead: false })).toEqual({ asStore: false, asHead: false });
+  });
+  it('earliest expiry first, batches without expiry last; nothing when there is not enough', () => {
+    const q = (n: number) => BigInt(n) * 10_000n;
+    const batches = [
+      { batchId: 1, batchNo: 'NONE', expiryDate: null, available: q(4) },
+      { batchId: 2, batchNo: 'LATE', expiryDate: '2027-03-01', available: q(5) },
+      { batchId: 3, batchNo: 'EARLY', expiryDate: '2026-12-01', available: q(3) },
+      { batchId: 4, batchNo: 'EMPTY', expiryDate: '2026-11-20', available: 0n },
+    ];
+    expect(allocateFefo(batches, q(5))).toEqual([{ batchId: 3, qty: q(3) }, { batchId: 2, qty: q(2) }]);
+    expect(allocateFefo(batches, q(12))).toEqual([{ batchId: 3, qty: q(3) }, { batchId: 2, qty: q(5) }, { batchId: 1, qty: q(4) }]);
+    expect(allocateFefo(batches, q(13))).toBeNull();
   });
 });
