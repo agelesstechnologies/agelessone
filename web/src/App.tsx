@@ -45,6 +45,8 @@ const NAV: NavItem[] = [
 
 /** Menu order: Overview first, then Attendance and Tickets, then everything else in the order of NAV. */
 const MENU_FIRST: PageKey[] = ['overview', 'ceo', 'attendance', 'tickets'];
+/** Pages shown under the "Accounts" dropdown for HR and accounts staff. */
+const ACCOUNTS_GROUP: PageKey[] = ['payroll', 'expenses'];
 
 const pageFromHash = (): PageKey => {
   const h = window.location.hash.replace('#', '').split('/')[0] ?? '';   // #tickets/<id> is the Tickets page
@@ -55,6 +57,7 @@ function Shell() {
   const { me, can, scopeOf, logout, seesOthers } = useAuth();
   const [page, setPage] = useState<PageKey>(pageFromHash);
   const [mobileNav, setMobileNav] = useState(false);
+  const [accountsOpen, setAccountsOpen] = useState(false);
   const [confirmOut, setConfirmOut] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
   const go = useCallback((p: string) => { window.location.hash = p; setMobileNav(false); }, []);
@@ -86,6 +89,19 @@ function Shell() {
   const link = (n: NavItem) => <a key={n.key} href={`#${n.key}`} className={`${n.key === current.key ? 'active' : ''} `} onClick={() => setMobileNav(false)}>
     {n.icon}{n.label}</a>;
   const menu = [...MENU_FIRST.flatMap((k) => items.filter((n) => n.key === k)), ...items.filter((n) => n.section === 'workspace' && !MENU_FIRST.includes(n.key))];
+  // HR and accounts staff get an "Accounts" dropdown holding Payroll and Expenses; everyone else keeps them as plain items.
+  const accountsStaff = can(PAYROLL.prepare) || can(PAYROLL.approve) || can(EXPENSES.report);
+  const inGroup = (n: NavItem) => accountsStaff && ACCOUNTS_GROUP.includes(n.key);
+  const groupItems = menu.filter(inGroup);
+  const groupAt = menu.findIndex(inGroup);
+  const groupOpen = accountsOpen || groupItems.some((n) => n.key === current.key);
+  const accountsMenu = <div key="accounts-group">
+    <a href="#accounts" className={groupItems.some((n) => n.key === current.key) ? 'active' : ''} aria-expanded={groupOpen}
+      onClick={(e) => { e.preventDefault(); setAccountsOpen(!groupOpen); }}>
+      <Wallet size={18} />Accounts<ChevronDown size={15} style={{ marginLeft: 'auto', transform: groupOpen ? 'rotate(180deg)' : undefined }} /></a>
+    {groupOpen && <div style={{ paddingLeft: 14 }}>{groupItems.map(link)}</div>}
+  </div>;
+  const menuView = menu.flatMap((n, i) => inGroup(n) ? (i === groupAt ? [accountsMenu] : []) : [link(n)]);
 
   return <div className="app-shell">
     {mobileNav && <div className="nav-scrim" onClick={() => setMobileNav(false)} />}
@@ -94,7 +110,7 @@ function Shell() {
       <div className="workspace"><div className="workspace-icon"><Building2 size={18} /></div><div><b>Ageless Group</b><small>Organization</small></div><ChevronDown size={15} /></div>
       <div className="nav-label">WORKSPACE</div>
       <nav>
-        {menu.map(link)}
+        {menuView}
       </nav>
       {items.some((n) => n.section === 'manage') && <><div className="nav-label manage-label">MANAGE</div><nav>{items.filter((n) => n.section === 'manage').map(link)}</nav></>}
       <div className="sidebar-bottom">
