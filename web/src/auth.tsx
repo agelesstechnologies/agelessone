@@ -24,7 +24,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(() => getToken() !== null);
 
-  const logout = useCallback(() => { setToken(null); setMe(null); }, []);
+  // Forget the page too, so the next sign-in (and the address bar) does not show the last route.
+  const logout = useCallback(() => {
+    setToken(null); setMe(null);
+    try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch { /* ignore */ }
+  }, []);
   const refresh = useCallback(async () => { setMe(await api<Me>('/auth/me')); }, []);
 
   useEffect(() => { setUnauthorizedHandler(logout); }, [logout]);

@@ -1,14 +1,15 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Eye, EyeOff, LoaderCircle } from 'lucide-react';
 import { ForgotPasswordRequest, LoginRequest, ResetWithCodeRequest, type ForgotPasswordResponse, type LoginResponse } from '@ageless/shared';
 import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
+import logo from '../assets/ageless-logo.webp';
+import loginBg from '../assets/login-bg.webp';
 
 /** Demo logins from the development seed (backend/scripts/db-seed.mjs). Shown only in `pnpm dev`. */
 const DEMO_PASSWORD = 'demo-pass-1';
 const DEMO = [
   { role: 'Employee', login: 'demo.engineer@example.com' },
-  { role: 'Accountant', login: 'demo.accountant@example.com' },
   { role: 'Supervisor', login: 'demo.supervisor@example.com' },
   { role: 'Manager', login: 'demo.manager@example.com' },
   { role: 'Department head', login: 'demo.head@example.com' },
@@ -26,34 +27,47 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
 
+  const [caps, setCaps] = useState(false);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const loginRef = useRef<HTMLInputElement>(null);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
-    const parsed = LoginRequest.safeParse({ login: name, password });
+    if (busy) return;
+    if (!name.trim()) { setError('Enter your phone number or email'); loginRef.current?.focus(); return; }
+    if (!password) { setError('Enter your password'); passwordRef.current?.focus(); return; }
+    const parsed = LoginRequest.safeParse({ login: name.trim(), password });
     if (!parsed.success) { setError('Enter your phone number or email, and your password'); return; }
     setBusy(true); setError('');
     try { await login(parsed.data.login, parsed.data.password); }
-    catch (err) { setError(errText(err)); }
-    finally { setBusy(false); }
+    catch (err) {
+      setError(errText(err)); setPassword('');
+      setBusy(false);
+      setTimeout(() => passwordRef.current?.focus(), 0);   // wrong password: retype straight away
+    }
   }
 
   return <div className="login-page">
-    <aside className="login-hero"><img className="login-logo" src="/nlogo.png" alt="Ageless" /></aside>
+    <aside className="login-hero" style={{ backgroundImage: `url(${loginBg})` }}>
+      <img className="login-logo" src={logo} alt="Ageless Entertainments" />
+    </aside>
 
     <main className="login-main">
       {forgot ? <ForgotPassword initialLogin={name} onBack={() => setForgot(false)} /> : <form className="login-form" onSubmit={submit} noValidate>
         <h1>Welcome back</h1>
-        <p className="login-lead">Sign in with the phone number or email registered for your login.</p>
         {error && <div className="error-banner login-error" role="alert"><span>{error}</span></div>}
         <label htmlFor="login">Phone or email</label>
-        <input id="login" autoComplete="username" placeholder="e.g. 98765 43210 or name@ageless.in" value={name}
-          onChange={(e) => setName(e.target.value)} autoFocus />
+        <input id="login" ref={loginRef} autoComplete="username" placeholder="e.g. 98765 43210 or name@ageless.in" value={name}
+          onChange={(e) => setName(e.target.value)} disabled={busy} autoFocus />
         <label htmlFor="password">Password</label>
         <div className="password-field">
-          <input id="password" type={show ? 'text' : 'password'} autoComplete="current-password" value={password}
-            onChange={(e) => setPassword(e.target.value)} />
+          <input id="password" ref={passwordRef} type={show ? 'text' : 'password'} autoComplete="current-password" value={password}
+            onChange={(e) => setPassword(e.target.value)} disabled={busy}
+            onKeyUp={(e) => setCaps(e.getModifierState('CapsLock'))} onBlur={() => setCaps(false)} />
           <button type="button" className="reveal" onClick={() => setShow(!show)} aria-label={show ? 'Hide password' : 'Show password'}
             title={show ? 'Hide password' : 'Show password'}>{show ? <EyeOff size={16} /> : <Eye size={16} />}</button>
         </div>
+        {caps && <p className="login-caps" role="status">Caps Lock is on</p>}
         <button className="primary-btn login-submit" disabled={busy}>{busy && <LoaderCircle className="spin" size={16} />}{busy ? 'Signing in…' : 'Sign in'}</button>
         <p className="login-help"><button type="button" className="link-btn" onClick={() => { setForgot(true); setError(''); }}>First time or forgot your password?</button></p>
 
