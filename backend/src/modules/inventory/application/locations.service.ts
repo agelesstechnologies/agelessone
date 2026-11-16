@@ -8,6 +8,7 @@ import { CoreFacade } from '../../core/core.facade';
 import { locations } from '../schema';
 import { InventoryRepository } from '../infrastructure/inventory.repository';
 import { LocationRow, LocationsRepository } from '../infrastructure/locations.repository';
+import { StockRepository } from '../infrastructure/stock.repository';
 import { needsCustodian, placementProblem, responsibleFor } from '../domain/locations';
 import { INVENTORY, INVENTORY_READ } from '../domain/permissions';
 import { CompanyAccess } from './company-access.service';
@@ -25,6 +26,7 @@ export class LocationsService {
     @Inject(DB) private readonly db: Db,
     @Inject(LocationsRepository) private readonly repo: LocationsRepository,
     @Inject(InventoryRepository) private readonly base: InventoryRepository,
+    @Inject(StockRepository) private readonly stock: StockRepository,
     @Inject(CompanyAccess) private readonly access: CompanyAccess,
     @Inject(CoreFacade) private readonly core: CoreFacade,
   ) {}
@@ -93,6 +95,9 @@ export class LocationsService {
         }
       }
       if (req.status !== undefined && req.status !== loc.status) {
+        if (req.status === 'inactive' && await this.stock.locationHasStock(tx, loc.id)) {
+          throw new AppError('INVENTORY_LOCATION_HAS_STOCK', 409, `${loc.code} still holds stock: move it out first`);
+        }
         if (req.status === 'inactive' && await this.repo.hasActiveChildren(tx, loc.id)) {
           throw new AppError('INVENTORY_LOCATION_HAS_CHILDREN', 409, `Make the racks and bins inside ${loc.code} inactive first`);
         }

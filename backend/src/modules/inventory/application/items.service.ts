@@ -10,6 +10,7 @@ import { CoreFacade } from '../../core/core.facade';
 import { items } from '../schema';
 import { CatalogRepository, CategoryRow, ConversionRow, ItemRow, UnitRow } from '../infrastructure/catalog.repository';
 import { LocationsRepository } from '../infrastructure/locations.repository';
+import { StockRepository } from '../infrastructure/stock.repository';
 import { nextItemCode } from '../domain/codes';
 import { changedFields, conversionProblems, ItemContent, itemProblems, UnitFacts } from '../domain/items';
 import { fitsDecimals, toBaseQuantity } from '../domain/quantities';
@@ -22,7 +23,8 @@ type ChosenConversion = { unitId: number; unitCode: string; factor: number };
 /**
  * Each company's items and their unit conversions. Code and name (ignoring case) are unique per company; without a code
  * an item gets the next code of its category. Category, units and default location come from the item's own company and
- * must be active when chosen. The code never changes. Items become inactive, never deleted; changed conversions are ended
+ * must be active when chosen. The code never changes; once the item has stock moves, neither do its base unit, tracking and
+ * stocked setting. Items become inactive, never deleted; changed conversions are ended
  * and added again, so history stays.
  */
 @Injectable()
@@ -31,6 +33,7 @@ export class ItemsService {
     @Inject(DB) private readonly db: Db,
     @Inject(CatalogRepository) private readonly repo: CatalogRepository,
     @Inject(LocationsRepository) private readonly locations: LocationsRepository,
+    @Inject(StockRepository) private readonly stock: StockRepository,
     @Inject(CompanyAccess) private readonly access: CompanyAccess,
     @Inject(CoreFacade) private readonly core: CoreFacade,
   ) {}
@@ -119,6 +122,9 @@ export class ItemsService {
           defaultLocationId: location?.id ?? null,
         };
         const changed: string[] = changedFields(item, next);
+        if ((changed.includes('baseUnitId') || changed.includes('tracking') || (changed.includes('isStocked') && !next.isStocked)) && await this.stock.itemHasMoves(tx, item.id)) {
+          throw new AppError('INVENTORY_ITEM_HAS_STOCK_MOVES', 409, `${item.code} already has stock moves: its base unit, tracking and stocked setting can no longer change`);
+        }
         const factorOf = (list: ChosenConversion[], unitId: number) => list.find((c) => c.unitId === unitId)?.factor;
         const toEnd = current.filter((c) => factorOf(wanted, c.unitId) !== c.factor).map((c) => c.unitId);
         const toAdd = wanted.filter((c) => factorOf(current, c.unitId) !== c.factor);

@@ -1,11 +1,16 @@
 # Inventory API
 
 Written for developers of the web app and the backend. Base URL `http://localhost:3000/api`; every call needs
-`Authorization: Bearer <token>`. Request and answer shapes are defined once in `shared/src/inventory.ts`; `/api/docs` shows
-every route live. Tables: `backend/src/modules/inventory/schema.ts` (schema `inventory`, migration `0040_inventory_items_locations`).
+`Authorization: Bearer <token>`. Request and answer shapes are defined once in `shared/src/inventory.ts` (set-up) and
+`shared/src/inventory-stock.ts` (stock); `/api/docs` shows every route live. Tables: `backend/src/modules/inventory/schema.ts`
+(schema `inventory`; migrations `0040_inventory_items_locations` and `0041_inventory_stock`).
 
-This part covers the **set-up records**: units, item categories, items (with unit conversions) and store locations, plus
-CSV import. Stock, documents (receipts, issues, returns, transfers), costs and part requests come next and build on these.
+Covered so far:
+- the **set-up records**: units, item categories, items (with unit conversions), store locations and CSV import;
+- **stock** (see [Stock](#stock)): documents (receipt, issue, return, transfer, reversal), stock moves, balances, the moving
+  average cost, stock events and the nightly rebuild.
+
+Part requests and reservations come next.
 
 ## Companies are kept apart
 
@@ -249,6 +254,130 @@ LAB-R1,Rack 1,rack,LAB,
 LAB-R1-B1,Bin 1,bin,LAB-R1,
 ```
 
+## Stock
+
+Every movement is a **document**: a receipt, issue, return, transfer or reversal. Stock is never edited directly, and a
+mistake is undone with a reversal. Posting a document does all of the following in one transaction:
+- writes **stock moves**: the ledger, append-only, which the database refuses to change or delete;
+- updates the **balances**: quantity per item and location, never below zero;
+- updates the **valuation**: value and moving average cost per item per company;
+- publishes the **stock event** (`core.outbox`);
+- writes the **audit log**.
+
+**Who** (see [Who sees what](#who-sees-what)):
+- **Posting** needs `inventory.stock.post` in the company. With scope own, every location the document moves stock in or out
+  of must be one the poster looks after (**403 `INVENTORY_NOT_YOUR_LOCATION`**).
+- **Reading** documents and stock needs `inventory.view` (or stock.post). Scope own sees only documents and stock of its
+  locations, and values are shown.
+- A document of another company answers **404**.
+
+**Common rules:**
+- **Company:** a document belongs to one company and uses only that company's items, locations and tickets. The database's
+  company-safe keys refuse anything else, and the API answers 400 `INVENTORY_UNKNOWN_ITEM` / `_LOCATION` / `_TICKET`.
+- **Dates:** `documentDate` defaults to today (IST) and is never in the future (400 `INVENTORY_DATE_IN_FUTURE`). A month
+  closed by Accounts will be refused (400 `INVENTORY_MONTH_CLOSED`) once the Accounts module is merged; until then no month
+  is closed.
+- **Quantities** are in the base unit and fit its decimals (400 `INVENTORY_QUANTITY_DECIMALS`).
+- **Items:**
+  - non-stocked items never move (400 `INVENTORY_ITEM_NOT_STOCKABLE`);
+  - batch and serial items get stock with part requests (next step);
+  - inactive items take no receipts.
+- **Locations:** they are active. Received, issued and usable stock sits in a store, rack, bin, work area or testing space
+  (400 `INVENTORY_LOCATION_USE`).
+- **Numbers** are per company and type: `GRN-00001` (receipt), `ISS-` (issue), `RET-` (return), `TRF-` (transfer), `REV-` (reversal).
+- **Resends:** creates take an optional `publicId`; sending the same create again answers **200** with the stored document.
+- **Money** is integer minor units (paise) in `INR`. `unitCostMinor` is minor units per base unit and may have 6 decimals.
+
+**Moving weighted average (per item, per company):**
+- **Receipts and returns** add their value and recalculate the average: total value ÷ total quantity.
+- **Issues and transfers** take stock out at the current average. The cost is recorded on the line and never changes,
+  whatever later receipts do. An issue that empties the stock takes all the value left, so nothing in stock keeps a value.
+- **Amounts** are computed in exact integers (no floating point).
+- **Stored per company, not per location:** the value and average live once per item per company (`stock_valuations`).
+  A per-location value would drift away from a company-wide average, so stock on hand shows value = quantity × that average.
+
+### Receipt — `POST /api/inventory/receipts`
+```json
+{ "company": "ATPL", "supplierName": "Fictional Supplies", "challanNo": "DC-114", "reason": "Direct purchase for the lab",
+  "lines": [{ "itemPublicId": "…", "locationPublicId": "…", "quantity": 2, "unitPublicId": "<box>", "unitCostMinor": 15000 }] }
+```
+- **Reason:** until purchase orders exist every receipt is a direct purchase, so `reason` is required.
+- **Unit:** `unitPublicId` is the base unit (the default) or one of the item's conversion units. The quantity is converted with
+  the item's factor (2 boxes of 10 = 20 pcs). `unitCostMinor` is per that unit, and the line value is quantity × cost, half up.
+- **Location:** defaults to the item's default location (400 `INVENTORY_LOCATION_NEEDED` when it has none).
+- **Delivery challan:** attach it once with `POST /api/inventory/documents/:id/challan` (multipart `file`: JPEG, PNG or PDF,
+  up to 5 MB, told by its bytes; 409 `INVENTORY_CHALLAN_EXISTS`). Download it with `GET …/challan`.
+
+### Issue — `POST /api/inventory/issues`
+`{ "company": "ATPL", "ticketPublicId": "…", "lines": [{ "itemPublicId", "locationPublicId", "quantity" }] }`
+- **Ticket:** a ticket of the same company that is open, assigned, in progress or on hold (409 `INVENTORY_TICKET_CLOSED`).
+  Projects come later.
+- **Cost:** each line takes the average at that moment.
+- **Not enough stock:** **409 `INVENTORY_NOT_ENOUGH_STOCK`** ("Not enough X in Y: 1 on hand, 2 needed"). Balances are
+  locked while posting, so two issues of the last unit can never both pass.
+
+### Return — `POST /api/inventory/returns`
+`{ "issuePublicId": "…", "lines": [{ "lineNo": 1, "quantity": 1, "condition": "usable", "locationPublicId"? }] }`
+- **Cost:** at the cost the line was issued at. The last part of a line takes exactly the rest of its value.
+- **Quantity:** never more than was issued less what came back already (409 `INVENTORY_RETURN_TOO_MUCH`).
+- **Condition decides the location:**
+  - `usable` goes to a store, rack, bin, work area or testing space (default: where it was issued from);
+  - `repair` goes to a quarantine location;
+  - `scrap` goes to a scrap location.
+  - Without `locationPublicId`, repair and scrap use the company's only active one; if there isn't exactly one, the answer
+    is 400 `INVENTORY_RETURN_LOCATION_NEEDED`.
+
+### Transfer — `POST /api/inventory/transfers`, then `POST /api/inventory/transfers/:id/receive`
+`{ "company": "ATPL", "transitLocationPublicId"?, "lines": [{ "itemPublicId", "fromLocationPublicId", "toLocationPublicId", "quantity" }] }`
+- **Sending:** the stock leaves its from-locations at the average and waits in the transit location (default: the company's
+  only one; 400 `INVENTORY_TRANSIT_NEEDED`). The document is `in_transit`.
+- **Receiving:** the receiving side (scope own: the to-locations' custodians) receives it. The stock leaves transit for the
+  destinations with the value it left with, and the document becomes `posted`, recording who received it and when. A
+  second receive answers 409 `INVENTORY_NOT_IN_TRANSIT`.
+- **Value:** a transfer never changes the item's value or average.
+
+### Reversal — `POST /api/inventory/documents/:id/reverse` `{ "reason": "…" }`
+- **What it does:** posts a reversal document (`REV-…`) with every move of the original, opposite (`reversal_of`), so
+  quantity and value come back. The original becomes `reversed`, and each move is reversed at most once.
+- **Transfers:** a transfer in transit returns to its from-locations; a received one goes back from the destinations to the
+  from-locations.
+- **Refused when:**
+  - it's a reversal (400 `INVENTORY_CANNOT_REVERSE_REVERSAL`);
+  - it's already reversed (409 `INVENTORY_ALREADY_REVERSED`);
+  - it's an issue with returns (reverse the returns first: 409 `INVENTORY_REVERSE_RETURNS_FIRST`);
+  - the stock has moved on since (409 `INVENTORY_NOT_ENOUGH_STOCK`, or `INVENTORY_REVERSAL_NOT_POSSIBLE` when it would
+    leave value without stock).
+
+### Reading
+- `GET /api/inventory/documents?company=&type=&status=&ticket=&from=&to=&page=&pageSize=`: newest first, with line count
+  and total value.
+- `GET /api/inventory/documents/:id`: lines with item, quantity, entered unit, locations, condition, unit cost and value;
+  links to the original document or its reversal.
+- `GET /api/inventory/stock?company=&item=&location=&includeEmpty=&page=&pageSize=`: one row per item and location, with
+  `onHand`, `reserved`, `available` (= onHand − reserved), `avgCostMinor` (the company average) and `valueMinor`.
+
+### Stock events (`core.outbox`, written in the same transaction)
+Each document publishes one event (shape `StockEvent` in `shared/src/inventory-stock.ts`). Its lines give item, location,
+signed quantity, unit cost and value.
+
+| Event | When |
+| --- | --- |
+| `stock.received` | receipt |
+| `stock.issued` | issue (with `ticketPublicId`, `projectId`) |
+| `stock.returned` | return (with the issue's ticket) |
+| `stock.transferred` | transfer sent (`phase: dispatched`) and received (`phase: received`) |
+| `stock.adjusted` | reversal (`reason: reversal`, `reversalOf`); counts and adjustments later |
+
+Outbox events are never deleted; only `published_at` is set once, when a consumer has taken one.
+
+### Nightly check — `pnpm --filter @ageless/backend inventory:daily`
+Rebuilds every balance and valuation from the stock moves, fixes any that differ, and alerts: an audit entry
+`inventory.stock.rebuilt` for each company with a difference, and the job prints each one. Posting waits while it runs.
+
+### Once stock exists
+- An item with stock moves can no longer change its base unit, tracking or stocked setting (409 `INVENTORY_ITEM_HAS_STOCK_MOVES`).
+- A location that still holds stock cannot become inactive (409 `INVENTORY_LOCATION_HAS_STOCK`).
+
 ## Error codes
 
 | Code | Status | When |
@@ -273,9 +402,29 @@ LAB-R1-B1,Bin 1,bin,LAB-R1,
 | `INVENTORY_LOCATION_HAS_CHILDREN` | 409 | inactive with active racks or bins inside |
 | `INVENTORY_IMPORT_INVALID`, `_NO_FILE`, `_NOT_CSV`, `_EMPTY`, `_TOO_LARGE` | 400 | CSV import |
 | `INVENTORY_IMPORT_CONFLICT` | 409 | CSV import raced another change; send again |
+| `INVENTORY_DOCUMENT_NOT_FOUND` | 404 | unknown stock document, or another company's (or, with scope own, not of your locations) |
+| `INVENTORY_UNKNOWN_ITEM`, `_TICKET`, `_LINE` | 400 | not the document's company, or no such issue line |
+| `INVENTORY_ITEM_NOT_STOCKABLE`, `INVENTORY_ITEM_INACTIVE` | 400 | non-stocked, batch or serial item; inactive item on a receipt |
+| `INVENTORY_LOCATION_USE`, `_LOCATION_NEEDED`, `_RETURN_LOCATION_NEEDED`, `_TRANSIT_NEEDED` | 400 | location rules of stock documents |
+| `INVENTORY_DATE_IN_FUTURE`, `INVENTORY_MONTH_CLOSED` | 400 | document date |
+| `INVENTORY_NOT_ENOUGH_STOCK` | 409 | a location would go below zero |
+| `INVENTORY_TICKET_CLOSED` | 409 | issue to a completed or cancelled ticket |
+| `INVENTORY_RETURN_TOO_MUCH` | 409 | more than issued less returned |
+| `INVENTORY_NOT_AN_ISSUE`, `_NOT_A_TRANSFER`, `_NOT_A_RECEIPT` | 400 | wrong document type for the call |
+| `INVENTORY_NOT_IN_TRANSIT`, `_DOCUMENT_REVERSED` | 409 | transfer already received or reversed; return from a reversed issue |
+| `INVENTORY_ALREADY_REVERSED`, `_REVERSE_RETURNS_FIRST`, `_REVERSAL_NOT_POSSIBLE` | 409 | reversal rules |
+| `INVENTORY_CANNOT_REVERSE_REVERSAL` | 400 | a reversal is final |
+| `INVENTORY_FILE_REQUIRED`, `_FILE_TYPE` | 400 | challan file missing, or not JPEG / PNG / PDF |
+| `INVENTORY_CHALLAN_EXISTS` | 409 | the receipt already has its challan |
+| `INVENTORY_NO_CHALLAN` | 404 | no challan attached |
+| `INVENTORY_ITEM_HAS_STOCK_MOVES`, `INVENTORY_LOCATION_HAS_STOCK` | 409 | once stock exists |
 | `VALIDATION` | 400 | request shape (`details` per field) |
 
 ## Not built yet
 
-Stock moves and balances, documents (receipt, issue, return, transfer, reversal), moving average cost, part requests and
-reservations, serial and batch records, cross-company requesters, intercompany charges, counts, adjustments, reports.
+- **Part requests and reservations:** approvals by value, expiry and release.
+- **Serial and batch rules:** batch and serial items take no stock until then.
+- **Cross-company requesters.**
+- **Intercompany charges:** from the `stock.issued` event, once the intercompany module is merged.
+- **Closed months:** the check refuses nothing until Accounts is merged.
+- **Purchase-order links, receipt validation by the store in-charge, counts, adjustments and reports.**

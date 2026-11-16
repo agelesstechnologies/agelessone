@@ -32,7 +32,8 @@ roles, and the HRMS **People** area), how to run it, and how to call every endpo
 | Organisation | Departments with heads (approver after the manager), designations, positions (planned → open → filled) — ATPL seeded |
 | Skills | Skills list per company and department; person skills and certificates (with files) verified by someone else; skills matrix; expiring certificates; daily job |
 | Payroll | One fixed monthly salary per job; a run per company per month once attendance is locked; loss of pay; additions / deductions; approval by someone else; payslip PDF, salary register and bank upload CSV |
-| Inventory (set-up) | Each company's own units, item categories, items (codes made per category: EC-0001 …; tracking none / batch / serial; HSN/SAC; stocked or not; reorder level; default location; unit conversions; copy from another company as a separate item) and store locations (stores with racks and bins, work areas, testing, transit, quarantine, scrap) with custodians; CSV import of items and locations (duplicates by code skipped). ATPL and AE never see or use each other's records. Stock comes next |
+| Inventory (set-up) | Each company's own units, item categories, items (codes made per category: EC-0001 …; tracking none / batch / serial; HSN/SAC; stocked or not; reorder level; default location; unit conversions; copy from another company as a separate item) and store locations (stores with racks and bins, work areas, testing, transit, quarantine, scrap) with custodians; CSV import of items and locations (duplicates by code skipped). ATPL and AE never see or use each other's records |
+| Inventory (stock) | Receipts (with challan file), issues to tickets, returns by condition, transfers through transit, reversals; append-only stock moves, balances never below zero, moving average cost per item per company (issue cost recorded and never changed); stock on hand; `stock.*` events in `core.outbox`; nightly rebuild job (`inventory:daily`) that alerts on differences |
 | Reports and month lock | Leave, expense and work-hours reports with CSV; HR locks a company's month (nothing in it can change), System Admin unlocks with a reason |
 | Attendance | Punch in / out per job (resend-safe, order enforced across companies), today, my history, daily register, work hours, rebuild work days; corrections (missed or wrong punches) approved by the manager, punches never edited |
 | Leave | Apply on your own job (days counted from the calendar, half days), approve / reject by the manager (else HR, else the CEO), cancel (approved leave gives the days back), balances from a ledger, HR opening balances and adjustments, report; approved leave shows on work days |
@@ -906,6 +907,11 @@ answer 404. Creates take an optional `publicId` (sent again: 200). Nothing is de
   scrap; a custodian person with a job in the same company (racks and bins may fall back to the parent's).
 - **CSV import** (`POST /items/import`, `POST /locations/import`, multipart `file` + `company` + `dryRun`): duplicates by code
   are skipped; any other problem refuses the whole file with `details [{ row, field, message }]`.
+- **Stock** (`POST /receipts`, `/issues` to a ticket, `/returns`, `/transfers` then `/transfers/:id/receive`,
+  `/documents/:id/reverse`; `GET /documents`, `GET /stock`). Every movement is a document. Posting writes append-only stock
+  moves and updates balances (never below zero, locked while posting) and the moving average per item per company, in one
+  transaction. Issues record the average at that moment. Each document publishes a `stock.*` event to the new
+  `core.outbox`. The nightly `inventory:daily` job rebuilds balances from the moves and alerts on any difference.
 
 **Who sees what:** inventory is need-to-know. Staff roles hold no inventory permission, so developers and designers see
 none of it. Store roles (Storekeeper, Store in-charge, Inventory controller) hold `inventory.view`, `.items.manage`,
@@ -1156,9 +1162,9 @@ in `backend/.env`.
 - **Expenses: receipt download** — receipts are saved and the path stored, but there is no endpoint yet to fetch the file.
 - **Expenses: limits per category or grade** — not checked yet (would come from `CoreFacade.getPolicy`); no link to service tickets yet.
 - **Policies** — values are checked one key at a time (nothing stops a half day longer than a full day); a new version does not rebuild work days already stored (use rebuild); `max_open_punch_hours` (16) only limits the running time shown today; with the automatic punch-out at 8 hours it has little effect.
-- **Inventory: stock** — stock moves and balances, receipts, issues, returns, transfers, reversals, average cost, part
-  requests and reservations, serials and batches, cross-company requesters, intercompany charges, counts, adjustments,
-  reports. Value limits for approvals become policies with the steps that use them.
+- **Inventory** — part requests and reservations, serial and batch rules (those items take no stock yet), cross-company
+  requesters, intercompany charges, counts, adjustments, reports. Closed Accounts months are not refused until the Accounts
+  module is merged. Value limits for approvals become policies with the steps that use them.
 - **Tenant isolation in the database** (row-level security) and audit log — in the reference SQL, not built.
 - **First admin on a real server** — the seed is development-only; a real server needs a one-off way to create the
   first System admin.

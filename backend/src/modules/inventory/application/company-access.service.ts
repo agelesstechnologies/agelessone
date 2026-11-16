@@ -35,6 +35,13 @@ export class CompanyAccess {
     return company;
   }
 
+  /** A record's company (by id), when the caller may use it with one of these permissions (403 otherwise). */
+  async requireById(ctx: RequestContext, permissions: string[], legalEntityId: number): Promise<Company> {
+    const company = (await this.repo.companies(ctx.tenantId)).find((c) => c.id === legalEntityId);
+    if (!company || !(await this.mayUse(ctx, permissions, legalEntityId))) throw notYours(company?.code ?? 'that company');
+    return company;
+  }
+
   /** For lists: the company asked for (checked as in require), else every company the caller reaches. */
   async forList(ctx: RequestContext, permissions: string[], code: string | undefined): Promise<Company[]> {
     return code === undefined ? this.reachable(ctx, permissions) : [await this.require(ctx, permissions, code)];

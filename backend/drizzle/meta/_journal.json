@@ -288,6 +288,13 @@
       "when": 1794639448631,
       "tag": "0040_inventory_items_locations",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794653094744,
+      "tag": "0041_inventory_stock",
+      "breakpoints": true
     }
   ]
 }
