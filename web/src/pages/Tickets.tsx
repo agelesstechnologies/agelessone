@@ -56,8 +56,7 @@ export default function Tickets() {
     return <TicketPage id={openId} onBack={() => { if (window.history.length > 1) window.history.back(); else window.location.hash = 'tickets'; }} />;
   }
   return <>
-    <PageHead eyebrow="OPERATIONS • TICKETS" title="Tickets" subtitle="Service work: who does what, for how long, and what is left."
-      action={createsTickets ? <button className="primary-btn" onClick={() => setCreating(true)}><Plus size={16} /> New ticket</button> : undefined} />
+    <PageHead eyebrow="OPERATIONS • TICKETS" title="Tickets"      action={createsTickets ? <button className="primary-btn" onClick={() => setCreating(true)}><Plus size={16} /> New ticket</button> : undefined} />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'mine' && <TicketList key={`m${version}`} mine />}
     {tab === 'all' && <TicketList key={`a${version}`} />}

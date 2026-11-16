@@ -22,7 +22,7 @@ export default function Attendance() {
   ];
   const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'today');
   return <>
-    <PageHead eyebrow="HRMS • ATTENDANCE" title="Attendance" subtitle="Daily punch, work hours history, corrections, overtime and the team register." />
+    <PageHead eyebrow="HRMS • ATTENDANCE" title="Attendance" />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'today' && <MyDay />}
     {tab === 'history' && <MyHistory />}

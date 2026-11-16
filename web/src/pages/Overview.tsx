@@ -20,10 +20,9 @@ export default function Overview({ go }: { go: (page: string) => void }) {
   const approve = can(EXPENSES.approve);
   const waiting = useLoad(() => (approve ? api<ExpenseClaim[]>('/hrms/expenses/to-approve') : Promise.resolve(null)), [approve]);
   if (!me) return null;
-  const roles = me.roles.map((r) => r.name).join(', ') || 'No role yet';
 
   return <>
-    <PageHead eyebrow="OVERVIEW" title={`Hello, ${me.person.displayName}`} subtitle={`Signed in as ${roles}.`} />
+    <PageHead eyebrow="OVERVIEW" title={`Hello, ${me.person.displayName}`} />
     {punch && <MyDay />}
     {(can(TICKETS.view) || can(TICKETS.work) || can(TICKETS.manage)) && <OverdueAlerts />}
     {can(DASHBOARD.view) && <OverviewCharts />}

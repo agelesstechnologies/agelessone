@@ -31,7 +31,7 @@ export default function Organisation() {
   ];
   const [tab, setTab] = useState<TabKey>('departments');
   return <>
-    <PageHead eyebrow="HRMS • ORGANISATION" title="Organisation" subtitle="Departments, designations and the positions each company plans to fill." />
+    <PageHead eyebrow="HRMS • ORGANISATION" title="Organisation" />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'departments' && <Departments />}
     {tab === 'designations' && <Designations />}

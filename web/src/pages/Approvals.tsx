@@ -46,7 +46,7 @@ export default function Approvals() {
   }
 
   return <>
-    <PageHead eyebrow="HRMS • APPROVALS" title="Approvals" subtitle="Leave, expenses, corrections and overtime waiting for your decision." />
+    <PageHead eyebrow="HRMS • APPROVALS" title="Approvals" />
     <Tabs tabs={tabs} value={filter} onChange={setFilter} />
     <Panel>
       <div className="panel-body">
