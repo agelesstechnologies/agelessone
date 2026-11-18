@@ -9,6 +9,7 @@ import { useAuth } from '../auth';
 import { rupees, useLoad, words } from '../hooks';
 import { Badge, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs, type Tone } from '../ui';
 import TallySync from './AccountsTally';
+import { PostingRulesTab, TallyCompanyTab } from './AccountsSetup';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const COMPANIES = [{ code: 'ATPL', name: 'Ageless Technologies' }, { code: 'AE', name: 'Ageless Entertainments' }];
@@ -16,10 +17,11 @@ const PERIOD_TONE: Record<string, Tone> = { open: 'green', soft_closed: 'amber',
 const MAP_TONE: Record<string, Tone> = { unmapped: 'red', draft: 'amber', approved: 'green' };
 const dateIn = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' });
 
-type Tab = 'periods' | 'ledger' | 'journal' | 'requests' | 'batches' | 'bank' | 'tally' | 'reports';
+type Tab = 'periods' | 'ledger' | 'journal' | 'requests' | 'batches' | 'bank' | 'tally' | 'reports' | 'company' | 'rules';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'requests', label: 'Payment requests' }, { key: 'batches', label: 'Payment batches' }, { key: 'bank', label: 'Bank' },
-  { key: 'tally', label: 'Tally sync' }, { key: 'ledger', label: 'Ledger mapping' }, { key: 'journal', label: 'Journal entries' },
+  { key: 'tally', label: 'Tally sync' }, { key: 'company', label: 'Tally company' }, { key: 'ledger', label: 'Ledger mapping' },
+  { key: 'rules', label: 'Posting rules' }, { key: 'journal', label: 'Journal entries' },
   { key: 'periods', label: 'Periods' }, { key: 'reports', label: 'Reports' },
 ];
 
@@ -45,6 +47,8 @@ export default function Accounts() {
           tab === 'ledger' ? <LedgerMap company={company} access={a} /> :
           tab === 'journal' ? <Journal company={company} access={a} /> :
           tab === 'tally' ? <TallySync company={company} access={a} /> :
+          tab === 'company' ? <TallyCompanyTab company={company} access={a} /> :
+          tab === 'rules' ? <PostingRulesTab company={company} access={a} /> :
           <Empty title="Coming soon" text={`${TABS.find((t) => t.key === tab)?.label} will appear here when its backend is ready.`} />}
       </div>
     </Panel>
