@@ -2,6 +2,7 @@
 export { z } from 'zod';
 export * from './accounts';
 export * from './accounts-tally';
+export * from './accounts-payments';
 export * from './accounts-connector';
 export * from './tally-response';
 export * from './errors';

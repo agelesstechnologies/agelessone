@@ -65,6 +65,9 @@ export class AccountsService {
     return a;
   }
 
+  /** The code of a company of the caller's tenant (used by PaymentsService). */
+  companyCodeOf(tenantId: number, id: number) { return this.repo.companyCodeOf(tenantId, id); }
+
   async company(ctx: RequestContext, code: string) {
     const c = await this.repo.findCompany(ctx.tenantId, code);
     if (!c) throw new AppError('NOT_FOUND', 404, `No company ${code}`);

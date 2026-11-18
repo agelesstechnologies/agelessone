@@ -10,6 +10,7 @@ import { rupees, useLoad, words } from '../hooks';
 import { Badge, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs, type Tone } from '../ui';
 import TallySync from './AccountsTally';
 import { PostingRulesTab, TallyCompanyTab } from './AccountsSetup';
+import { BankTab, PaymentBatchesTab, PaymentRequestsTab, ReportsTab } from './AccountsPayments';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const COMPANIES = [{ code: 'ATPL', name: 'Ageless Technologies' }, { code: 'AE', name: 'Ageless Entertainments' }];
@@ -49,7 +50,10 @@ export default function Accounts() {
           tab === 'tally' ? <TallySync company={company} access={a} /> :
           tab === 'company' ? <TallyCompanyTab company={company} access={a} /> :
           tab === 'rules' ? <PostingRulesTab company={company} access={a} /> :
-          <Empty title="Coming soon" text={`${TABS.find((t) => t.key === tab)?.label} will appear here when its backend is ready.`} />}
+          tab === 'requests' ? <PaymentRequestsTab company={company} access={a} /> :
+          tab === 'batches' ? <PaymentBatchesTab company={company} access={a} /> :
+          tab === 'bank' ? <BankTab company={company} access={a} /> :
+          <ReportsTab company={company} access={a} />}
       </div>
     </Panel>
   </>;

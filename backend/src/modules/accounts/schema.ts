@@ -227,3 +227,102 @@ export const tallyExports = accounts.table('tally_exports', {
   check('tally_exports_state_check', sql`state IN ('pending','created','failed')`),
   check('tally_exports_voucher_type_check', sql`voucher_type IN ('Platform Journal','Platform Payment')`),
 ]);
+
+/**
+ * A payment someone asks for (a vendor bill, a reimbursement ...). The maker asks, a different person (the checker)
+ * approves or rejects. An approved request is put in a payment batch (batched) and is paid when its batch is.
+ */
+export const paymentRequests = accounts.table('payment_requests', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  publicId: uuid('public_id').notNull().unique(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
+  payeeName: text('payee_name').notNull(),
+  payeeKind: text('payee_kind').notNull(),
+  purpose: text('purpose').notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  currency: char('currency', { length: 3 }).notNull().default('INR'),
+  dueDate: date('due_date').notNull(),
+  state: text('state').notNull().default('pending'),
+  requestedBy: bigint('requested_by', { mode: 'number' }).notNull().references(() => persons.id),
+  requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+  decidedBy: bigint('decided_by', { mode: 'number' }).references(() => persons.id),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decisionNote: text('decision_note'),
+  batchId: bigint('batch_id', { mode: 'number' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  foreignKey({ name: 'payment_requests_batch_company_fk', columns: [t.batchId, t.legalEntityId], foreignColumns: [paymentBatches.id, paymentBatches.legalEntityId] }),
+  index('idx_payment_requests_company').on(t.legalEntityId, t.state, t.dueDate),
+  check('payment_requests_state_check', sql`state IN ('pending','approved','rejected','batched','paid','cancelled')`),
+  check('payment_requests_kind_check', sql`payee_kind IN ('vendor','employee','other')`),
+  check('payment_requests_amount_check', sql`amount_minor > 0`),
+  check('payment_requests_currency_check', sql`currency = 'INR'`),
+  check('payment_requests_decided_check', sql`(state IN ('pending','cancelled')) OR (decided_by IS NOT NULL AND decided_at IS NOT NULL)`),
+  check('payment_requests_not_own_approval', sql`decided_by IS NULL OR decided_by <> requested_by`),
+  check('payment_requests_batch_check', sql`(state IN ('batched','paid')) = (batch_id IS NOT NULL)`),
+]);
+
+/** Approved requests paid together from one bank ledger: draft (the maker built it) -> approved (a different person) -> paid, or cancelled. */
+export const paymentBatches = accounts.table('payment_batches', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  publicId: uuid('public_id').notNull().unique(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
+  bankLedgerKey: text('bank_ledger_key').notNull(),
+  state: text('state').notNull().default('draft'),
+  requestCount: integer('request_count').notNull(),
+  totalMinor: bigint('total_minor', { mode: 'number' }).notNull(),
+  currency: char('currency', { length: 3 }).notNull().default('INR'),
+  createdBy: bigint('created_by', { mode: 'number' }).notNull().references(() => persons.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  approvedBy: bigint('approved_by', { mode: 'number' }).references(() => persons.id),
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
+  paidBy: bigint('paid_by', { mode: 'number' }).references(() => persons.id),
+  paidAt: timestamp('paid_at', { withTimezone: true }),
+  paidOn: date('paid_on'),
+  bankReference: text('bank_reference'),
+}, (t) => [
+  unique('payment_batches_id_company_unique').on(t.id, t.legalEntityId),
+  index('idx_payment_batches_company').on(t.legalEntityId, t.createdAt),
+  check('payment_batches_state_check', sql`state IN ('draft','approved','paid','cancelled')`),
+  check('payment_batches_bank_check', sql`bank_ledger_key IN ('bank.operating','bank.salary')`),
+  check('payment_batches_counts_check', sql`request_count > 0 AND total_minor > 0`),
+  check('payment_batches_currency_check', sql`currency = 'INR'`),
+  check('payment_batches_approval_check', sql`(approved_by IS NULL) = (approved_at IS NULL) AND (state NOT IN ('approved','paid') OR approved_by IS NOT NULL)`),
+  check('payment_batches_not_own_approval', sql`approved_by IS NULL OR approved_by <> created_by`),
+  check('payment_batches_paid_check', sql`(state = 'paid') = (paid_by IS NOT NULL AND paid_at IS NOT NULL AND paid_on IS NOT NULL AND bank_reference IS NOT NULL)`),
+]);
+
+/** One row of a bank statement the maker imported. Money out (debit) can be matched to the paid batch it settled. */
+export const bankLines = accounts.table('bank_lines', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull(),
+  publicId: uuid('public_id').notNull().defaultRandom().unique(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).notNull().references(() => legalEntities.id),
+  bankLedgerKey: text('bank_ledger_key').notNull(),
+  txnDate: date('txn_date').notNull(),
+  description: text('description').notNull(),
+  reference: text('reference').notNull().default(''),
+  debitMinor: bigint('debit_minor', { mode: 'number' }).notNull().default(0),
+  creditMinor: bigint('credit_minor', { mode: 'number' }).notNull().default(0),
+  currency: char('currency', { length: 3 }).notNull().default('INR'),
+  state: text('state').notNull().default('unmatched'),
+  matchedBatchId: bigint('matched_batch_id', { mode: 'number' }),
+  matchedBy: bigint('matched_by', { mode: 'number' }).references(() => persons.id),
+  matchedAt: timestamp('matched_at', { withTimezone: true }),
+  importedBy: bigint('imported_by', { mode: 'number' }).notNull().references(() => persons.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  foreignKey({ name: 'bank_lines_batch_company_fk', columns: [t.matchedBatchId, t.legalEntityId], foreignColumns: [paymentBatches.id, paymentBatches.legalEntityId] }),
+  // The same statement row is stored once, so a statement can be imported twice.
+  unique('bank_lines_row_unique').on(t.legalEntityId, t.bankLedgerKey, t.txnDate, t.reference, t.debitMinor, t.creditMinor, t.description),
+  uniqueIndex('bank_lines_batch_once').on(t.matchedBatchId).where(sql`matched_batch_id IS NOT NULL`),
+  index('idx_bank_lines_company').on(t.legalEntityId, t.txnDate),
+  check('bank_lines_amount_check', sql`debit_minor >= 0 AND credit_minor >= 0 AND (debit_minor > 0) <> (credit_minor > 0)`),
+  check('bank_lines_bank_check', sql`bank_ledger_key IN ('bank.operating','bank.salary')`),
+  check('bank_lines_state_check', sql`state IN ('unmatched','matched')`),
+  check('bank_lines_matched_check', sql`(state = 'matched') = (matched_batch_id IS NOT NULL AND matched_by IS NOT NULL AND matched_at IS NOT NULL)`),
+  check('bank_lines_match_out_check', sql`matched_batch_id IS NULL OR debit_minor > 0`),
+  check('bank_lines_currency_check', sql`currency = 'INR'`),
+]);
