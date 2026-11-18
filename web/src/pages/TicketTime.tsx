@@ -7,9 +7,10 @@ import {
 import { SplitSuggestions, SuggestSplit } from './SplitSuggestions';
 import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
-import { addDays, dayLabel, devicePosition, hm, timeIst, todayIst, useLoad, uuidv7 } from '../hooks';
+import { addDays, dayLabel, devicePosition, hm, timeIst, todayIst, useApi, useLoad, uuidv7 } from '../hooks';
 import { PersonPicker } from '../JobPicker';
 import { TICKETS } from '../permissions';
+import { invalidate } from '../query';
 import { Badge, Empty, Loading, Modal, Notice, Panel } from '../ui';
 
 /** Ticket punch (several timers at once), daily updates, who is missing an update, and the day's shared time. */
@@ -48,6 +49,7 @@ function Running() {
       const r = await api<TicketPunchResult>(path, { method: 'POST', json });
       setOk(r.started ? `Punched in on ${plural(r.started)}.` : `Punched out of ${plural(r.stopped)}.`);
       setPicked(new Set()); setStopping(new Set()); running.reload(); mine.reload();
+      void invalidate('/tickets');   // the tickets' timers, timelogs and status (the first punch-in starts a ticket)
     }
     catch (e) { setError(errText(e)); }
     finally { setBusy(false); }
@@ -100,7 +102,7 @@ function Running() {
 
 /** The ticket's daily updates and a form to add today's (a note, percent done, and up to 5 photos or files). */
 export function TicketUpdates({ ticketId, label, onClose, inline = false }: { ticketId: string; label: string; onClose?: () => void; inline?: boolean }) {
-  const q = useLoad(() => api<DailyUpdate[]>(`/tickets/${ticketId}/updates`), [ticketId]);
+  const q = useApi<DailyUpdate[]>(`/tickets/${ticketId}/updates`);
   const { can } = useAuth();
   const [id, setId] = useState(uuidv7);
   const [error, setError] = useState('');
@@ -121,7 +123,7 @@ export function TicketUpdates({ ticketId, label, onClose, inline = false }: { ti
         files.forEach((x) => body.append('files', x));
         await api(`/tickets/${ticketId}/updates`, { method: 'POST', body });
       } else await api(`/tickets/${ticketId}/updates`, { method: 'POST', json: parsed.data });
-      form.reset(); setId(uuidv7()); q.reload();
+      form.reset(); setId(uuidv7()); void invalidate(`/tickets/${ticketId}`);   // its notes and history
     } catch (err) { setError(errText(err)); }
     finally { setSaving(false); }
   }

@@ -1,11 +1,38 @@
 import { useCallback, useEffect, useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PersonDetail } from '@ageless/shared';
 import { api, errText } from './api';
 import { useAuth } from './auth';
+import { apiKey } from './query';
 
 export type Employment = PersonDetail['employments'][number];
 
-/** Run a request on mount and whenever `deps` change; `reload()` runs it again. */
+/**
+ * Read one API path through the shared cache (see query.ts): screens asking for the same path share one answer, and
+ * invalidate(path) after a change reads it again. `null` reads nothing (not signed in, no permission).
+ * Same shape as useLoad: loading is true only until the first answer; while a new path loads, the last answer stays.
+ */
+export function useApi<T>(path: string | null, options: { staleTime?: number; refetchInterval?: number } = {}) {
+  const client = useQueryClient();
+  const q = useQuery({
+    queryKey: apiKey(path ?? ''),
+    queryFn: () => api<T>(path!),
+    enabled: path !== null,
+    placeholderData: path !== null ? keepPreviousData : undefined,
+    // only when given: TanStack spreads these over the defaults, so `staleTime: undefined` would erase the 30 s default
+    ...(options.staleTime !== undefined && { staleTime: options.staleTime }),
+    ...(options.refetchInterval !== undefined && { refetchInterval: options.refetchInterval }),
+  });
+  const { refetch } = q;
+  const reload = useCallback(() => { if (path !== null) void refetch(); }, [refetch, path]);   // refetch would run even a switched-off query
+  const setData = useCallback((d: T) => { if (path !== null) client.setQueryData(apiKey(path), d); }, [client, path]);
+  return { data: (q.data ?? null) as T | null, loading: path !== null && q.isPending, error: q.error ? errText(q.error) : '', reload, setData };
+}
+
+/**
+ * Run a request on mount and whenever `deps` change; `reload()` runs it again. Not cached or shared.
+ * New code uses useApi; this stays for screens not moved yet and for loaders that combine several requests.
+ */
 export function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,7 +53,7 @@ export function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []) {
 export function useMyEmployments() {
   const { me } = useAuth();
   const id = me?.person.publicId;
-  const { data, error } = useLoad(() => (id ? api<PersonDetail>(`/hrms/people/${id}`) : Promise.reject(new Error('Not signed in'))), [id]);
+  const { data, error } = useApi<PersonDetail>(id ? `/hrms/people/${id}` : null);
   const jobs = (data?.employments ?? []).filter((j) => j.status !== 'exited');
   return { jobs, primary: jobs.find((j) => j.isPrimary) ?? jobs[0], error };
 }

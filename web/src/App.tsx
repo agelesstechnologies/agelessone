@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Activity, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, ClipboardCheck, ClipboardList, Crown, FileStack, KeyRound, LayoutDashboard, Landmark, LoaderCircle, Lock, LogOut, Menu, Package, Boxes, SlidersHorizontal, Tags, Users, Wallet, Warehouse, X } from 'lucide-react';
-import { useLoad } from './hooks';
+import { useApi } from './hooks';
 import { AuthProvider, useAuth } from './auth';
 import { anyInventory, ATTENDANCE, EXPENSES, INVENTORY, LEAVE, MANAGEMENT, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
 import Accounts from './pages/Accounts';
@@ -28,7 +28,6 @@ import InventorySetup from './pages/inventory/Setup';
 import InventoryStock from './pages/inventory/Stock';
 import ChangePassword from './ChangePassword';
 import { Modal } from './ui';
-import { api } from './api';
 import type { AccountsAccess, Grant } from '@ageless/shared';
 
 type PageKey = 'overview' | 'ceo' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies' | 'accounts'
@@ -86,12 +85,11 @@ function Shell() {
   const [confirmOut, setConfirmOut] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
   // Accounts roles can come from the interim policy (HR, CEO), so the backend says who may see the section.
-  const [accountsView, setAccountsView] = useState(false);
-  useEffect(() => { api<AccountsAccess>('/accounts/access').then((a) => setAccountsView(a.view)).catch(() => setAccountsView(false)); }, []);
+  const accountsView = useApi<AccountsAccess>('/accounts/access').data?.view ?? false;
   const go = useCallback((p: string) => { window.location.hash = p; setMobileNav(false); }, []);
   // people without an inventory role may still have cross-company access to request parts for a ticket
   const noInventory = !!me && !anyInventory(can);
-  const grants = useLoad(() => (noInventory ? api<Grant[]>('/inventory/grants/mine').catch(() => [] as Grant[]) : Promise.resolve([] as Grant[])), [noInventory, me?.person.publicId]);
+  const grants = useApi<Grant[]>(noInventory ? '/inventory/grants/mine' : null);
   useEffect(() => {
     const onHash = () => setPage(pageFromHash());
     window.addEventListener('hashchange', onHash);
@@ -179,7 +177,8 @@ function Gate() {
   if (loading) return <div className="boot"><LoaderCircle className="spin" size={22} />Loading…</div>;
   if (!me) return <Login />;
   // a temporary password (new login, admin reset): set your own before anything else
-  return me.user.mustChangePassword ? <FirstLogin /> : <Shell />;
+  // keyed by the person, so a screen never keeps what it showed the last person
+  return me.user.mustChangePassword ? <FirstLogin /> : <Shell key={me.person.publicId} />;
 }
 
 export default function App() {

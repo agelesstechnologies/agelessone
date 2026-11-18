@@ -3,8 +3,9 @@ import { Check, Send, X } from 'lucide-react';
 import type { ApprovalItem, ApprovalType, ApprovalsInbox } from '@ageless/shared';
 import { api, errText } from '../api';
 import { useAuth } from '../auth';
-import { dayLabel, rupees, useLoad } from '../hooks';
+import { dayLabel, rupees, useApi } from '../hooks';
 import { MANAGEMENT } from '../permissions';
+import { invalidate } from '../query';
 import { Badge, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs, type Tone } from '../ui';
 
 /** Where each kind of request is approved, rejected or forwarded (the backend checks permission and "not your own"). */
@@ -12,6 +13,11 @@ export const BASE: Record<ApprovalType, string> = {
   leave: '/hrms/leave/requests', expense: '/hrms/expenses',
   correction: '/hrms/attendance/corrections', overtime: '/hrms/attendance/overtime',
 };
+/**
+ * After a request is approved, rejected or forwarded (here, on the CEO dashboard or on the Leave, Expenses and
+ * Attendance screens): read again the inboxes, the request areas and the pending counts on Overview and the dashboards.
+ */
+export const decided = (): void => { void invalidate('/hrms/approvals', '/hrms/leave', '/hrms/expenses', '/hrms/attendance', '/hrms/dashboard'); };
 export const LABEL: Record<ApprovalType, string> = { leave: 'Leave', expense: 'Expense', correction: 'Correction', overtime: 'Overtime' };
 export const TONE: Record<ApprovalType, Tone> = { leave: 'blue', expense: 'amber', correction: 'gray', overtime: 'green' };
 type Filter = 'all' | ApprovalType;
@@ -26,7 +32,7 @@ export function SentToCeo({ item }: { item: ApprovalItem }) {
 export default function Approvals() {
   const { scopeOf } = useAuth();
   const isCeo = scopeOf(MANAGEMENT) === 'all';
-  const q = useLoad(() => api<ApprovalsInbox>('/hrms/approvals/mine'));
+  const q = useApi<ApprovalsInbox>('/hrms/approvals/mine');
   const [filter, setFilter] = useState<Filter>('all');
   const [asking, setAsking] = useState<{ item: ApprovalItem; action: 'reject' | 'forward' } | null>(null);
   const [busy, setBusy] = useState('');
@@ -40,7 +46,7 @@ export default function Approvals() {
 
   async function approve(i: ApprovalItem) {
     setBusy(i.publicId); setError('');
-    try { await api(`${BASE[i.type]}/${i.publicId}/approve`, { method: 'POST', json: {} }); q.reload(); }
+    try { await api(`${BASE[i.type]}/${i.publicId}/approve`, { method: 'POST', json: {} }); decided(); }
     catch (e) { setError(errText(e)); }
     finally { setBusy(''); }
   }
@@ -67,11 +73,11 @@ export default function Approvals() {
               </div></td></tr>)}</tbody></table></div>}
       </div>
     </Panel>
-    {asking && <AskReason item={asking.item} action={asking.action} onClose={() => setAsking(null)} onDone={() => { setAsking(null); q.reload(); }} />}
+    {asking && <AskReason item={asking.item} action={asking.action} onClose={() => setAsking(null)} onDone={() => setAsking(null)} />}
   </>;
 }
 
-/** Reject, or forward to the CEO: both need a reason. */
+/** Reject, or forward to the CEO: both need a reason. Done: the inboxes and counts are read again (decided). */
 export function AskReason({ item, action, onClose, onDone }: { item: ApprovalItem; action: 'reject' | 'forward'; onClose: () => void; onDone: () => void }) {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -83,7 +89,7 @@ export function AskReason({ item, action, onClose, onDone }: { item: ApprovalIte
     const reason = String(new FormData(e.currentTarget).get('reason') ?? '').trim();
     if (reason.length < 3) { setError('Give a reason (at least 3 characters)'); return; }
     setSaving(true); setError('');
-    try { await api(`${BASE[item.type]}/${item.publicId}/${action}`, { method: 'POST', json: { reason } }); onDone(); }
+    try { await api(`${BASE[item.type]}/${item.publicId}/${action}`, { method: 'POST', json: { reason } }); decided(); onDone(); }
     catch (err) { setError(errText(err)); setSaving(false); }
   }
   return <Modal title={text.title} subtitle={`${item.person.displayName} · ${item.summary}`} onClose={onClose}>

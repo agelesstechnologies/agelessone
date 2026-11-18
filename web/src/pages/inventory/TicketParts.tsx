@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import type { PartRequest, TicketParts as Parts } from '@ageless/shared';
-import { api } from '../../api';
-import { dayLabel, useLoad } from '../../hooks';
+import { dayLabel, useApi } from '../../hooks';
 import { Badge, Empty, Loading, Notice } from '../../ui';
 import { money, qty, REQUEST_TONE } from './common';
 import { NewRequestForm, RequestDetail } from './Requests';
@@ -13,7 +12,7 @@ import { NewRequestForm, RequestDetail } from './Requests';
  * (the store, the ticket's department head); requesters never do.
  */
 export default function TicketPartsView({ ticketId }: { ticketId: string }) {
-  const q = useLoad(() => api<Parts>(`/inventory/tickets/${ticketId}/parts`), [ticketId]);
+  const q = useApi<Parts>(`/inventory/tickets/${ticketId}/parts`);   // shared with the ticket's Parts tile
   const [asking, setAsking] = useState(false);
   const [open, setOpen] = useState<PartRequest | null>(null);
   const [note, setNote] = useState('');

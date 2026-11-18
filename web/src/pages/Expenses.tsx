@@ -9,6 +9,7 @@ import { VoiceInput } from '../VoiceInput';
 import { addDays, dayLabel, rupees, todayIst, useLoad, useMyEmployments, uuidv7, words } from '../hooks';
 import { EXPENSES } from '../permissions';
 import { Badge, EXPENSE_TONE, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs, CsvButton } from '../ui';
+import { decided } from './Approvals';
 
 type TabKey = 'mine' | 'approve' | 'report';
 
@@ -191,7 +192,7 @@ function Approvals() {
 
   async function approve(c: ExpenseClaim) {
     setBusyId(c.publicId); setError('');
-    try { replace(await api<ExpenseClaim>(`/hrms/expenses/${c.publicId}/approve`, { method: 'POST', json: {} })); }
+    try { replace(await api<ExpenseClaim>(`/hrms/expenses/${c.publicId}/approve`, { method: 'POST', json: {} })); decided(); }
     catch (e) { setError(errText(e)); }
     finally { setBusyId(''); }
   }
@@ -211,7 +212,7 @@ function Approvals() {
               {c.status === 'approved' && can(EXPENSES.pay) && <button className="outline-btn" onClick={() => setAction({ claim: c, kind: 'pay' })}>Mark paid</button>}
             </td></tr>)}</tbody></table></div>}
     </div>
-    {action && <Decision action={action} onClose={() => setAction(null)} onDone={(c) => { replace(c); setAction(null); }} />}
+    {action && <Decision action={action} onClose={() => setAction(null)} onDone={(c) => { replace(c); setAction(null); decided(); }} />}
   </Panel>;
 }
 

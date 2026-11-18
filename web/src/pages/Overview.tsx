@@ -1,9 +1,8 @@
 import { Activity, ArrowRight, BriefcaseBusiness, Users } from 'lucide-react';
 import type { ExpenseClaim } from '@ageless/shared';
 import type { ReactNode } from 'react';
-import { api } from '../api';
 import { useAuth } from '../auth';
-import { useLoad } from '../hooks';
+import { useApi } from '../hooks';
 import { ATTENDANCE, DASHBOARD, EXPENSES, PEOPLE, TICKETS } from '../permissions';
 import { PageHead } from '../ui';
 import { MyDay } from './Attendance';
@@ -18,7 +17,7 @@ export default function Overview({ go }: { go: (page: string) => void }) {
   const { me, can, seesOthers } = useAuth();
   const punch = can(ATTENDANCE.punch);
   const approve = can(EXPENSES.approve);
-  const waiting = useLoad(() => (approve ? api<ExpenseClaim[]>('/hrms/expenses/to-approve') : Promise.resolve(null)), [approve]);
+  const waiting = useApi<ExpenseClaim[]>(approve ? '/hrms/expenses/to-approve' : null);
   if (!me) return null;
 
   return <>

@@ -6,6 +6,7 @@ import {
 import { api, errText, formError } from '../api';
 import { dayLabel, hm, timeIst, useLoad, uuidv7 } from '../hooks';
 import { Badge, Empty, Loading, Modal, Notice, Panel, type Tone } from '../ui';
+import { decided } from './Approvals';
 
 const STATUS_TONE: Record<string, Tone> = { submitted: 'amber', approved: 'green', rejected: 'red', cancelled: 'gray' };
 const KIND_LABEL: Record<CorrectionKind, string> = { missed_out: 'Missed punch-out', missed_in: 'Missed punch-in', wrong_time: 'Wrong time', other: 'Other' };
@@ -77,7 +78,7 @@ export function RequestApprovals() {
   const drop = (r: Row) => q.setRows((all) => all.filter((x) => !(x.kind === r.kind && x.publicId === r.publicId)));
   async function approve(r: Row) {
     setBusyId(r.publicId); setError('');
-    try { await api(path(r, 'approve'), { method: 'POST', json: {} }); drop(r); }
+    try { await api(path(r, 'approve'), { method: 'POST', json: {} }); drop(r); decided(); }
     catch (e) { setError(errText(e)); }
     finally { setBusyId(''); }
   }
@@ -92,7 +93,7 @@ export function RequestApprovals() {
               <button className="outline-btn ok" disabled={busyId === r.publicId} onClick={() => void approve(r)}><Check size={13} /> Approve</button>
               <button className="outline-btn danger" onClick={() => setRejecting(r)}><X size={13} /> Reject</button></td></tr>)}</tbody></table></div>}
     </div>
-    {rejecting && <Reject row={rejecting} onClose={() => setRejecting(null)} onDone={() => { drop(rejecting); setRejecting(null); }} />}
+    {rejecting && <Reject row={rejecting} onClose={() => setRejecting(null)} onDone={() => { drop(rejecting); setRejecting(null); decided(); }} />}
   </Panel>;
 }
 

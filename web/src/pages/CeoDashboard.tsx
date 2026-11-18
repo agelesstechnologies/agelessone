@@ -4,7 +4,7 @@ import type { ApprovalItem, ApprovalsInbox, PayrollRunSummary, TicketDashboard }
 import { api, errText } from '../api';
 import { dayLabel, hm, rupees, todayIst, useLoad } from '../hooks';
 import { Badge, Empty, Loading, Notice, PageHead, Panel, type Tone } from '../ui';
-import { AskReason, BASE, LABEL, SentToCeo, TONE } from './Approvals';
+import { AskReason, BASE, decided, LABEL, SentToCeo, TONE } from './Approvals';
 import { HBars, Kpi, OverviewCharts } from './OverviewCharts';
 import { STATUS_TONE, statusLabel } from './TicketDetail';
 import { openTicket } from './Tickets';
@@ -57,7 +57,7 @@ function WaitingForYou({ company }: { company: string }) {
   const reload = () => { sent.reload(); all.reload(); };
   async function approve(i: ApprovalItem) {
     setBusy(i.publicId); setError('');
-    try { await api(`${BASE[i.type]}/${i.publicId}/approve`, { method: 'POST', json: {} }); reload(); }
+    try { await api(`${BASE[i.type]}/${i.publicId}/approve`, { method: 'POST', json: {} }); reload(); decided(); }
     catch (e) { setError(errText(e)); }
     finally { setBusy(''); }
   }
