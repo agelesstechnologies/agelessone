@@ -32,6 +32,8 @@ roles, and the HRMS **People** area), how to run it, and how to call every endpo
 | Organisation | Departments with heads (approver after the manager), designations, positions (planned → open → filled) — ATPL seeded |
 | Skills | Skills list per company and department; person skills and certificates (with files) verified by someone else; skills matrix; expiring certificates; daily job |
 | Payroll | One fixed monthly salary per job; a run per company per month once attendance is locked; loss of pay; additions / deductions; approval by someone else; payslip PDF, salary register and bank upload CSV |
+| Inventory (set-up) | Each company's own units, item categories, items (codes made per category: EC-0001 …; tracking none / batch / serial; HSN/SAC; stocked or not; reorder level; default location; unit conversions; copy from another company as a separate item) and store locations (stores with racks and bins, work areas, testing, transit, quarantine, scrap) with custodians; CSV import of items and locations (duplicates by code skipped). ATPL and AE never see or use each other's records |
+| Inventory (stock) | Receipts (with challan file), issues to tickets, returns by condition, transfers through transit, reversals; append-only stock moves, balances never below zero, moving average cost per item per company (issue cost recorded and never changed); stock on hand; `stock.*` events in `core.outbox`; nightly rebuild job (`inventory:daily`) that alerts on differences |
 | Reports and month lock | Leave, expense and work-hours reports with CSV; HR locks a company's month (nothing in it can change), System Admin unlocks with a reason |
 | Attendance | Punch in / out per job (resend-safe, order enforced across companies), today, my history, daily register, work hours, rebuild work days; corrections (missed or wrong punches) approved by the manager, punches never edited |
 | Leave | Apply on your own job (days counted from the calendar, half days), approve / reject by the manager (else HR, else the CEO), cancel (approved leave gives the days back), balances from a ledger, HR opening balances and adjustments, report; approved leave shows on work days |
@@ -893,6 +895,42 @@ Only the roles **Payroll** (`payroll.prepare`) and **Payroll Approver** (`payrol
 runs; managers, supervisors and employees get 403. No salary components or statutory calculations yet: PF, ESI, PT and TDS are
 entered as deductions.
 
+### Inventory — `/api/inventory/...` (full guide: `backend/docs/api/inventory.md`)
+Each company's units, item categories, items and store locations, completely separate per company: every record and
+every link carries `legal_entity_id` (company-safe foreign keys), so an ATPL record can never use an AE one. A person
+reaches a company with **scope all** (Management) or while they have a **current job** there; another company's records
+answer 404. Creates take an optional `publicId` (sent again: 200). Nothing is deleted: `status` `active` / `inactive`.
+- **Units** (`/units`, decimals 0–4) and **categories** (`/categories`, a code prefix that starts item codes).
+- **Items** (`/items`): code unique per company (blank: `EC-0001` …), tracking `none` / `batch` / `serial`, HSN/SAC code,
+  stocked or not, reorder level and quantity, default location, **unit conversions** (`conversions`; `GET /items/:id/convert`
+  turns 3 boxes into 300 pcs). `POST /items/copy` copies another company's item as a new, separate item (description only).
+- **Locations** (`/locations`): store, rack (in a store), bin (in a store or rack), work area, testing, transit, quarantine,
+  scrap; a custodian person with a job in the same company (racks and bins may fall back to the parent's).
+- **CSV import** (`POST /items/import`, `POST /locations/import`, multipart `file` + `company` + `dryRun`): duplicates by code
+  are skipped; any other problem refuses the whole file with `details [{ row, field, message }]`.
+- **Stock** (`POST /receipts`, `/issues` to a ticket, `/returns`, `/transfers` then `/transfers/:id/receive`,
+  `/documents/:id/reverse`; `GET /documents`, `GET /stock`). Every movement is a document. Posting writes append-only stock
+  moves and updates balances (never below zero, locked while posting) and the moving average per item per company, in one
+  transaction. Issues record the average at that moment. Each document publishes a `stock.*` event to the new
+  `core.outbox`. The nightly `inventory:daily` job rebuilds balances from the moves and alerts on any difference.
+  Batch items: batch and expiry on receipt, earliest expiry first elsewhere (`GET /stock/batches`). Serial items: one unit
+  per line, each unit in one place at a time.
+- **Part requests** (`/requests`, `/tickets/:id/parts`, `/grants`): a Parts requester assigned to a ticket whose type uses
+  parts asks for parts; the store in-charge approves, plus the ticket's department head above ₹10,000 (policy). Full
+  approval reserves the stock (available = on hand − reserved) until issued, cancelled, expired (nightly) or the ticket
+  closes. A store in-charge can let a person of another company request for one ticket until a date. Requesters never see
+  values; nobody approves their own request.
+
+**Who sees what:** inventory is need-to-know. Staff roles hold no inventory permission, so developers and designers see
+none of it. Store roles (Storekeeper, Store in-charge, Inventory controller) hold `inventory.view`, `.items.manage`,
+`.locations.manage` and `.stock.post`. A Storekeeper with scope **own** reaches only the locations they look after
+(custodian, including racks and bins inside); scope team reaches every location of their companies. Accounts and the
+CEO / Management read (`inventory.view`). A new **Parts requester** role (`inventory.request`) will request parts only on
+tickets they are assigned to whose type is listed in policy `inventory.parts.ticket_types`. Department heads (Manager
+role, `inventory.department.view`) will see their departments' parts and cost. The seed makes Demo Engineer the ATPL
+storekeeper (own), Demo Head the ATPL store in-charge (team) and Demo Technician a parts requester, and adds fictional ATPL
+units, categories, items and locations. Details: `backend/docs/api/inventory.md` (Who sees what).
+
 ### E1. Expense categories — `GET /api/hrms/expenses/categories`
 `[ { "code": "food", "name": "Food", "receiptRequired": false }, { "code": "fuel", "name": "Fuel", "receiptRequired": true }, … ]`
 
@@ -1132,6 +1170,9 @@ in `backend/.env`.
 - **Expenses: receipt download** — receipts are saved and the path stored, but there is no endpoint yet to fetch the file.
 - **Expenses: limits per category or grade** — not checked yet (would come from `CoreFacade.getPolicy`); no link to service tickets yet.
 - **Policies** — values are checked one key at a time (nothing stops a half day longer than a full day); a new version does not rebuild work days already stored (use rebuild); `max_open_punch_hours` (16) only limits the running time shown today; with the automatic punch-out at 8 hours it has little effect.
+- **Inventory** — intercompany passed-cost lines (the intercompany module reads `stock.issued` once merged), requests
+  from projects, counts, adjustments, reorder alerts, reports. Closed Accounts months are not refused until the Accounts
+  module is merged.
 - **Tenant isolation in the database** (row-level security) and audit log — in the reference SQL, not built.
 - **First admin on a real server** — the seed is development-only; a real server needs a one-off way to create the
   first System admin.

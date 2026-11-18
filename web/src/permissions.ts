@@ -19,6 +19,16 @@ export const MANAGEMENT = 'hrms.management';
 export const USERS = { manage: 'core.users.manage', team: 'core.users.team' } as const;
 /** Joining letters and their templates: HR and Management (the CEO). */
 export const LETTERS = { manage: 'hrms.letters.manage' } as const;
+/**
+ * Inventory is need-to-know: staff roles hold none of these. Store roles (view, items, locations, stock.post; the store
+ * in-charge also requestsApprove), Accounts and Management (view), Parts requesters (request), department heads (departmentView).
+ */
+export const INVENTORY = {
+  view: 'inventory.view', items: 'inventory.items.manage', locations: 'inventory.locations.manage', stockPost: 'inventory.stock.post',
+  request: 'inventory.request', requestsApprove: 'inventory.requests.approve', departmentView: 'inventory.department.view',
+} as const;
+/** Holds any inventory permission (a cross-company grant may still let a person without one request parts). */
+export const anyInventory = (can: (p: string) => boolean) => Object.values(INVENTORY).some(can);
 
 /** Plain-language names for the "Roles & access" page. Unknown codes are shown as they are. */
 export const PERMISSION_LABELS: Record<string, string> = {
@@ -46,6 +56,13 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'core.users.manage': 'Manage logins and roles',
   'tickets.site': 'Run the site of own tickets (requirements, external staff, hold)',
   'tickets.report': 'Download the full ticket report (PDF)',
+  'inventory.view': 'See inventory: items, locations, stock, documents and values',
+  'inventory.items.manage': 'Manage units, categories and items',
+  'inventory.locations.manage': 'Manage store locations',
+  'inventory.stock.post': 'Receive, issue, return and transfer stock',
+  'inventory.request': 'Request parts on own tickets',
+  'inventory.requests.approve': 'Approve part requests; give cross-company access',
+  'inventory.department.view': "See and approve parts on own departments' tickets",
 };
 
 export const SCOPE_LABELS = { own: 'Own records', team: 'Own team', all: 'Everyone' } as const;

@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { POLICIES, PolicyKey, PolicyValue } from '@ageless/shared';
+import { EventEnvelope, POLICIES, PolicyKey, PolicyValue } from '@ageless/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Conn, Tx } from '../../platform/db/db.module';
-import { personContacts, persons } from './schema';
+import { outbox, personContacts, persons } from './schema';
 import { PolicyService } from './policies/application/policy.service';
 import { ApprovalsService, JobApprovers } from './approvals/approvals.service';
 import { AuditEntry, AuditService } from './audit/audit.service';
@@ -53,6 +53,17 @@ export class CoreFacade {
   /** Writes an audit entry inside the caller's transaction (append-only). */
   audit(conn: Conn, entry: AuditEntry): Promise<void> {
     return this.auditLog.write(conn, entry);
+  }
+
+  /**
+   * Publishes an event for other modules: written to core.outbox inside the caller's transaction, so it exists exactly
+   * when the change it describes was saved. Never holds private values (phone, bank or ID numbers, exact locations).
+   */
+  async publish(tx: Tx, event: EventEnvelope<string, unknown>): Promise<void> {
+    await tx.insert(outbox).values({
+      tenantId: event.tenantId, eventId: event.eventId, eventType: event.eventType, eventVersion: event.eventVersion,
+      aggregatePublicId: event.aggregatePublicId, causedBy: event.causedBy ?? null, payload: event.payload, occurredAt: new Date(event.occurredAt),
+    });
   }
 
   /**

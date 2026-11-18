@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Activity, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, ClipboardCheck, Crown, KeyRound, LayoutDashboard, Landmark, LoaderCircle, Lock, LogOut, Menu, SlidersHorizontal, Users, Wallet, X } from 'lucide-react';
+import { Activity, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, ClipboardCheck, ClipboardList, Crown, FileStack, KeyRound, LayoutDashboard, Landmark, LoaderCircle, Lock, LogOut, Menu, Package, Boxes, SlidersHorizontal, Tags, Users, Wallet, Warehouse, X } from 'lucide-react';
+import { useLoad } from './hooks';
 import { AuthProvider, useAuth } from './auth';
-import { ATTENDANCE, EXPENSES, LEAVE, MANAGEMENT, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
+import { anyInventory, ATTENDANCE, EXPENSES, INVENTORY, LEAVE, MANAGEMENT, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
 import Accounts from './pages/Accounts';
 import Approvals from './pages/Approvals';
 import Attendance from './pages/Attendance';
@@ -19,14 +20,28 @@ import People from './pages/People';
 import Policies from './pages/Policies';
 import Skills from './pages/Skills';
 import Tickets from './pages/Tickets';
+import InventoryDocuments from './pages/inventory/Documents';
+import InventoryItems from './pages/inventory/Items';
+import InventoryLocations from './pages/inventory/Locations';
+import InventoryRequests from './pages/inventory/Requests';
+import InventorySetup from './pages/inventory/Setup';
+import InventoryStock from './pages/inventory/Stock';
 import ChangePassword from './ChangePassword';
 import { Modal } from './ui';
 import { api } from './api';
-import type { AccountsAccess } from '@ageless/shared';
+import type { AccountsAccess, Grant } from '@ageless/shared';
 
-type PageKey = 'overview' | 'ceo' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies' | 'accounts';
-type GroupKey = 'hrms' | 'accounts' | 'operations';
-interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | GroupKey | 'manage'; show: (can: (p: string) => boolean, others: boolean, scopeOf: (p: string) => string | null, accountsView: boolean) => boolean }
+type PageKey = 'overview' | 'ceo' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies' | 'accounts'
+  | 'inv-requests' | 'inv-stock' | 'inv-documents' | 'inv-items' | 'inv-locations' | 'inv-setup';
+type GroupKey = 'hrms' | 'accounts' | 'operations' | 'inventory';
+/**
+ * What the backend says beyond permissions: accountsView — may see the Accounts section (Accounts roles can come from the
+ * interim policy); grants — has cross-company access to request parts (without an inventory role).
+ */
+interface MenuAccess { accountsView: boolean; grants: boolean }
+interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | GroupKey | 'manage'; show: (can: (p: string) => boolean, others: boolean, scopeOf: (p: string) => string | null, access: MenuAccess) => boolean }
+const invRead = (can: (p: string) => boolean) => can(INVENTORY.view) || can(INVENTORY.items) || can(INVENTORY.locations);
+const stockRead = (can: (p: string) => boolean) => can(INVENTORY.view) || can(INVENTORY.stockPost);
 import logo from './assets/ageless-logo.webp';
 
 /** Every menu item lists the permission that shows it; the backend still checks each request. */
@@ -41,19 +56,26 @@ const NAV: NavItem[] = [
   { key: 'approvals', label: 'Approvals', icon: <ClipboardCheck size={18} />, section: 'workspace', show: (can) => can(LEAVE.approve) || can(EXPENSES.approve) || can(ATTENDANCE.approve) },
   { key: 'payroll', label: 'Payroll', icon: <Wallet size={18} />, section: 'accounts', show: (can) => can(PAYROLL.payslip) || can(PAYROLL.prepare) || can(PAYROLL.approve) },
   // Periods, the journal and the Tally ledger map (the Accounts module), inside the Accounts menu group.
-  { key: 'accounts', label: 'Accounts', icon: <Landmark size={18} />, section: 'accounts', show: (_can, _others, _scopeOf, accountsView) => accountsView },
+  { key: 'accounts', label: 'Accounts', icon: <Landmark size={18} />, section: 'accounts', show: (_can, _others, _scopeOf, access) => access.accountsView },
   { key: 'skills', label: 'Skills', icon: <Award size={18} />, section: 'hrms', show: (can) => can(SKILLS.view) || can(SKILLS.manage) },
   { key: 'tickets', label: 'Tickets', icon: <Ticket size={18} />, section: 'operations', show: (can) => can(TICKETS.view) || can(TICKETS.work) || can(TICKETS.manage) || can(TICKET_TYPES.view) || can(TICKETS.numbering) },
   { key: 'organisation', label: 'Organisation', icon: <Network size={18} />, section: 'workspace', show: (can, others) => others && (can(PEOPLE.manageEmployments) || can(PEOPLE.managePositions) || can(PEOPLE.view)) },
   { key: 'locks', label: 'Month locks', icon: <Lock size={18} />, section: 'manage', show: (can) => can(ATTENDANCE.lockMonth) || can(ATTENDANCE.unlockMonth) },
   { key: 'policies', label: 'Policies', icon: <SlidersHorizontal size={18} />, section: 'manage', show: (can) => can(POLICIES.manage) },
+  // Inventory is need-to-know: shown only to store roles, Accounts, Management, parts requesters, department heads (and cross-company grantees)
+  { key: 'inv-requests', label: 'Part requests', icon: <ClipboardList size={18} />, section: 'inventory', show: (can, _o, _s, access) => access.grants || can(INVENTORY.request) || can(INVENTORY.requestsApprove) || can(INVENTORY.departmentView) || stockRead(can) },
+  { key: 'inv-stock', label: 'Stock', icon: <Boxes size={18} />, section: 'inventory', show: stockRead },
+  { key: 'inv-documents', label: 'Documents', icon: <FileStack size={18} />, section: 'inventory', show: stockRead },
+  { key: 'inv-items', label: 'Items', icon: <Package size={18} />, section: 'inventory', show: invRead },
+  { key: 'inv-locations', label: 'Locations', icon: <Warehouse size={18} />, section: 'inventory', show: invRead },
+  { key: 'inv-setup', label: 'Units & categories', icon: <Tags size={18} />, section: 'inventory', show: invRead },
 ];
 
 /** Menu order: Overview first, then Attendance and Tickets, then everything else in the order of NAV. */
 const MENU_FIRST: PageKey[] = ['overview', 'ceo', 'attendance', 'tickets'];
 
 const pageFromHash = (): PageKey => {
-  const h = window.location.hash.replace('#', '').split('/')[0] ?? '';   // #tickets/<id> is the Tickets page
+  const h = window.location.hash.replace('#', '').split('/')[0] ?? '';   // #tickets/<id> is the Tickets page, #inv-documents/<id> the Documents page
   return NAV.some((n) => n.key === h) ? (h as PageKey) : 'overview';
 };
 
@@ -67,6 +89,9 @@ function Shell() {
   const [accountsView, setAccountsView] = useState(false);
   useEffect(() => { api<AccountsAccess>('/accounts/access').then((a) => setAccountsView(a.view)).catch(() => setAccountsView(false)); }, []);
   const go = useCallback((p: string) => { window.location.hash = p; setMobileNav(false); }, []);
+  // people without an inventory role may still have cross-company access to request parts for a ticket
+  const noInventory = !!me && !anyInventory(can);
+  const grants = useLoad(() => (noInventory ? api<Grant[]>('/inventory/grants/mine').catch(() => [] as Grant[]) : Promise.resolve([] as Grant[])), [noInventory, me?.person.publicId]);
   useEffect(() => {
     const onHash = () => setPage(pageFromHash());
     window.addEventListener('hashchange', onHash);
@@ -87,7 +112,7 @@ function Shell() {
   }, [mobileNav]);
   if (!me) return null;
 
-  const items = NAV.filter((n) => n.show(can, seesOthers, scopeOf, accountsView));
+  const items = NAV.filter((n) => n.show(can, seesOthers, scopeOf, { accountsView, grants: (grants.data ?? []).some((g) => g.active) }));
   // A page the person may not open (typed in the address bar) falls back to the overview.
   const current = items.find((n) => n.key === page) ?? items[0]!;
   const role = me.roles[0]?.name ?? 'No role';
@@ -132,6 +157,12 @@ function Shell() {
         {current.key === 'tickets' && <Tickets />}
         {current.key === 'locks' && <MonthLocks />}
         {current.key === 'policies' && <Policies />}
+        {current.key === 'inv-requests' && <InventoryRequests />}
+        {current.key === 'inv-stock' && <InventoryStock />}
+        {current.key === 'inv-documents' && <InventoryDocuments />}
+        {current.key === 'inv-items' && <InventoryItems />}
+        {current.key === 'inv-locations' && <InventoryLocations />}
+        {current.key === 'inv-setup' && <InventorySetup />}
         <footer className="footer"><span>© 2026 Ageless Universe</span><span>Built for the people who make it happen <span className="heart">♥</span></span><span>v0.1.0</span></footer>
       </div>
     </main>

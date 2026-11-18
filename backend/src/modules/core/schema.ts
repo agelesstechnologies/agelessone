@@ -242,3 +242,26 @@ export const loginCodes = core.table('login_codes', {
   check('login_codes_purpose_check', sql`purpose IN ('first_login','reset')`),
   check('login_codes_attempts_check', sql`attempts BETWEEN 0 AND 5`),
 ]);
+
+/**
+ * Events between modules (shared/src/events/envelope.ts), written in the same transaction as the change they describe,
+ * so an event exists exactly when its change was saved. Never deleted; only published_at is set once, when a consumer
+ * has taken it (trigger, migration 0041). Written only through CoreFacade.publish.
+ */
+export const outbox = core.table('outbox', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
+  eventId: uuid('event_id').notNull().unique(),
+  eventType: text('event_type').notNull(),
+  eventVersion: integer('event_version').notNull(),
+  aggregatePublicId: uuid('aggregate_public_id').notNull(),
+  causedBy: uuid('caused_by'),
+  payload: jsonb('payload').notNull(),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+}, (t) => [
+  index('idx_outbox_unpublished').on(t.id).where(sql`published_at IS NULL`),
+  index('idx_outbox_type').on(t.tenantId, t.eventType, t.id),
+  check('outbox_event_type_format', sql`event_type ~ '^[a-z]+([.][a-z_]+)+$'`),
+  check('outbox_event_version_check', sql`event_version >= 1`),
+]);

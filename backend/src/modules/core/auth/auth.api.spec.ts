@@ -72,7 +72,7 @@ describe('Sign-in and roles', () => {
         'hrms.skills.add': 'team', 'hrms.skills.verify': 'team', 'hrms.skills.view': 'team', 'hrms.dashboard.view': 'team', 'payroll.payslip.own': 'team',
         'tickets.types.view': 'team', 'tickets.types.manage': 'team',
         'tickets.view': 'team', 'tickets.work': 'team', 'tickets.manage': 'team', 'tickets.create': 'team', 'tickets.time.adjust': 'team', 'tickets.report': 'team',
-        'core.users.team': 'team',
+        'core.users.team': 'team', 'inventory.department.view': 'team',
       });
     });
 
