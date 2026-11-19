@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { DB, Db } from '../../../platform/db/db.module';
+import { todayIst } from '../../../platform/time';
 import { CoreFacade } from '../../core/core.facade';
 import { fromScaled, toScaled, unitCostOf } from '../domain/valuation';
 
@@ -101,6 +102,10 @@ export class StockRebuildService {
         await this.core.audit(tx, { tenantId, actorPersonId: null, action: 'inventory.stock.rebuilt', entity: 'inventory_stock', legalEntityId,
           summary: `Stock rebuilt from the moves: ${diffs.length} stored balance${diffs.length === 1 ? '' : 's'} differed and ${diffs.length === 1 ? 'was' : 'were'} fixed`,
           details: { differences: diffs.slice(0, 100) } });
+        await this.core.notify(tx, { tenantId, legalEntityId, alertCode: 'inventory.stock_difference', urgency: 'urgent',
+          title: `Stock difference found: ${diffs.length} balance${diffs.length === 1 ? '' : 's'} did not match the moves`,
+          body: 'The nightly rebuild fixed them from the moves. Check what wrote to the stock directly.', link: 'inv-stock',
+          dedupeKey: `inventory.stock_difference:${legalEntityId}:${todayIst()}`, recipients: { roles: ['inventory_controller'] } });
       }
       return result;
     });

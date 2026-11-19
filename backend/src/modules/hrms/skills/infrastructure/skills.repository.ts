@@ -140,6 +140,12 @@ export class SkillsRepository {
     return rows.length;
   }
 
+  /** How many certificates expire in the range, per tenant (the daily job alerts HR of each). */
+  async expiringByTenant(from: string, to: string): Promise<{ tenantId: number; n: number }[]> {
+    return this.db.select({ tenantId: certificates.tenantId, n: sql<number>`count(*)`.mapWith(Number) }).from(certificates)
+      .where(and(ne(certificates.status, 'expired'), between(certificates.expiresOn, from, to))).groupBy(certificates.tenantId);
+  }
+
   async countExpiring(from: string, to: string): Promise<number> {
     const [row] = await this.db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(certificates)
       .where(and(ne(certificates.status, 'expired'), between(certificates.expiresOn, from, to)));

@@ -7,6 +7,8 @@ import { PolicyService } from './policies/application/policy.service';
 import { ApprovalsService, JobApprovers } from './approvals/approvals.service';
 import { AuditEntry, AuditService } from './audit/audit.service';
 import { Place, PlacesService } from './places/places.service';
+import { NewAlert, NotificationsService } from './notifications/application/notifications.service';
+export type { NewAlert, Recipients } from './notifications/application/notifications.service';
 import { GeocodeResult } from '../../platform/geocoding';
 
 export interface NewPerson {
@@ -25,7 +27,28 @@ export class CoreFacade {
     @Inject(ApprovalsService) private readonly approvals: ApprovalsService,
     @Inject(AuditService) private readonly auditLog: AuditService,
     @Inject(PlacesService) private readonly places: PlacesService,
+    @Inject(NotificationsService) private readonly alerts: NotificationsService,
   ) {}
+
+  /**
+   * Alerts the recipients (by role and/or relationship, never named people) in the web app's bell. Once per person for the
+   * same dedupeKey, so a job or event run twice makes no second alert. Pass the caller's tx (or the db for a job).
+   * Returns how many people got a new alert. Never put phone numbers, bank or ID numbers or exact locations in it.
+   */
+  notify(conn: Conn, alert: NewAlert): Promise<number> {
+    return this.alerts.notify(conn, alert);
+  }
+
+  /** The active people holding any of these roles today, for a module that narrows them (to one company) before notify. */
+  peopleWithRoles(conn: Conn, tenantId: number, roleCodes: string[]): Promise<number[]> {
+    return this.alerts.peopleWithRoles(conn, tenantId, roleCodes);
+  }
+
+  /** A person's display name, for the text of an alert. */
+  async displayNameOf(conn: Conn, personId: number): Promise<string> {
+    const [p] = await conn.select({ name: persons.displayName }).from(persons).where(eq(persons.id, personId));
+    return p?.name ?? 'Someone';
+  }
 
   /**
    * The address of a punch location, from the reverse-geocoding provider in settings. Call it BEFORE opening the

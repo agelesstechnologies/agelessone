@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../../app.module';
 import { createTestApp, DEMO, signIn } from '../../test/create-app';
 import { newStaff, Staff } from '../../test/staff';
+import { TicketsService } from './application/tickets.service';
 import { tag } from '../../test/people';
 
 type Auth = Record<string, string>;
@@ -232,6 +233,17 @@ describe('Tickets API', () => {
     const dl = await http().get(`/api/tickets/${t.publicId}/attachments/${file.publicId}`).set(hr);
     expect([dl.status, dl.headers['content-type']]).toEqual([200, 'application/pdf']);
 
+    // nothing is alerted while more than the head's approval is missing; once it is the only thing, a refused completion alerts the head
+    const headAlerts = async () => ((await http().get('/api/core/notifications?limit=100').set(head.auth).expect(200)).body.items as { alertCode: string; title: string }[])
+      .filter((a) => a.alertCode === 'tickets.head_approval' && a.title.includes(t.number));
+    expect(await headAlerts()).toHaveLength(0);
+    expect((await http().post(`/api/tickets/${t.publicId}/complete`).set(s1.auth)).body.details).toEqual({ missing: ['head_approval'] });
+    expect(await headAlerts()).toHaveLength(1);
+    await http().post(`/api/tickets/${t.publicId}/complete`).set(s1.auth).expect(409);                       // asking again: no second alert
+    expect(await headAlerts()).toHaveLength(1);
+    const assigneeAlerts = (await http().get('/api/core/notifications?limit=100').set(s1.auth).expect(200)).body.items as { alertCode: string }[];
+    expect(assigneeAlerts.some((a) => a.alertCode === 'tickets.head_approval')).toBe(false);                   // not the people doing the work
+
     expect((await http().post(`/api/tickets/${t.publicId}/head-approval`).set(s1.auth)).status).toBe(403);
     const approved = await http().post(`/api/tickets/${t.publicId}/head-approval`).set(head.auth);
     expect(approved.body.headApproval.by.publicId).toBe(head.personId);
@@ -240,6 +252,23 @@ describe('Tickets API', () => {
     expect([done.status, done.body.status]).toEqual([200, 'completed']);
     const reopened = await http().post(`/api/tickets/${t.publicId}/reopen`).set(head.auth).send({ reason: 'Wrong items delivered' });
     expect([reopened.body.status, reopened.body.completedAt]).toEqual(['in_progress', null]);
+  });
+
+  it('the daily check alerts the head of a ticket that waits only for their approval, without anyone asking to complete it', async () => {
+    const t = await ticket('purchase', { vendor: 'Acme', items: 'Nuts', amount: 20000 });
+    await assign(t.publicId, s1.jobs.AE).expect(200);
+    await http().post(`/api/tickets/${t.publicId}/start`).set(s1.auth).expect(200);
+    const alerts = async () => ((await http().get('/api/core/notifications?limit=100').set(head.auth).expect(200)).body.items as { alertCode: string; title: string }[])
+      .filter((a) => a.alertCode === 'tickets.head_approval' && a.title.includes(t.number));
+    const sweep = () => app.get(TicketsService, { strict: false }).alertAwaitingHeadApproval();
+
+    await sweep();
+    expect(await alerts()).toHaveLength(0);                                                                      // the file is still missing
+    await http().post(`/api/tickets/${t.publicId}/attachments`).set(s1.auth).field('kind', 'file').attach('file', PDF, 'bill.pdf').expect(201);
+    expect(await sweep()).toBeGreaterThanOrEqual(1);
+    expect(await alerts()).toHaveLength(1);
+    await sweep();
+    expect(await alerts()).toHaveLength(1);                                                                      // once per ticket
   });
 
   it('sign-off, checklist and daily update rules', async () => {
@@ -325,6 +354,9 @@ describe('Tickets API', () => {
     const req = asked.body.reassignRequests[0];
     expect(req).toMatchObject({ status: 'pending', approver: { publicId: head.personId }, requestedBy: { publicId: s1.personId } });
     expect((await http().get('/api/tickets/reassign-requests').query({ status: 'pending' }).set(head.auth)).body.map((r: any) => r.publicId)).toContain(req.publicId);
+    const alertsOf = async (who: Auth) => (await http().get('/api/core/notifications?limit=100').set(who).expect(200)).body.items as { alertCode: string; title: string }[];
+    expect((await alertsOf(head.auth)).some((a) => a.alertCode === 'tickets.reassign_requested' && a.title.includes(t.number))).toBe(true);   // the approver hears at once
+    expect((await alertsOf(s1.auth)).some((a) => a.alertCode === 'tickets.reassign_requested')).toBe(false);
 
     const approve = (who: Auth, job: string) => http().post(`/api/tickets/reassign-requests/${req.publicId}/approve`).set(who).send({ newEmploymentPublicId: job });
     expect((await approve(s1.auth, s3.jobs.AE)).body.code).toBe('TICKETS_SELF_APPROVAL');
@@ -335,6 +367,8 @@ describe('Tickets API', () => {
     expect(done.status).toBe(200);
     expect(done.body.assignees.map((a: any) => [a.employmentPublicId, a.isPrimary])).toEqual([[s3.jobs.AE, true], [s2.jobs.AE, false]]);
     expect(done.body.reassignRequests[0]).toMatchObject({ status: 'approved', decidedAs: 'approver', newAssignee: { publicId: s3.personId } });
+    expect((await alertsOf(s1.auth)).some((a) => a.alertCode === 'tickets.reassign_decided' && a.title.includes(t.number))).toBe(true);        // the asker hears the decision
+    expect((await alertsOf(s3.auth)).some((a) => a.alertCode === 'tickets.assigned' && a.title.includes(t.number))).toBe(true);               // the new person hears they are on it
     expect((await approve(head.auth, s1.jobs.AE)).body.code).toBe('TICKETS_REASSIGN_DECIDED');
 
     // Management needs nobody's approval and may take a ticket on

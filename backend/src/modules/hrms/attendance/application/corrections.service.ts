@@ -71,6 +71,11 @@ export class CorrectionsService {
           reason: req.reason, requestedBy: ctx.personId, approverPersonId,
         });
         if (noApproval) await this.applyApproval(tx, ctx.tenantId, (await this.repo.lock(tx, ctx.tenantId, publicId))!, null, 'no_approval_required');
+        else if (approverPersonId) {
+          await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: job.legalEntityId, alertCode: 'hrms.correction_submitted',
+            title: `${await this.core.displayNameOf(tx, job.personId)} asked for a punch correction`, body: `For ${req.workDate}: waiting for your decision.`,
+            link: 'approvals', dedupeKey: `hrms.correction_submitted:${publicId}`, recipients: { personIds: [approverPersonId] } });
+        }
       });
     } catch (err) {
       const constraint = violatedConstraint(err);
@@ -96,6 +101,9 @@ export class CorrectionsService {
       await this.db.transaction(async (tx) => {
         const c = await this.decidable(tx, ctx, publicId, 'approve');
         await this.applyApproval(tx, ctx.tenantId, c, ctx.personId, decidedAs(ctx, c.approverPersonId === ctx.personId));
+        await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: c.legalEntityId, alertCode: 'hrms.correction_decided',
+          title: 'Your punch correction was approved', body: `For ${c.workDate}.`, link: 'attendance',
+          dedupeKey: `hrms.correction_decided:${c.publicId}`, recipients: { personIds: [c.personId, c.requestedBy] }, except: [ctx.personId] });
       });
     } catch (err) {
       if (violatedConstraint(err) === 'attendance_exclusions_punch_id_unique') {
@@ -114,6 +122,9 @@ export class CorrectionsService {
       await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'correction.rejected', entity: 'attendance_correction',
         entityPublicId: c.publicId, subjectPersonId: c.personId, legalEntityId: c.legalEntityId,
         summary: `Correction for ${c.personName} on ${c.workDate} rejected (${as})` });
+      await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: c.legalEntityId, alertCode: 'hrms.correction_decided',
+        title: 'Your punch correction was rejected', body: `For ${c.workDate}. Reason: ${req.reason}`, link: 'attendance',
+        dedupeKey: `hrms.correction_decided:${c.publicId}`, recipients: { personIds: [c.personId, c.requestedBy] }, except: [ctx.personId] });
     });
     return (await this.repo.correction(ctx.tenantId, publicId))!;
   }

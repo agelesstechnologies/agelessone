@@ -8,6 +8,7 @@ export * from './errors';
 export * from './common';
 export * from './core/auth';
 export * from './core/policies';
+export * from './core/notifications';
 export * from './events/envelope';
 export * from './hrms/attendance';
 export * from './hrms/calendar';

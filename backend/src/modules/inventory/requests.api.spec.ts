@@ -28,6 +28,7 @@ describe('Inventory part requests, reservations, serials, batches, cross-company
   const http = () => request(app.getHttpServer());
   const post = (auth: Auth, path: string, body: object) => http().post(`/api/inventory/${path}`).set(auth).send(body);
   const get = (auth: Auth, path: string) => http().get(`/api/inventory/${path}`).set(auth);
+  const alertsOf = async (auth: Auth) => (await http().get('/api/core/notifications').set(auth).expect(200)).body.items as { title: string; alertCode: string }[];
   const role = (s: Staff, roleCode: string, scope: string) =>
     http().post('/api/core/role-assignments').set(admin).send({ personPublicId: s.personId, roleCode, scope }).expect(201);
   const ask = (auth: Auth, ticket: string, lines: { item: string; quantity: number }[]) =>
@@ -95,6 +96,9 @@ describe('Inventory part requests, reservations, serials, batches, cross-company
       estimatedValueMinor: null, requestedBy: { publicId: requester.personId }, canApprove: false, canCancel: true,
       lines: [{ lineNo: 1, item: { publicId: ids.part }, quantity: 3, reserved: 0, issued: 0, estimatedValueMinor: null }] });
     expect((await get(keeper.auth, `requests/${asked.body.publicId}`)).body).toMatchObject({ estimatedValueMinor: 3000, canApprove: true });
+    // the store in-charge of that company is alerted at once; the requester is not alerted about their own request
+    expect((await alertsOf(keeper.auth)).some((a) => a.alertCode === 'inventory.request_submitted' && a.title.includes(asked.body.number))).toBe(true);
+    expect((await alertsOf(requester.auth)).some((a) => a.alertCode === 'inventory.request_submitted')).toBe(false);
 
     expect((await ask(other.auth, ids.ticket1, [{ item: ids.part, quantity: 1 }])).body.code).toBe('INVENTORY_CANNOT_REQUEST');       // no Parts requester role
     expect((await ask(requester.auth, ids.design, [{ item: ids.part, quantity: 1 }])).body.code).toBe('INVENTORY_CANNOT_REQUEST');    // design does not use parts
@@ -108,6 +112,7 @@ describe('Inventory part requests, reservations, serials, batches, cross-company
     expect(approved.body).toMatchObject({ status: 'approved', storeApprovedBy: { publicId: keeper.personId }, reserveUntil: addDays(todayIst(), 14),
       lines: [{ reserved: 3, location: { publicId: ids.storeA }, reservations: [{ location: { publicId: ids.storeA }, quantity: 3 }] }] });
     expect(await stockAt(ids.part, ids.storeA)).toMatchObject({ onHand: 10, reserved: 3, available: 7 });
+    expect((await alertsOf(requester.auth)).some((a) => a.alertCode === 'inventory.request_decided' && a.title.endsWith('was approved'))).toBe(true);
 
     const grab = await post(keeper.auth, 'issues', { company: 'AE', ticketPublicId: ids.ticket1, lines: [{ itemPublicId: ids.part, locationPublicId: ids.storeA, quantity: 8 }] });
     expect([grab.status, grab.body.code]).toEqual([409, 'INVENTORY_NOT_ENOUGH_AVAILABLE']);

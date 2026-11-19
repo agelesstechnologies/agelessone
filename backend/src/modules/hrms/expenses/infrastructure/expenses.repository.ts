@@ -35,7 +35,8 @@ export class ExpensesRepository {
   }
 
   async findEmployment(tenantId: number, publicId: string) {
-    const [row] = await this.db.select({ id: employments.id, personId: employments.personId, legalEntityId: employments.legalEntityId, status: employments.status })
+    const [row] = await this.db.select({ id: employments.id, personId: employments.personId, legalEntityId: employments.legalEntityId, status: employments.status,
+      managerPersonId: employments.managerPersonId })
       .from(employments).where(and(eq(employments.tenantId, tenantId), eq(employments.publicId, publicId)));
     return row;
   }

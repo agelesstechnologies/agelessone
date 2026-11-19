@@ -8,6 +8,7 @@ import { AppError } from '../../../../platform/http/app-error';
 import { isManagement, RequestContext, requireAll, requireReadAll } from '../../../../platform/http/request-context';
 import { CONTENT_TYPES, detectDocumentType, discardUpload, DocumentType, readUpload, saveUpload } from '../../../../platform/storage';
 import { addDays, todayIst } from '../../../../platform/time';
+import { CoreFacade } from '../../../core/core.facade';
 import { SkillsRepository, Visibility } from '../infrastructure/skills.repository';
 import { daysLeft, statusOn } from '../domain/certificates';
 import { SKILLS } from '../domain/permissions';
@@ -22,6 +23,7 @@ export class SkillsService {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(SkillsRepository) private readonly repo: SkillsRepository,
+    @Inject(CoreFacade) private readonly core: CoreFacade,
   ) {}
 
   health() { return { module: 'hrms', sub: 'skills', ok: true }; }
@@ -140,6 +142,12 @@ export class SkillsService {
   /** The daily job (all tenants): stores certificates past their date as expired; counts those expiring within 30 days. */
   async runDaily(today = todayIst()): Promise<{ markedExpired: number; expiringWithin30Days: number }> {
     const markedExpired = await this.repo.markExpired(this.db, today);
+    // HR gets one alert a week while certificates are about to expire (the list is GET /hrms/certificates/expiring)
+    const monday = addDays(today, -((new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7));
+    for (const { tenantId, n } of await this.repo.expiringByTenant(today, addDays(today, 30))) {
+      await this.core.notify(this.db, { tenantId, alertCode: 'hrms.certificates_expiring', title: `${n} certificate${n === 1 ? '' : 's'} expiring within 30 days`,
+        body: 'Open Skills to see who needs to renew.', link: 'skills', dedupeKey: `hrms.certificates_expiring:${monday}`, recipients: { roles: ['hr'] } });
+    }
     return { markedExpired, expiringWithin30Days: await this.repo.countExpiring(today, addDays(today, 30)) };
   }
 

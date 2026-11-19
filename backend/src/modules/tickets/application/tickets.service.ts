@@ -8,6 +8,7 @@ import { Conn, DB, Db, Tx, violatedConstraint } from '../../../platform/db/db.mo
 import { AppError } from '../../../platform/http/app-error';
 import { isManagement, RequestContext, requireAll } from '../../../platform/http/request-context';
 import { addDays, istDayStart, todayIst } from '../../../platform/time';
+import { CoreFacade } from '../../core/core.facade';
 import { InventoryFacade } from '../../inventory/inventory.facade';
 import { TicketTypesService } from './ticket-types.service';
 import { TicketRow, TicketsRepository, Visibility } from '../infrastructure/tickets.repository';
@@ -43,6 +44,7 @@ export class TicketsService {
     @Inject(TicketsRepository) private readonly repo: TicketsRepository,
     @Inject(TicketTypesService) private readonly types: TicketTypesService,
     @Inject(InventoryFacade) private readonly inventory: InventoryFacade,
+    @Inject(CoreFacade) private readonly core: CoreFacade,
   ) {}
 
   // ---- reading ----
@@ -203,7 +205,7 @@ export class TicketsService {
    * with details.missing). A QC ticket completed with a failed checklist item creates a rework production ticket.
    */
   async complete(ctx: RequestContext, publicId: string): Promise<TicketDetail> {
-    const id = await this.db.transaction(async (tx) => {
+    const id = await this.alertOnRefusal(ctx, publicId, this.db.transaction(async (tx) => {
       const { t } = await this.load(tx, ctx, publicId, 'complete', true);
       if (nextStatus(t.status as Status, 'complete') === null) throw this.wrongStatus(t, 'complete');
       const type = await this.repo.typeVersion(tx, t.typeId);
@@ -214,8 +216,50 @@ export class TicketsService {
       await this.inventory.ticketClosed(tx, ctx.tenantId, t.id);      // its open part requests close; reserved stock is freed
       if (type.code === 'qc') await this.reworkIfFailed(tx, ctx, t);
       return t.id;
-    });
+    }));
     return this.detail(this.db, ctx, id);
+  }
+
+  /**
+   * When completing is refused only because the department head has not approved yet, the head (and the supervisor) are
+   * alerted: their approval is the one thing missing. The refusal itself is still answered to the caller.
+   */
+  private async alertOnRefusal(ctx: RequestContext, publicId: string, work: Promise<number>): Promise<number> {
+    try {
+      return await work;
+    } catch (err) {
+      if (err instanceof AppError && err.code === 'TICKETS_COMPLETION_INCOMPLETE') {
+        try {
+          const t = await this.repo.findTicket(this.db, ctx.tenantId, publicId, false);
+          if (t) await this.alertHeadApproval(this.db, t, (err.details as { missing?: string[] } | undefined)?.missing ?? []);
+        } catch { /* the alert is a courtesy: the caller still gets the refusal */ }
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Alerts the ticket's department head and supervisor when their approval is the only thing between the ticket and
+   * completion (never someone assigned to it: they cannot approve their own work). Once per ticket. Returns how many were alerted.
+   */
+  async alertHeadApproval(conn: Conn, t: TicketRow, missing: string[]): Promise<number> {
+    if (missing.length !== 1 || missing[0] !== 'head_approval') return 0;
+    const head = await this.repo.departmentHead(conn, t.departmentId);
+    const assignees = await this.repo.currentAssignees(conn, t.id);
+    return this.core.notify(conn, { tenantId: t.tenantId, legalEntityId: t.legalEntityId, alertCode: 'tickets.head_approval',
+      title: `Ticket ${t.number} is waiting for your approval`, body: `${t.title} has everything else it needs to be completed.`,
+      link: `tickets/${t.publicId}`, dedupeKey: `tickets.head_approval:${t.publicId}`,
+      recipients: { personIds: [t.supervisorPersonId, ...(head ? [head] : [])] }, except: assignees.map((a) => a.personId) });
+  }
+
+  /** The daily check: in-progress tickets of types that need the head's approval, with nothing else missing, alert their head. */
+  async alertAwaitingHeadApproval(): Promise<number> {
+    let alerted = 0;
+    for (const t of await this.repo.awaitingHeadApproval()) {
+      const type = await this.repo.typeVersion(this.db, t.typeId);
+      if (await this.alertHeadApproval(this.db, t, await this.missing(this.db, t, type)) > 0) alerted++;
+    }
+    return alerted;
   }
 
   // ---- number series (HR) ----
@@ -313,8 +357,14 @@ export class TicketsService {
     const keptIds = new Set(kept.map((c) => c.employmentId));
     const added = rows.filter((r) => !keptIds.has(r.employmentId));
     for (const r of added) {
-      await this.repo.insertAssignee(tx, { tenantId: t.tenantId, ticketId: t.id, employmentId: r.employmentId, legalEntityId: t.legalEntityId,
+      const assigneeId = await this.repo.insertAssignee(tx, { tenantId: t.tenantId, ticketId: t.id, employmentId: r.employmentId, legalEntityId: t.legalEntityId,
         isPrimary: r.isPrimary, assignedBy: actorId });
+      const person = await this.repo.personOfEmployment(tx, r.employmentId);
+      if (person) {
+        await this.core.notify(tx, { tenantId: t.tenantId, legalEntityId: t.legalEntityId, alertCode: 'tickets.assigned',
+          title: `You were assigned ticket ${t.number}`, body: t.title, link: `tickets/${t.publicId}`,
+          dedupeKey: `tickets.assigned:${assigneeId}`, recipients: { personIds: [person] }, except: [actorId] });
+      }
     }
     const primary = rows.find((r) => r.isPrimary)!.employmentPublicId;
     const before = current.find((c) => c.isPrimary)?.employmentPublicId ?? null;

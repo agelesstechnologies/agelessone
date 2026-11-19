@@ -171,6 +171,10 @@ export class TicketWorkService {
         const requestId = await this.repo.insertReassign(tx, { tenantId: t.tenantId, ticketId: t.id, legalEntityId: t.legalEntityId,
           fromEmploymentId: mine.employmentId, requestedBy: ctx.personId, reason, approverPersonId: approverId });
         await this.tickets.event(tx, ctx.personId, t, 'reassign_requested', { request: requestId, reason });
+        await this.core.notify(tx, { tenantId: t.tenantId, legalEntityId: t.legalEntityId, alertCode: 'tickets.reassign_requested',
+          title: `${await this.core.displayNameOf(tx, ctx.personId)} asked to be taken off ticket ${t.number}`, body: `Reason: ${reason}`,
+          link: `tickets/${t.publicId}`, dedupeKey: `tickets.reassign_requested:${requestId}`,
+          recipients: approverId ? { personIds: [approverId] } : { roles: ['ceo'] }, except: [ctx.personId] });
         return this.tickets.detail(tx, ctx, t.id);
       });
     } catch (err) {
@@ -211,6 +215,9 @@ export class TicketWorkService {
       await this.repo.decideReassign(tx, r.id, { status: 'approved', newEmploymentId: replacement.employmentId, decidedBy: ctx.personId, decidedAs: as, decidedAt: new Date() });
       await this.tickets.applyAssignees(tx, ctx.personId, t, rows);
       await this.tickets.event(tx, ctx.personId, t, 'reassign_approved', { request: r.publicId, to: replacement.employmentPublicId, decidedAs: as });
+      await this.core.notify(tx, { tenantId: t.tenantId, legalEntityId: t.legalEntityId, alertCode: 'tickets.reassign_decided',
+        title: `You were taken off ticket ${t.number}`, body: 'Your request to be reassigned was approved.', link: `tickets/${t.publicId}`,
+        dedupeKey: `tickets.reassign_decided:${r.publicId}`, recipients: { personIds: [r.requestedBy] }, except: [ctx.personId] });
       return t.id;
     });
     return this.tickets.detail(this.db, ctx, id, warnings);
@@ -221,6 +228,9 @@ export class TicketWorkService {
       const { r, t, as } = await this.decidable(tx, ctx, requestPublicId);
       await this.repo.decideReassign(tx, r.id, { status: 'rejected', decidedBy: ctx.personId, decidedAs: as, decidedAt: new Date(), decisionReason: reason });
       await this.tickets.event(tx, ctx.personId, t, 'reassign_rejected', { request: r.publicId, reason });
+      await this.core.notify(tx, { tenantId: t.tenantId, legalEntityId: t.legalEntityId, alertCode: 'tickets.reassign_decided',
+        title: `Your reassignment request on ticket ${t.number} was rejected`, body: `Reason: ${reason}`, link: `tickets/${t.publicId}`,
+        dedupeKey: `tickets.reassign_decided:${r.publicId}`, recipients: { personIds: [r.requestedBy] }, except: [ctx.personId] });
       return this.tickets.detail(tx, ctx, t.id);
     });
   }

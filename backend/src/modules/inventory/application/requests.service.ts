@@ -88,6 +88,15 @@ export class RequestsService {
         await this.repo.insertLines(tx, ctx.tenantId, t.legalEntityId, id, lines);
         await this.audit(tx, ctx, 'inventory.request.created', publicId, t.legalEntityId, `Requested parts ${number} for ticket ${t.number} (${lines.length} item${lines.length === 1 ? '' : 's'})`,
           { number, ticket: t.number, crossCompany: basis.grantId !== null });
+        const store = await this.access.workingIn(await this.core.peopleWithRoles(tx, ctx.tenantId, ['store_incharge']), t.legalEntityId);
+        await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: t.legalEntityId, alertCode: 'inventory.request_submitted',
+          title: `Part request ${number} for ticket ${t.number}`, body: `${lines.length} item${lines.length === 1 ? '' : 's'} waiting for the store.`,
+          link: 'inv-requests', dedupeKey: `inventory.request_submitted:${publicId}`, recipients: { personIds: store }, except: [ctx.personId] });
+        if (needsHeadApproval(estimate, limit) && t.headPersonId) {
+          await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: t.legalEntityId, alertCode: 'inventory.request_head_approval',
+            title: `Part request ${number} needs your approval`, body: `It is above the value limit, for ticket ${t.number} in your department.`,
+            link: 'inv-requests', dedupeKey: `inventory.request_head_approval:${publicId}`, recipients: { personIds: [t.headPersonId] }, except: [ctx.personId] });
+        }
       });
     } catch (err) {
       if (isResentCreate(err)) return { request: await this.get(ctx, publicId), created: false };
@@ -157,6 +166,11 @@ export class RequestsService {
       const as = [roles.asStore ? 'store in-charge' : null, roles.asHead ? 'department head' : null].filter(Boolean).join(' and ');
       await this.audit(tx, ctx, 'inventory.request.approved', r.publicId, r.legalEntityId, `Approved ${r.number} as ${as}${approved ? '; stock reserved' : ''}`,
         { number: r.number, asStore: roles.asStore, asHead: roles.asHead, reserved: approved });
+      if (approved) {
+        await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: r.legalEntityId, alertCode: 'inventory.request_decided',
+          title: `Part request ${r.number} was approved`, body: 'The stock is reserved for you.', link: 'inv-requests',
+          dedupeKey: `inventory.request_decided:${r.publicId}`, recipients: { personIds: [r.requestedBy] }, except: [ctx.personId] });
+      }
     });
     return this.get(ctx, publicId);
   }
@@ -174,6 +188,9 @@ export class RequestsService {
       }
       await this.repo.updateRequest(tx, r.id, { status: 'rejected', decidedBy: ctx.personId, decidedAt: new Date(), decisionReason: body.reason });
       await this.audit(tx, ctx, 'inventory.request.rejected', r.publicId, r.legalEntityId, `Rejected ${r.number}`, { number: r.number, reason: body.reason });
+      await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: r.legalEntityId, alertCode: 'inventory.request_decided',
+        title: `Part request ${r.number} was rejected`, body: `Reason: ${body.reason}`, link: 'inv-requests',
+        dedupeKey: `inventory.request_decided:${r.publicId}`, recipients: { personIds: [r.requestedBy] }, except: [ctx.personId] });
     });
     return this.get(ctx, publicId);
   }

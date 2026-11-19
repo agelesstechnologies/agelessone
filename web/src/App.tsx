@@ -4,6 +4,7 @@ import { useApi } from './hooks';
 import { AuthProvider, useAuth } from './auth';
 import { anyInventory, ATTENDANCE, EXPENSES, INVENTORY, LEAVE, MANAGEMENT, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
 import Accounts from './pages/Accounts';
+import Bell from './Bell';
 import Approvals from './pages/Approvals';
 import Attendance from './pages/Attendance';
 import CeoDashboard from './pages/CeoDashboard';
@@ -138,7 +139,7 @@ function Shell() {
     <main className="main">
       <header className="topbar"><button className="icon-button hamburger" onClick={() => setMobileNav(!mobileNav)} aria-label="Open menu"><Menu size={20} /></button>
         {/* <div className="crumb"><b>{current.label}</b></div> */}
-        <div className="top-actions"><span className="env"><i />Development</span><div className="avatar avatar-blue top-avatar">{initials}</div></div></header>
+        <div className="top-actions"><Bell /><span className="env"><i />Development</span><div className="avatar avatar-blue top-avatar">{initials}</div></div></header>
       <div className="content">
         {current.key === 'overview' && <Overview go={go} />}
         {current.key === 'ceo' && <CeoDashboard />}

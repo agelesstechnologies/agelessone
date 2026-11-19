@@ -27,6 +27,13 @@ export class CompanyAccess {
     return all.filter((c) => ids.includes(c.id));
   }
 
+  /** Of these people, the ones with a current job in the company (who may be alerted about its requests). */
+  async workingIn(personIds: number[], legalEntityId: number): Promise<number[]> {
+    const out: number[] = [];
+    for (const id of personIds) if ((await this.repo.companiesWorkedIn(id)).includes(legalEntityId)) out.push(id);
+    return out;
+  }
+
   /** The company with this code, when the caller may use it with one of these permissions (400 unknown, 403 not theirs). */
   async require(ctx: RequestContext, permissions: string[], code: string): Promise<Company> {
     const company = (await this.repo.companies(ctx.tenantId)).find((c) => c.code === code);

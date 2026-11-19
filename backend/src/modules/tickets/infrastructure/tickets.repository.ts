@@ -273,10 +273,19 @@ export class TicketsRepository {
   /** Unfinished tickets due before `today` with a step left: not alerted for their current due date, or not sent to the CEO yet. */
   async overdueToEscalate(today: string) {
     return this.db.select({ id: tickets.id, tenantId: tickets.tenantId, legalEntityId: tickets.legalEntityId, dueDate: tickets.dueDate,
-      overdueFor: tickets.overdueFor, escalatedAt: tickets.overdueEscalatedAt }).from(tickets)
+      overdueFor: tickets.overdueFor, escalatedAt: tickets.overdueEscalatedAt, publicId: tickets.publicId, number: tickets.number,
+      title: tickets.title, departmentId: tickets.departmentId, supervisorPersonId: tickets.supervisorPersonId }).from(tickets)
       .where(and(lt(tickets.dueDate, today), inArray(tickets.status, ['open', 'assigned', 'in_progress', 'on_hold']),
         or(isNull(tickets.overdueFor), ne(tickets.overdueFor, tickets.dueDate), isNull(tickets.overdueEscalatedAt))))
       .orderBy(asc(tickets.id));
+  }
+
+  /** In-progress tickets whose type requires the department head's approval before completion and that have none yet. */
+  async awaitingHeadApproval(): Promise<TicketRow[]> {
+    const rows = await this.db.select({ t: tickets }).from(tickets).innerJoin(ticketTypes, eq(ticketTypes.id, tickets.typeId))
+      .where(and(eq(tickets.status, 'in_progress'), isNull(tickets.headApprovedAt), sql`${ticketTypes.completionRules}->>'head_approval_required' = 'true'`))
+      .orderBy(asc(tickets.id));
+    return rows.map((r) => r.t);
   }
 
   /** The department head is alerted about this due date (a new due date starts again: not sent to the CEO). */
@@ -340,8 +349,15 @@ export class TicketsRepository {
       .orderBy(asc(ticketAssignees.id));
   }
 
-  async insertAssignee(tx: Tx, v: typeof ticketAssignees.$inferInsert): Promise<void> {
-    await tx.insert(ticketAssignees).values(v);
+  async insertAssignee(tx: Tx, v: typeof ticketAssignees.$inferInsert): Promise<number> {
+    const [row] = await tx.insert(ticketAssignees).values(v).returning({ id: ticketAssignees.id });
+    return row.id;
+  }
+
+  /** The person who holds a job (to alert them). */
+  async personOfEmployment(conn: Conn, employmentId: number): Promise<number | null> {
+    const [row] = await conn.select({ personId: employments.personId }).from(employments).where(eq(employments.id, employmentId));
+    return row?.personId ?? null;
   }
 
   async endAssignee(tx: Tx, id: number, by: number): Promise<void> {
