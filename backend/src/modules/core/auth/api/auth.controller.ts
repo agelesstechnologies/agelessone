@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, Inject, Ip, Post } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ChangePasswordRequest, CodeSent, CompleteFirstLoginRequest, ForgotPasswordRequest, ForgotPasswordResponse, LoginRequest, LoginResponse, MachineTokenRequest, MachineTokenResponse, Me,
   ResetWithCodeRequest,
@@ -6,6 +7,7 @@ import {
 import { ZodValidationPipe } from '../../../../platform/http/zod-validation.pipe';
 import { Ctx, DuringPasswordSetup, Public, RequestContext, SignedIn } from '../../../../platform/http/request-context';
 import { Doc } from '../../../../platform/http/doc';
+import { LOGIN_LIMIT } from '../../../../platform/http/rate-limit';
 import { AuthService } from '../application/auth.service';
 
 /** Only: validate input, check permission, call one use case. */
@@ -18,14 +20,14 @@ export class AuthController {
       + '(default 5) or from one IP address (default 30) within 15 minutes lock it for 15 minutes: 429 AUTH_LOCKED with a Retry-After '
       + 'header and details.retryAfterSeconds, even with the right password. A login whose password someone else chose '
       + '(new, or reset by an admin) gets a token that only opens /auth/me and /auth/first-login until the person sets their own.' })
-  @Public() @Post('login') @HttpCode(200)
+  @Throttle(LOGIN_LIMIT) @Public() @Post('login') @HttpCode(200)
   login(@Body(new ZodValidationPipe(LoginRequest)) body: LoginRequest, @Ip() ip: string) {
     return this.service.login(body, ip);
   }
 
   @Doc({ summary: 'A machine credential (the Tally connector) signs in with its client id and secret; the token lasts 15 minutes and opens only that credential\'s own routes', response: MachineTokenResponse,
     description: 'Same AUTH_FAILED for an unknown client, a wrong secret and a revoked credential. Failures are throttled like person sign-ins (429 AUTH_LOCKED).' })
-  @Public() @Post('machine-token') @HttpCode(200)
+  @Throttle(LOGIN_LIMIT) @Public() @Post('machine-token') @HttpCode(200)
   machineToken(@Body(new ZodValidationPipe(MachineTokenRequest)) body: MachineTokenRequest, @Ip() ip: string) {
     return this.service.machineToken(body, ip);
   }
@@ -55,13 +57,13 @@ export class AuthController {
   }
 
   @Doc({ summary: 'Forgot password: email a code to the login (same answer whether or not the login exists)', response: ForgotPasswordResponse })
-  @Public() @Post('forgot-password') @HttpCode(200)
+  @Throttle(LOGIN_LIMIT) @Public() @Post('forgot-password') @HttpCode(200)
   forgotPassword(@Body(new ZodValidationPipe(ForgotPasswordRequest)) body: ForgotPasswordRequest) {
     return this.service.forgotPassword(body);
   }
 
   @Doc({ summary: 'Forgot password: the emailed code and a new password; answers a token (signed in)', response: LoginResponse })
-  @Public() @Post('reset-password') @HttpCode(200)
+  @Throttle(LOGIN_LIMIT) @Public() @Post('reset-password') @HttpCode(200)
   resetPassword(@Body(new ZodValidationPipe(ResetWithCodeRequest)) body: ResetWithCodeRequest) {
     return this.service.resetWithCode(body);
   }

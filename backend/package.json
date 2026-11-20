@@ -26,6 +26,7 @@
     "@nestjs/jwt": "10.2.0",
     "@nestjs/platform-express": "10.4.4",
     "@nestjs/swagger": "7.4.2",
+    "@nestjs/throttler": "^6.8.0",
     "bcrypt": "5.1.1",
     "drizzle-orm": "0.44.4",
     "nodemailer": "6.9.16",
