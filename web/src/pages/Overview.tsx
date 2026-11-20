@@ -5,7 +5,6 @@ import { useAuth } from '../auth';
 import { useApi } from '../hooks';
 import { ATTENDANCE, DASHBOARD, EXPENSES, PEOPLE, TICKETS } from '../permissions';
 import { PageHead } from '../ui';
-import AlertsPanel from './AlertsPanel';
 import { MyDay } from './Attendance';
 import OverdueAlerts from './OverdueAlerts';
 import { OverviewCharts } from './OverviewCharts';
@@ -23,7 +22,6 @@ export default function Overview({ go }: { go: (page: string) => void }) {
 
   return <>
     <PageHead eyebrow="OVERVIEW" title={`Hello, ${me.person.displayName}`} />
-    <AlertsPanel />
     {punch && <MyDay />}
     {(can(TICKETS.view) || can(TICKETS.work) || can(TICKETS.manage)) && <OverdueAlerts />}
     {can(DASHBOARD.view) && <OverviewCharts />}

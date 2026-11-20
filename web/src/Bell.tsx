@@ -4,6 +4,7 @@ import type { Notification, NotificationList, NotificationsMarked } from '@agele
 import { api } from './api';
 import { useApi } from './hooks';
 import { invalidate } from './query';
+import AlertSettings from './pages/AlertSettings';
 
 /** "just now", "5 min ago", "3 h ago", "2 days ago"; older than a week shows the date. */
 export function ago(iso: string, now = Date.now()): string {
@@ -33,6 +34,7 @@ export async function readAll(): Promise<void> {
 export default function Bell() {
   const q = useApi<NotificationList>('/core/notifications?limit=8', { refetchInterval: 60_000 });
   const [open, setOpen] = useState(false);
+  const [settings, setSettings] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -59,7 +61,8 @@ export default function Bell() {
             <b>{n.title}</b>{n.body && <span>{n.body}</span>}<small>{ago(n.createdAt)}</small>
           </button></li>)}
       </ul>}
-      <a className="bell-all" href="#overview" onClick={() => setOpen(false)}>See all alerts on the Overview</a>
+      <button type="button" className="bell-all" onClick={() => { setOpen(false); setSettings(true); }}>Alert settings</button>
     </div>}
+    {settings && <AlertSettings onClose={() => setSettings(false)} />}
   </div>;
 }
