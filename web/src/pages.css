@@ -648,3 +648,181 @@ tr.ic-total td{font-weight:700;color:#19283b;background:#fffdf8}
 @keyframes toast-out{to{opacity:0;transform:translateX(60px) scale(.95)}}
 .toast:hover{transform:translateY(-2px);transition:transform .15s}
 @media (prefers-reduced-motion:reduce){.toast.leaving{animation:none;opacity:0}}
+
+/* ======================================================================
+   Responsive layer: tablets (<=1080) and phones (<=760 / <=560 / <=380).
+   Kept at the end so it wins over the earlier rules.
+   ====================================================================== */
+html{-webkit-text-size-adjust:100%}
+img,video,svg,canvas{max-width:100%}
+.content,.modal,.panel,.directory,.tp-card,td,th,.detail-row b,.kv-grid>b{overflow-wrap:anywhere}
+th{overflow-wrap:normal}
+.boot,.login-page{min-height:100vh;min-height:100dvh}
+
+/* tablets: the menu becomes a slide-in drawer from 900px down, so content gets the full width */
+@media(max-width:900px){
+  .sidebar{transform:translateX(-100%);transition:transform .2s ease;width:260px;box-shadow:none}
+  .sidebar.show{transform:translateX(0);box-shadow:8px 0 30px #11171d30}
+  .mobile-close{display:grid;margin-left:auto}
+  .main{margin-left:0}
+  .topbar{height:56px;padding:0 20px;justify-content:flex-start;gap:10px}
+  .hamburger{display:grid}
+  .top-actions{margin-left:auto}
+  .nav-scrim{display:block;position:fixed;inset:0;background:#111b2655;z-index:4}
+  .content{padding:26px 22px 16px}
+  .directory-head{flex-wrap:wrap;gap:10px}
+  .toolbar{flex-wrap:wrap}
+  .stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .form-grid .span-two{grid-column:1/-1}
+  .modal{width:min(640px,100%)}
+  .modal.wide,.letter-modal{width:min(760px,100%)}
+}
+
+/* tablet portrait / large phones */
+@media(min-width:561px) and (max-width:900px){
+  .tp-tiles{grid-template-columns:repeat(3,1fr)}
+  .login-handover{grid-template-columns:1fr 1fr}
+}
+
+/* phones and small tablets */
+@media(max-width:760px){
+  .content{padding:20px 14px 14px}
+  .heading-row{gap:10px}
+  .head-actions{width:100%}
+  .head-actions>*{flex:1 1 auto}
+  .filters{align-items:stretch}
+  .month-pick{flex-wrap:wrap}
+  .toolbar .filter-select,.toolbar .filter-btn{min-width:0}
+  .punch-card .primary-btn.big{width:100%}
+  .chart-grid,.two-col{gap:12px}
+  .hbar{grid-template-columns:minmax(70px,38%) 1fr 40px;gap:8px}
+  .donut-wrap{justify-content:center}
+  .donut-list{min-width:0;flex-basis:100%}
+  /* tables that are not turned into cards scroll sideways inside their frame */
+  .table-wrap{overscroll-behavior-x:contain}
+  table{min-width:620px}
+  td .chip-row{flex-wrap:wrap;justify-content:flex-start}
+  .stack-mobile td .chip-row{justify-content:flex-start}
+  .detail-row{flex-wrap:wrap;gap:4px 12px}
+  .detail-row b{text-align:right}
+  .role-give{flex-wrap:wrap}
+  .role-give select{flex:1 1 100%}
+  .login-links{flex-wrap:wrap}
+  .ic-invoice{padding:12px}
+  .ic-invoice-head{gap:10px}
+  .ic-answer-bar{bottom:8px}
+  .pager{flex-wrap:wrap;justify-content:center}
+  .parts-lines li{flex-wrap:wrap}
+  .xa-status{flex-wrap:wrap}
+  .xa-status .outline-btn{flex:1 1 90px}
+  /* pop-ups use the screen: centred cards become a sheet from the bottom */
+  .overlay{padding:0;place-items:end center}
+  .modal,.detail-modal,.modal.wide,.letter-modal{width:100%;max-height:92vh;max-height:92dvh;border-radius:16px 16px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+  .modal-head{gap:10px}
+  .modal-head h2{font-size:18px}
+  .modal-foot{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom));background:#fff;padding-bottom:calc(4px + env(safe-area-inset-bottom));margin-bottom:-4px}
+  .modal-foot .outline-btn,.modal-foot .primary-btn{min-width:0}
+  .line-card{padding:12px}
+  .form-grid textarea.letter-text{min-height:220px}
+  /* the alerts menu spans the screen instead of hanging off the bell */
+  .bell{position:static}
+  .bell-menu{position:fixed;left:10px;right:10px;top:62px;width:auto}
+  .alert-list{max-height:min(380px,60vh)}
+  .toast-stack{top:66px;right:10px;left:10px;width:auto}
+  .alerts-panel .tabs{margin:0 15px 8px}
+}
+
+/* narrow phones */
+@media(max-width:560px){
+  .topbar{padding:0 12px}
+  .heading-row h1{flex-wrap:wrap}
+  .line-card{grid-template-columns:1fr}
+  .line-card .span-two,.line-card .span-all{grid-column:1/-1}
+  .login-handover{grid-template-columns:1fr}
+  .kpi-row{grid-template-columns:1fr 1fr}
+  .mini-stats{grid-template-columns:1fr 1fr}
+  .punch-card{flex-direction:column;align-items:stretch}
+  .punch-state{flex-basis:auto}
+  .ic-answer-bar .primary-btn,.ic-answer-bar .outline-btn{width:100%}
+  .form-grid .chip-row{flex-wrap:wrap}
+  .form-grid .chip-row .outline-btn{flex:1 1 100%}
+  .detail-summary{flex-wrap:wrap}
+  .tp-bar h1{font-size:17px}
+  .tp-title{flex-wrap:wrap}
+  .tp-badges{align-items:flex-start;flex-direction:row;flex-wrap:wrap}
+  .tp-manage{padding:10px}
+  .cal-grid{gap:3px}
+  .cal-head{font-size:9px;letter-spacing:.3px}
+}
+
+/* very small phones */
+@media(max-width:380px){
+  .content{padding:16px 12px 12px}
+  .kpi-row,.mini-stats{grid-template-columns:1fr}
+  .tp-tiles{grid-template-columns:repeat(2,1fr)}
+  .tp-row{grid-template-columns:1fr;gap:2px}
+  .heading-row h1{font-size:20px}
+  .modal-foot>*{flex:1 1 100%}
+}
+
+/* touch screens: bigger targets, no sticky hover looks */
+@media(pointer:coarse){
+  .outline-btn,.danger-btn,.filter-btn,.filter-select{min-height:40px}
+  .outline-btn.small-btn{min-height:36px}
+  .primary-btn{min-height:42px}
+  .icon-button{min-width:40px;min-height:40px}
+  .tab{padding:12px 14px}
+  nav a,.nav-group{height:44px}
+  .nav-sub a{height:40px}
+  .text-btn,.link-btn{min-height:32px}
+  input[type=checkbox]{width:18px;height:18px}
+  .person-results li{padding:11px 10px}
+}
+
+/* landscape phones: keep the sheet short enough to see the buttons */
+@media(max-height:480px) and (orientation:landscape){
+  .modal{max-height:96vh;max-height:96dvh}
+  .login-main{padding-top:24px}
+  .sidebar{padding-top:14px}
+}
+
+/* drop-down lists: the field stays 16px on phones (no zoom on focus), the list itself uses a normal size */
+select{max-width:100%;text-overflow:ellipsis}
+select option,select optgroup{font-size:14px!important;font-weight:400;padding:6px 10px;color:#1f2733;background:#fff}
+select option:checked{background:#fff1d6;color:#0b1727}
+@media(max-width:760px){
+  select option,select optgroup{font-size:15px!important}
+}
+
+/* in-page drop-down menu (selectMenu.ts): always inside the screen, sized for phones and tablets */
+.sel-menu{position:fixed;z-index:1000;box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain;padding:4px;background:#fff;border:1px solid #e3e8f0;border-radius:10px;box-shadow:0 12px 32px #0b172733;font:400 14px/1.35 'DM Sans',sans-serif;color:#1f2733;-webkit-overflow-scrolling:touch}
+.sel-opt{padding:9px 12px;border-radius:7px;cursor:pointer;overflow-wrap:anywhere}
+.sel-opt.in-group{padding-left:20px}
+.sel-opt.active{background:#fff6e5}
+.sel-opt.selected{background:#fff1d6;color:#0b1727;font-weight:600}
+.sel-opt.disabled{opacity:.45;cursor:default}
+.sel-group{padding:8px 12px 3px;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#7b8494}
+@media(max-width:760px),(pointer:coarse){.sel-menu{font-size:15px}.sel-opt{padding:11px 12px}}
+
+/* in-page calendar (datePicker.ts): compact, always inside the screen */
+.dp{position:fixed;z-index:1000;box-sizing:border-box;overflow-y:auto;padding:10px;background:#fff;border:1px solid #e3e8f0;border-radius:12px;box-shadow:0 12px 32px #0b172733;font:400 13px/1.2 'DM Sans',sans-serif;color:#1f2733;user-select:none}
+.dp button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
+.dp button:disabled{opacity:.3;cursor:default}
+.dp-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px}
+.dp-title{flex:1;height:32px;border-radius:8px;font-weight:700;font-size:14px}
+.dp-title:not(:disabled):hover,.dp-nav:hover{background:#fff6e5}
+.dp-nav{height:32px;width:32px;border-radius:8px;font-size:20px;line-height:1;color:#6b7380}
+.dp-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}
+.dp-wd{text-align:center;font-size:11px;font-weight:600;color:#7b8494;padding:4px 0}
+.dp-day{height:34px;border-radius:8px;font-size:13px;font-variant-numeric:tabular-nums}
+.dp-day:not(:disabled):hover,.dp-mon:not(:disabled):hover{background:#fff6e5}
+.dp-day.today,.dp-mon.today{box-shadow:inset 0 0 0 1px #f5a100}
+.dp-day.cur,.dp-mon.cur{background:#fff1d6}
+.dp .sel{background:#f5a100;color:#0b1727;font-weight:700}
+.dp-months{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+.dp-mon{height:40px;border-radius:8px;font-size:13px}
+.dp-foot{display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid #eef1f5}
+.dp-link{height:30px;padding:0 8px!important;border-radius:6px;font-weight:600;color:#9a5b00!important}
+.dp-link:hover{background:#fff6e5}
+@media(pointer:coarse){.dp-day{height:38px}.dp-nav,.dp-title{height:38px}.dp-link{height:36px}}
+@media(max-height:480px){.dp-day{height:28px}.dp-mon{height:32px}}
