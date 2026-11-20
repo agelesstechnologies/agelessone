@@ -1,10 +1,13 @@
 import { INestApplication, Module } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { ErrorFilter } from './error.filter';
+import { RATE_LIMIT_OPTIONS, RateLimitGuard } from './rate-limit';
 
-/** Applies to every route: one error format. Sign-in and permissions are checked by core's AuthGuard. */
+/** Applies to every route: one error format and a rate limit. Sign-in and permissions are checked by core's AuthGuard. */
 @Module({
-  providers: [{ provide: APP_FILTER, useClass: ErrorFilter }],
+  imports: [ThrottlerModule.forRoot(RATE_LIMIT_OPTIONS)],
+  providers: [{ provide: APP_FILTER, useClass: ErrorFilter }, { provide: APP_GUARD, useClass: RateLimitGuard }],
 })
 export class HttpModule {}
 

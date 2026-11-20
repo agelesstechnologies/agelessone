@@ -15,6 +15,9 @@ export default defineConfig({
       EMAIL_PROVIDER: 'memory',                         // sign-in codes are kept in memory, never emailed (read with sentMail())
       SMS_PROVIDER: 'memory',                           // sign-in codes by SMS are kept in memory (sentSms())
       DEV_SHOW_CODES: 'false',                         // codes never appear in answers in tests
+      RATE_LIMIT_PER_MIN: '100000',                    // the rate limit has its own test (rate-limit.api.spec.ts); the others must never hit it
+      RATE_LIMIT_IP_PER_MIN: '100000',
+      RATE_LIMIT_LOGIN_PER_MIN: '100000',
     },
   },
 });
