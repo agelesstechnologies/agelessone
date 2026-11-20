@@ -11,6 +11,7 @@ import JobPicker from '../../JobPicker';
 import { INTERCOMPANY } from '../../permissions';
 import { Badge, Empty, Loading, Modal, Notice, Panel } from '../../ui';
 import { AGREEMENT_TONE, COMPANIES, goIc, monthName, paiseInput, pct, PRICING_LABEL, SERVICE_LABEL, SERVICES, stampIst, toPaise } from './common';
+import { PassedCostsPanel } from './PassedCosts';
 
 const companyName = (code: string) => COMPANIES.find((c) => c.code === code)?.name ?? code;
 const item = (c: { serviceType: string | null; grade: string | null }) => (c.serviceType ? SERVICE_LABEL[c.serviceType] ?? c.serviceType : `Grade ${c.grade}`);
@@ -125,6 +126,8 @@ export function AgreementPage({ id }: { id: string }) {
               <td>{c.createdBy.displayName}<small className="sub">{stampIst(c.createdAt)}</small></td></tr>)}</tbody></table></div></>}
       </div>
     </Panel>
+
+    <PassedCostsPanel a={a} />
 
     {dialog === 'edit' && <EditTerms a={a} onClose={() => setDialog(null)} onSaved={(d) => { q.setData(d); setDialog(null); setNote('Terms saved.'); }} />}
     {dialog === 'end' && <EndAgreement a={a} busy={busy} error={error} onClose={() => setDialog(null)} onEnd={(endDate) => void patch({ status: 'ended', endDate }, 'The agreement has ended.')} />}
