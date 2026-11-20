@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Activity, ArrowLeftRight, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, CircleHelp, ClipboardCheck, Crown, KeyRound, LayoutDashboard, LoaderCircle, Lock, LogOut, Menu, SlidersHorizontal, Users, Wallet, Wrench, X } from 'lucide-react';
-import type { IcAccess } from '@ageless/shared';
-import { api } from './api';
+import { Activity, ArrowLeftRight, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, ClipboardCheck, ClipboardList, Crown, FileStack, KeyRound, LayoutDashboard, Landmark, LoaderCircle, Lock, LogOut, Menu, Package, Boxes, SlidersHorizontal, Tags, Users, Wallet, Warehouse, X } from 'lucide-react';
+import { useApi } from './hooks';
 import { AuthProvider, useAuth } from './auth';
-import { useLoad } from './hooks';
-import { ATTENDANCE, EXPENSES, INTERCOMPANY, LEAVE, MANAGEMENT, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
+import { anyInventory, ATTENDANCE, EXPENSES, INTERCOMPANY, INVENTORY, LEAVE, MANAGEMENT, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
+import Accounts from './pages/Accounts';
+import Bell from './Bell';
 import Intercompany from './modules/intercompany/Intercompany';
 import Approvals from './pages/Approvals';
 import Attendance from './pages/Attendance';
@@ -22,51 +22,64 @@ import People from './pages/People';
 import Policies from './pages/Policies';
 import Skills from './pages/Skills';
 import Tickets from './pages/Tickets';
+import InventoryDocuments from './pages/inventory/Documents';
+import InventoryItems from './pages/inventory/Items';
+import InventoryLocations from './pages/inventory/Locations';
+import InventoryRequests from './pages/inventory/Requests';
+import InventorySetup from './pages/inventory/Setup';
+import InventoryStock from './pages/inventory/Stock';
 import ChangePassword from './ChangePassword';
 import { Modal } from './ui';
+import type { AccountsAccess, Grant, IcAccess } from '@ageless/shared';
 
-type PageKey = 'overview' | 'ceo' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'intercompany' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies';
-type GroupKey = 'hrms' | 'accounts' | 'operations';
-interface NavItem {
-  key: PageKey; label: string; icon: ReactNode; section: 'workspace' | GroupKey | 'manage';
-  /** ic: what the person sees of Intercompany (heads and approvers are named on agreements, they hold no permission) */
-  show: (can: (p: string) => boolean, others: boolean, scopeOf: (p: string) => string | null, ic: IcAccess | null) => boolean;
-}
+type PageKey = 'overview' | 'ceo' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'intercompany' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies' | 'accounts'
+  | 'inv-requests' | 'inv-stock' | 'inv-documents' | 'inv-items' | 'inv-locations' | 'inv-setup';
+type GroupKey = 'hrms' | 'accounts' | 'operations' | 'inventory';
+/**
+ * What the backend says beyond permissions: accountsView — may see the Accounts section (Accounts roles can come from the
+ * interim policy); grants — has cross-company access to request parts (without an inventory role); ic — what the person
+ * sees of Intercompany (company heads and approvers are named on agreements, they hold no permission).
+ */
+interface MenuAccess { accountsView: boolean; grants: boolean; ic: IcAccess | null }
+interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | GroupKey | 'manage'; show: (can: (p: string) => boolean, others: boolean, scopeOf: (p: string) => string | null, access: MenuAccess) => boolean }
+const invRead = (can: (p: string) => boolean) => can(INVENTORY.view) || can(INVENTORY.items) || can(INVENTORY.locations);
+const stockRead = (can: (p: string) => boolean) => can(INVENTORY.view) || can(INVENTORY.stockPost);
+import logo from './assets/ageless-logo.webp';
 
 /** Every menu item lists the permission that shows it; the backend still checks each request. */
 const NAV: NavItem[] = [
   { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={18} />, section: 'workspace', show: () => true },
   { key: 'ceo', label: 'CEO dashboard', icon: <Crown size={18} />, section: 'workspace', show: (_can, _others, scopeOf) => scopeOf(MANAGEMENT) === 'all' },
-  { key: 'people', label: 'People', icon: <Users size={18} />, section: 'hrms', show: (_can, others) => others },
-  { key: 'attendance', label: 'Attendance', icon: <Activity size={18} />, section: 'hrms', show: (can) => can(ATTENDANCE.punch) || can(ATTENDANCE.view) || can(ATTENDANCE.approve) },
-  { key: 'expenses', label: 'Expenses', icon: <BriefcaseBusiness size={18} />, section: 'accounts', show: (can) => can(EXPENSES.submit) || can(EXPENSES.approve) || can(EXPENSES.report) },
-  { key: 'leave', label: 'Leave', icon: <CalendarDays size={18} />, section: 'hrms', show: (can) => can(LEAVE.apply) || can(LEAVE.approve) || can(LEAVE.report) },
-  { key: 'calendar', label: 'Calendar', icon: <CalendarRange size={18} />, section: 'hrms', show: (can) => can(PEOPLE.view) },
+  { key: 'people', label: 'People', icon: <Users size={18} />, section: 'workspace', show: (_can, others) => others },
+  { key: 'attendance', label: 'Attendance', icon: <Activity size={18} />, section: 'workspace', show: (can) => can(ATTENDANCE.punch) || can(ATTENDANCE.view) || can(ATTENDANCE.approve) },
+  { key: 'expenses', label: 'Expenses', icon: <BriefcaseBusiness size={18} />, section: 'workspace', show: (can) => can(EXPENSES.submit) || can(EXPENSES.approve) || can(EXPENSES.report) },
+  { key: 'leave', label: 'Leave', icon: <CalendarDays size={18} />, section: 'workspace', show: (can) => can(LEAVE.apply) || can(LEAVE.approve) || can(LEAVE.report) },
+  { key: 'calendar', label: 'Calendar', icon: <CalendarRange size={18} />, section: 'workspace', show: (can) => can(PEOPLE.view) },
   { key: 'approvals', label: 'Approvals', icon: <ClipboardCheck size={18} />, section: 'workspace', show: (can) => can(LEAVE.approve) || can(EXPENSES.approve) || can(ATTENDANCE.approve) },
   { key: 'payroll', label: 'Payroll', icon: <Wallet size={18} />, section: 'accounts', show: (can) => can(PAYROLL.payslip) || can(PAYROLL.prepare) || can(PAYROLL.approve) },
   { key: 'intercompany', label: 'Intercompany', icon: <ArrowLeftRight size={18} />, section: 'accounts',
-    show: (can, _others, _scopeOf, ic) => can(INTERCOMPANY.view) || can(INTERCOMPANY.manage) || !!ic && (ic.agreements > 0 || ic.statements) },
+    show: (can, _others, _scopeOf, { ic }) => can(INTERCOMPANY.view) || can(INTERCOMPANY.manage) || !!ic && (ic.agreements > 0 || ic.statements) },
+  // Periods, the journal and the Tally ledger map (the Accounts module), inside the Accounts menu group.
+  { key: 'accounts', label: 'Accounts', icon: <Landmark size={18} />, section: 'accounts', show: (_can, _others, _scopeOf, access) => access.accountsView },
   { key: 'skills', label: 'Skills', icon: <Award size={18} />, section: 'hrms', show: (can) => can(SKILLS.view) || can(SKILLS.manage) },
   { key: 'tickets', label: 'Tickets', icon: <Ticket size={18} />, section: 'operations', show: (can) => can(TICKETS.view) || can(TICKETS.work) || can(TICKETS.manage) || can(TICKET_TYPES.view) || can(TICKETS.numbering) },
   { key: 'organisation', label: 'Organisation', icon: <Network size={18} />, section: 'workspace', show: (can, others) => others && (can(PEOPLE.manageEmployments) || can(PEOPLE.managePositions) || can(PEOPLE.view)) },
   { key: 'locks', label: 'Month locks', icon: <Lock size={18} />, section: 'manage', show: (can) => can(ATTENDANCE.lockMonth) || can(ATTENDANCE.unlockMonth) },
   { key: 'policies', label: 'Policies', icon: <SlidersHorizontal size={18} />, section: 'manage', show: (can) => can(POLICIES.manage) },
+  // Inventory is need-to-know: shown only to store roles, Accounts, Management, parts requesters, department heads (and cross-company grantees)
+  { key: 'inv-requests', label: 'Part requests', icon: <ClipboardList size={18} />, section: 'inventory', show: (can, _o, _s, access) => access.grants || can(INVENTORY.request) || can(INVENTORY.requestsApprove) || can(INVENTORY.departmentView) || stockRead(can) },
+  { key: 'inv-stock', label: 'Stock', icon: <Boxes size={18} />, section: 'inventory', show: stockRead },
+  { key: 'inv-documents', label: 'Documents', icon: <FileStack size={18} />, section: 'inventory', show: stockRead },
+  { key: 'inv-items', label: 'Items', icon: <Package size={18} />, section: 'inventory', show: invRead },
+  { key: 'inv-locations', label: 'Locations', icon: <Warehouse size={18} />, section: 'inventory', show: invRead },
+  { key: 'inv-setup', label: 'Units & categories', icon: <Tags size={18} />, section: 'inventory', show: invRead },
 ];
 
-/** Drop-down groups in the menu, in this order after Overview and the CEO dashboard. */
-const GROUPS: { key: GroupKey; label: string; icon: ReactNode }[] = [
-  { key: 'hrms', label: 'HR', icon: <Users size={18} /> },
-  { key: 'accounts', label: 'Accounts', icon: <Wallet size={18} /> },
-  { key: 'operations', label: 'Operations', icon: <Wrench size={18} /> },
-];
-/** Which menu groups were left open (per browser). */
-const GROUPS_OPEN_KEY = 'ageless.nav.groups';
-const readOpenGroups = (): Partial<Record<GroupKey, boolean>> => {
-  try { return JSON.parse(localStorage.getItem(GROUPS_OPEN_KEY) ?? '{}') as Partial<Record<GroupKey, boolean>>; } catch { return {}; }
-};
+/** Menu order: Overview first, then Attendance and Tickets, then everything else in the order of NAV. */
+const MENU_FIRST: PageKey[] = ['overview', 'ceo', 'attendance', 'tickets'];
 
 const pageFromHash = (): PageKey => {
-  const h = window.location.hash.replace('#', '').split('/')[0] ?? '';   // #tickets/<id> is the Tickets page
+  const h = window.location.hash.replace('#', '').split('/')[0] ?? '';   // #tickets/<id> is the Tickets page, #inv-documents/<id> the Documents page
   return NAV.some((n) => n.key === h) ? (h as PageKey) : 'overview';
 };
 
@@ -76,60 +89,54 @@ function Shell() {
   const [mobileNav, setMobileNav] = useState(false);
   const [confirmOut, setConfirmOut] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
-  const [openGroups, setOpenGroups] = useState(readOpenGroups);
+  // Accounts roles can come from the interim policy (HR, CEO), so the backend says who may see the section.
+  const accountsView = useApi<AccountsAccess>('/accounts/access').data?.view ?? false;
   // Intercompany is shown to company heads, approvers and department heads named on its records (no permission of their own)
-  const ic = useLoad(() => (me ? api<IcAccess>('/intercompany/access').catch(() => null) : Promise.resolve(null)), [me?.person.publicId]);
+  const ic = useApi<IcAccess>(me ? '/intercompany/access' : null).data ?? null;
   const go = useCallback((p: string) => { window.location.hash = p; setMobileNav(false); }, []);
+  // people without an inventory role may still have cross-company access to request parts for a ticket
+  const noInventory = !!me && !anyInventory(can);
+  const grants = useApi<Grant[]>(noInventory ? '/inventory/grants/mine' : null);
   useEffect(() => {
     const onHash = () => setPage(pageFromHash());
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  // Every page: the browser tab names the page, a new page starts at the top, Escape closes the phone menu.
+  useEffect(() => {
+    const label = NAV.find((n) => n.key === page)?.label;
+    document.title = label ? `${label} · Ageless` : 'Ageless';
+    window.scrollTo(0, 0);
+    document.querySelector('.content')?.scrollTo?.(0, 0);
+  }, [page]);
+  useEffect(() => {
+    if (!mobileNav) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileNav(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobileNav]);
   if (!me) return null;
 
-  const items = NAV.filter((n) => n.show(can, seesOthers, scopeOf, ic.data));
+  const items = NAV.filter((n) => n.show(can, seesOthers, scopeOf, { accountsView, grants: (grants.data ?? []).some((g) => g.active), ic }));
   // A page the person may not open (typed in the address bar) falls back to the overview.
   const current = items.find((n) => n.key === page) ?? items[0]!;
   const role = me.roles[0]?.name ?? 'No role';
   const initials = me.person.displayName.split(/\s+/).slice(0, 2).map((s) => s[0]).join('').toUpperCase();
   const link = (n: NavItem) => <a key={n.key} href={`#${n.key}`} className={`${n.key === current.key ? 'active' : ''} `} onClick={() => setMobileNav(false)}>
     {n.icon}{n.label}</a>;
-  /** A drop-down group: always open while one of its pages is shown; otherwise as the person left it. */
-  const group = (g: (typeof GROUPS)[number]) => {
-    const pages = items.filter((n) => n.section === g.key);
-    if (!pages.length) return null;
-    const holdsCurrent = current.section === g.key;
-    const shown = holdsCurrent || !!openGroups[g.key];
-    const toggle = () => {
-      if (holdsCurrent) return;
-      const next = { ...openGroups, [g.key]: !shown };
-      setOpenGroups(next);
-      try { localStorage.setItem(GROUPS_OPEN_KEY, JSON.stringify(next)); } catch { /* storage blocked */ }
-    };
-    return <div key={g.key} className="nav-group-wrap">
-      <button type="button" className={`nav-group ${holdsCurrent ? 'has-active' : ''}`} aria-expanded={shown} onClick={toggle}>
-        {g.icon}{g.label}<ChevronDown size={15} className={`nav-chevron ${shown ? 'open' : ''}`} /></button>
-      {shown && <div className="nav-sub">{pages.map(link)}</div>}
-    </div>;
-  };
-  const workspace = items.filter((n) => n.section === 'workspace');
-  const before = workspace.filter((n) => n.key === 'overview' || n.key === 'ceo');
-  const after = workspace.filter((n) => n.key !== 'overview' && n.key !== 'ceo');
+  const menu = [...MENU_FIRST.flatMap((k) => items.filter((n) => n.key === k)), ...items.filter((n) => n.section !== 'manage' && !MENU_FIRST.includes(n.key))];
 
   return <div className="app-shell">
     {mobileNav && <div className="nav-scrim" onClick={() => setMobileNav(false)} />}
     <aside className={`sidebar ${mobileNav ? 'show' : ''}`}>
-      <div className="brand"><div className="brand-mark">a<span>.</span></div><div><b>ageless</b><small>PEOPLE PLATFORM</small></div><button className="icon-button mobile-close" onClick={() => setMobileNav(false)} aria-label="Close menu"><X size={18} /></button></div>
+      <div className="brand"><img className="brand-logo" src={logo} alt="Ageless Entertainments" /><button className="icon-button mobile-close" onClick={() => setMobileNav(false)} aria-label="Close menu"><X size={18} /></button></div>
       <div className="workspace"><div className="workspace-icon"><Building2 size={18} /></div><div><b>Ageless Group</b><small>Organization</small></div><ChevronDown size={15} /></div>
       <div className="nav-label">WORKSPACE</div>
       <nav>
-        {before.map(link)}
-        {GROUPS.map(group)}
-        {after.map(link)}
+        {menu.map(link)}
       </nav>
       {items.some((n) => n.section === 'manage') && <><div className="nav-label manage-label">MANAGE</div><nav>{items.filter((n) => n.section === 'manage').map(link)}</nav></>}
       <div className="sidebar-bottom">
-        <div className="help-card"><div className="help-icon"><CircleHelp size={18} /></div><div><b>Need a hand?</b><small>Visit the help center</small></div></div>
         <div className="profile"><div className="avatar avatar-blue">{initials}</div><div><b>{me.person.displayName}</b><small>{role}</small></div>
           <button className="icon-button" onClick={() => setChangingPassword(true)} aria-label="Change password" title="Change password"><KeyRound size={17} /></button>
           <button className="icon-button" onClick={() => setConfirmOut(true)} aria-label="Sign out" title="Sign out"><LogOut size={17} /></button></div>
@@ -138,7 +145,7 @@ function Shell() {
     <main className="main">
       <header className="topbar"><button className="icon-button hamburger" onClick={() => setMobileNav(!mobileNav)} aria-label="Open menu"><Menu size={20} /></button>
         {/* <div className="crumb"><b>{current.label}</b></div> */}
-        <div className="top-actions"><span className="env"><i />Development</span><div className="avatar avatar-blue top-avatar">{initials}</div></div></header>
+        <div className="top-actions"><Bell /><span className="env"><i />Development</span><div className="avatar avatar-blue top-avatar">{initials}</div></div></header>
       <div className="content">
         {current.key === 'overview' && <Overview go={go} />}
         {current.key === 'ceo' && <CeoDashboard />}
@@ -150,11 +157,18 @@ function Shell() {
         {current.key === 'approvals' && <Approvals />}
         {current.key === 'payroll' && <Payroll />}
         {current.key === 'intercompany' && <Intercompany />}
+        {current.key === 'accounts' && <Accounts />}
         {current.key === 'skills' && <Skills />}
         {current.key === 'organisation' && <Organisation />}
         {current.key === 'tickets' && <Tickets />}
         {current.key === 'locks' && <MonthLocks />}
         {current.key === 'policies' && <Policies />}
+        {current.key === 'inv-requests' && <InventoryRequests />}
+        {current.key === 'inv-stock' && <InventoryStock />}
+        {current.key === 'inv-documents' && <InventoryDocuments />}
+        {current.key === 'inv-items' && <InventoryItems />}
+        {current.key === 'inv-locations' && <InventoryLocations />}
+        {current.key === 'inv-setup' && <InventorySetup />}
         <footer className="footer"><span>© 2026 Ageless Universe</span><span>Built for the people who make it happen <span className="heart">♥</span></span><span>v0.1.0</span></footer>
       </div>
     </main>
@@ -171,7 +185,8 @@ function Gate() {
   if (loading) return <div className="boot"><LoaderCircle className="spin" size={22} />Loading…</div>;
   if (!me) return <Login />;
   // a temporary password (new login, admin reset): set your own before anything else
-  return me.user.mustChangePassword ? <FirstLogin /> : <Shell />;
+  // keyed by the person, so a screen never keeps what it showed the last person
+  return me.user.mustChangePassword ? <FirstLogin /> : <Shell key={me.person.publicId} />;
 }
 
 export default function App() {

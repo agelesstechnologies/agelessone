@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ApprovalCounts, ApprovalItem, ApprovalsInbox, ApprovalsQuery } from '@ageless/shared';
+import { DB, Db } from '../../../../platform/db/db.module';
 import { RequestContext } from '../../../../platform/http/request-context';
 import { todayIst } from '../../../../platform/time';
 import { waitedTooLong as reasonWaited } from '../../../../platform/escalation';
@@ -21,6 +22,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 @Injectable()
 export class ApprovalsInboxService {
   constructor(
+    @Inject(DB) private readonly db: Db,
     @Inject(LeaveService) private readonly leave: LeaveService,
     @Inject(ExpensesService) private readonly expenses: ExpensesService,
     @Inject(CorrectionsService) private readonly corrections: CorrectionsService,
@@ -88,11 +90,15 @@ export class ApprovalsInboxService {
     };
     const createdBefore = new Date(now.getTime() - 86_400_000); // nothing younger than a day can have waited long enough
     let sent = 0;
-    for (const source of [this.leave, this.expenses, this.corrections, this.overtime]) {
+    const sources = [['leave', this.leave], ['expense', this.expenses], ['correction', this.corrections], ['overtime', this.overtime]] as const;
+    for (const [kind, source] of sources) {
       for (const r of await source.waiting(createdBefore)) {
         const days = await afterDays(r.tenantId, r.legalEntityId);
         if (!waitedTooLong(todayIst(r.createdAt), today, days)) continue;
         await source.escalateAutomatically(r.id, reasonWaited(days));
+        await this.core.notify(this.db, { tenantId: r.tenantId, legalEntityId: r.legalEntityId, alertCode: 'hrms.request_escalated', urgency: 'urgent',
+          title: `A ${kind} request has waited ${days} days for a decision`, body: 'It was sent to you after the approver did not decide.',
+          link: 'approvals', dedupeKey: `hrms.request_escalated:${kind}:${r.id}`, recipients: { roles: ['ceo'] } });
         sent++;
       }
     }

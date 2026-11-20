@@ -25,7 +25,7 @@ export function throttleSettings(env: NodeJS.ProcessEnv = process.env): Throttle
  * The stored key for an account or an IP: a keyed hash, so the table never holds a phone number, email or IP address
  * (CLAUDE.md rule 7). The login must be in its stored form (parseLogin), so "+91 00000 00001" and "+910000000001" count together.
  */
-export function throttleKey(kind: 'login' | 'ip', value: string, secret: string): string {
+export function throttleKey(kind: 'login' | 'ip' | 'machine', value: string, secret: string): string {
   return `${kind}:${createHmac('sha256', secret).update(`${kind}:${value}`).digest('hex')}`;
 }
 

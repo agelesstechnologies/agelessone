@@ -1,12 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { POLICIES, PolicyKey, PolicyValue } from '@ageless/shared';
+import { EventEnvelope, POLICIES, PolicyKey, PolicyValue } from '@ageless/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Conn, Tx } from '../../platform/db/db.module';
-import { personContacts, persons } from './schema';
+import { outbox, personContacts, persons } from './schema';
 import { PolicyService } from './policies/application/policy.service';
 import { ApprovalsService, JobApprovers } from './approvals/approvals.service';
 import { AuditEntry, AuditService } from './audit/audit.service';
 import { Place, PlacesService } from './places/places.service';
+import { NewAlert, NotificationsService } from './notifications/application/notifications.service';
+export type { NewAlert, Recipients } from './notifications/application/notifications.service';
 import { GeocodeResult } from '../../platform/geocoding';
 
 export interface NewPerson {
@@ -25,7 +27,28 @@ export class CoreFacade {
     @Inject(ApprovalsService) private readonly approvals: ApprovalsService,
     @Inject(AuditService) private readonly auditLog: AuditService,
     @Inject(PlacesService) private readonly places: PlacesService,
+    @Inject(NotificationsService) private readonly alerts: NotificationsService,
   ) {}
+
+  /**
+   * Alerts the recipients (by role and/or relationship, never named people) in the web app's bell. Once per person for the
+   * same dedupeKey, so a job or event run twice makes no second alert. Pass the caller's tx (or the db for a job).
+   * Returns how many people got a new alert. Never put phone numbers, bank or ID numbers or exact locations in it.
+   */
+  notify(conn: Conn, alert: NewAlert): Promise<number> {
+    return this.alerts.notify(conn, alert);
+  }
+
+  /** The active people holding any of these roles today, for a module that narrows them (to one company) before notify. */
+  peopleWithRoles(conn: Conn, tenantId: number, roleCodes: string[]): Promise<number[]> {
+    return this.alerts.peopleWithRoles(conn, tenantId, roleCodes);
+  }
+
+  /** A person's display name, for the text of an alert. */
+  async displayNameOf(conn: Conn, personId: number): Promise<string> {
+    const [p] = await conn.select({ name: persons.displayName }).from(persons).where(eq(persons.id, personId));
+    return p?.name ?? 'Someone';
+  }
 
   /**
    * The address of a punch location, from the reverse-geocoding provider in settings. Call it BEFORE opening the
@@ -56,6 +79,17 @@ export class CoreFacade {
   }
 
   /**
+   * Publishes an event for other modules: written to core.outbox inside the caller's transaction, so it exists exactly
+   * when the change it describes was saved. Never holds private values (phone, bank or ID numbers, exact locations).
+   */
+  async publish(tx: Tx, event: EventEnvelope<string, unknown>): Promise<void> {
+    await tx.insert(outbox).values({
+      tenantId: event.tenantId, eventId: event.eventId, eventType: event.eventType, eventVersion: event.eventVersion,
+      aggregatePublicId: event.aggregatePublicId, causedBy: event.causedBy ?? null, payload: event.payload, occurredAt: new Date(event.occurredAt),
+    });
+  }
+
+  /**
    * A person whose own requests need no approval: they hold one of the roles in the policy
    * hrms.approvals.auto_approve_roles (default: ceo) for the company. Tied to the role, never to a named person.
    */
@@ -63,6 +97,11 @@ export class CoreFacade {
     const roles = await this.getPolicy(tenantId, 'hrms.approvals.auto_approve_roles', companyId, onDate);
     if (roles.length === 0) return false;
     return (await this.approvals.rolesOf(tenantId, personId)).some((r) => roles.includes(r));
+  }
+
+  /** The codes of the roles a person holds today. */
+  rolesOf(tenantId: number, personId: number): Promise<string[]> {
+    return this.approvals.rolesOf(tenantId, personId);
   }
 
   /** Who decides a request: manager, then department head, then HR, then CEO — never one of notAllowed (person ids). */

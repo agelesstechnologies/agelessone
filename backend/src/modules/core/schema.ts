@@ -75,6 +75,29 @@ export const users = core.table('users', {
   check('users_has_login', sql`login_phone IS NOT NULL OR login_email IS NOT NULL`),
 ]);
 
+/**
+ * A program (not a person) that may call a few routes: the Tally connector on the Tally server PC. Bound to one tenant and
+ * to one permission. client_id is public; only a bcrypt hash of the secret is stored, and the secret is shown once when
+ * the credential is made. Revoked, never deleted.
+ */
+export const machineCredentials = core.table('machine_credentials', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
+  publicId: uuid('public_id').notNull().defaultRandom().unique(),
+  name: text('name').notNull(),
+  clientId: text('client_id').notNull().unique(),
+  secretHash: text('secret_hash').notNull(),
+  permission: text('permission').notNull(),
+  isActive: boolean('is_active').notNull().default(true),
+  createdBy: bigint('created_by', { mode: 'number' }).notNull().references(() => persons.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+}, (t) => [
+  check('machine_credentials_permission_check', sql`permission IN ('accounts.tally.connector')`),
+  check('machine_credentials_revoked_check', sql`is_active = (revoked_at IS NULL)`),
+]);
+
 export const roles = core.table('roles', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
@@ -218,4 +241,103 @@ export const loginCodes = core.table('login_codes', {
   index('idx_login_codes_user').on(t.userId, t.createdAt),
   check('login_codes_purpose_check', sql`purpose IN ('first_login','reset')`),
   check('login_codes_attempts_check', sql`attempts BETWEEN 0 AND 5`),
+]);
+
+/**
+ * Events between modules (shared/src/events/envelope.ts), written in the same transaction as the change they describe,
+ * so an event exists exactly when its change was saved. Never deleted; only published_at is set once, when a consumer
+ * has taken it (trigger, migration 0041). Written only through CoreFacade.publish.
+ */
+export const outbox = core.table('outbox', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
+  eventId: uuid('event_id').notNull().unique(),
+  eventType: text('event_type').notNull(),
+  eventVersion: integer('event_version').notNull(),
+  aggregatePublicId: uuid('aggregate_public_id').notNull(),
+  causedBy: uuid('caused_by'),
+  payload: jsonb('payload').notNull(),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+}, (t) => [
+  index('idx_outbox_unpublished').on(t.id).where(sql`published_at IS NULL`),
+  index('idx_outbox_type').on(t.tenantId, t.eventType, t.id),
+  check('outbox_event_type_format', sql`event_type ~ '^[a-z]+([.][a-z_]+)+$'`),
+  check('outbox_event_version_check', sql`event_version >= 1`),
+]);
+
+/**
+ * One alert for one person (CoreFacade.notify). The in-app bell reads these. dedupe_key makes the same alert for the same
+ * person exist once however often a job or event is replayed. Holds no phone numbers, bank or ID numbers or exact locations.
+ */
+export const notifications = core.table('notifications', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
+  publicId: uuid('public_id').notNull().defaultRandom().unique(),
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).references(() => legalEntities.id),
+  recipientPersonId: bigint('recipient_person_id', { mode: 'number' }).notNull().references(() => persons.id),
+  alertCode: text('alert_code').notNull(),
+  urgency: text('urgency').notNull().default('normal'),
+  title: text('title').notNull(),
+  body: text('body'),
+  link: text('link'),
+  dedupeKey: text('dedupe_key').notNull(),
+  readAt: timestamp('read_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  unique('notifications_dedupe_unique').on(t.tenantId, t.recipientPersonId, t.dedupeKey),
+  index('idx_notifications_recipient').on(t.recipientPersonId, t.createdAt),
+  index('idx_notifications_unread').on(t.recipientPersonId).where(sql`read_at IS NULL`),
+  check('notifications_urgency_check', sql`urgency IN ('normal','urgent')`),
+  check('notifications_alert_code_format', sql`alert_code ~ '^[a-z]+([.][a-z_]+)+$'`),
+]);
+
+/** Delivery of a notification by one channel (in_app now; email and whatsapp later): sent, failed, retried. Never holds the address. */
+export const notificationDeliveries = core.table('notification_deliveries', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
+  notificationId: bigint('notification_id', { mode: 'number' }).notNull().references(() => notifications.id),
+  channel: text('channel').notNull(),
+  status: text('status').notNull().default('pending'),
+  attempts: integer('attempts').notNull().default(0),
+  lastError: text('last_error'),
+  lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  unique('notification_deliveries_channel_unique').on(t.notificationId, t.channel),
+  index('idx_notification_deliveries_pending').on(t.channel, t.id).where(sql`status = 'pending'`),
+  check('notification_deliveries_channel_check', sql`channel IN ('in_app','email','whatsapp')`),
+  check('notification_deliveries_status_check', sql`status IN ('pending','sent','failed','skipped')`),
+]);
+
+/**
+ * A person's choices for alert emails (the bell is always on). One row per person, made when they first save choices.
+ * Quiet hours (IST, HH:MM) hold urgent emails until the window ends; a window may cross midnight.
+ */
+export const notificationSettings = core.table('notification_settings', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
+  personId: bigint('person_id', { mode: 'number' }).notNull().unique().references(() => persons.id),
+  emailUrgent: boolean('email_urgent').notNull().default(true),
+  emailDigest: boolean('email_digest').notNull().default(true),
+  quietStart: varchar('quiet_start', { length: 5 }),
+  quietEnd: varchar('quiet_end', { length: 5 }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  check('notification_settings_quiet_check', sql`(quiet_start IS NULL) = (quiet_end IS NULL)`),
+  check('notification_settings_quiet_format', sql`(quiet_start IS NULL OR quiet_start ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$') AND (quiet_end IS NULL OR quiet_end ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$')`),
+]);
+
+/** Email on or off for one type of alert, for one person. No row means the default (on). */
+export const notificationPreferences = core.table('notification_preferences', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
+  personId: bigint('person_id', { mode: 'number' }).notNull().references(() => persons.id),
+  alertCode: text('alert_code').notNull(),
+  email: boolean('email').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  unique('notification_preferences_unique').on(t.personId, t.alertCode),
+  check('notification_preferences_alert_code_format', sql`alert_code ~ '^[a-z]+([.][a-z_]+)+$'`),
 ]);

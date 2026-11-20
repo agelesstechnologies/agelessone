@@ -1,11 +1,11 @@
 import { Activity, ArrowRight, BriefcaseBusiness, Users } from 'lucide-react';
 import type { ExpenseClaim } from '@ageless/shared';
 import type { ReactNode } from 'react';
-import { api } from '../api';
 import { useAuth } from '../auth';
-import { useLoad } from '../hooks';
+import { useApi } from '../hooks';
 import { ATTENDANCE, DASHBOARD, EXPENSES, PEOPLE, TICKETS } from '../permissions';
 import { PageHead } from '../ui';
+import AlertsPanel from './AlertsPanel';
 import { MyDay } from './Attendance';
 import OverdueAlerts from './OverdueAlerts';
 import { OverviewCharts } from './OverviewCharts';
@@ -18,12 +18,12 @@ export default function Overview({ go }: { go: (page: string) => void }) {
   const { me, can, seesOthers } = useAuth();
   const punch = can(ATTENDANCE.punch);
   const approve = can(EXPENSES.approve);
-  const waiting = useLoad(() => (approve ? api<ExpenseClaim[]>('/hrms/expenses/to-approve') : Promise.resolve(null)), [approve]);
+  const waiting = useApi<ExpenseClaim[]>(approve ? '/hrms/expenses/to-approve' : null);
   if (!me) return null;
-  const roles = me.roles.map((r) => r.name).join(', ') || 'No role yet';
 
   return <>
-    <PageHead eyebrow="OVERVIEW" title={`Hello, ${me.person.displayName}`} subtitle={`Signed in as ${roles}.`} />
+    <PageHead eyebrow="OVERVIEW" title={`Hello, ${me.person.displayName}`} />
+    <AlertsPanel />
     {punch && <MyDay />}
     {(can(TICKETS.view) || can(TICKETS.work) || can(TICKETS.manage)) && <OverdueAlerts />}
     {can(DASHBOARD.view) && <OverviewCharts />}

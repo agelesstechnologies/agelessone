@@ -24,6 +24,22 @@ VITE_API_URL=http://localhost:3000/api
 
 The backend allows the local Vite origin (`http://localhost:5173`) by default. Set `WEB_ORIGIN` for a different frontend origin.
 
+## Loading data
+
+API answers go through one shared cache (TanStack Query, set up in `src/query.ts`).
+
+- **Read** with `useApi<T>(path)` from `src/hooks.ts`. It returns `{ data, loading, error, reload, setData }`. Screens that
+  ask for the same path share one answer. An answer counts as fresh for 30 seconds and is read again when the browser
+  tab gets focus. A failed read is tried again (at most twice) only for network errors and 5xx answers, never for 4xx.
+  Pass `null` as the path to read nothing (for example without the permission).
+- **After a change**, call `invalidate('/area')` from `src/query.ts`: every cached answer under that path is read again,
+  e.g. `invalidate('/hrms/leave')` refreshes all leave lists. When the API answers with the updated record, `setData(record)`
+  shows it at once.
+- **Sign-out** (also when the session ends with a 401) and a different person signing in empty the cache, so nothing of
+  the previous person is shown.
+- `useLoad(fn, deps)` still exists for older screens and for loaders that combine several requests (`Promise.all`). They
+  are being moved to `useApi`; new code uses `useApi`.
+
 ## Current scope
 
 Menus and buttons follow the permissions from `GET /api/auth/me`; the backend still checks every request.

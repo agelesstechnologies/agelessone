@@ -9,10 +9,10 @@ import { LeaveService } from '../modules/hrms/leave/application/leave.service';
  * The once-a-day HRMS job: run it from Windows Task Scheduler or cron, e.g. every morning at 06:00 IST:
  *   pnpm --filter @ageless/backend build && pnpm --filter @ageless/backend hrms:daily
  * It stores certificates past their date as expired and counts those expiring within 30 days
- * (HR sees that list at GET /api/hrms/certificates/expiring). Notifications come later. It adds each month's leave
+ * (HR sees that list at GET /api/hrms/certificates/expiring, and gets a weekly alert in the bell). It adds each month's leave
  * entitlement (1 sick + 1 earned by default) and, in a new year, lapses unused sick leave.
  * It also sends leave, expense, correction and overtime requests with no decision after the company's
- * escalate_after_days (policy hrms.approvals.escalate_after_days, 5 for now) to the CEO; the approver may still decide them.
+ * escalate_after_days (policy hrms.approvals.escalate_after_days, 5 for now) to the CEO; the approver may still decide them, and each one alerts the CEO in the bell.
  */
 async function main(): Promise<void> {
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });

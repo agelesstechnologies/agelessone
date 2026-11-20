@@ -1,19 +1,21 @@
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  ArrowLeft, CalendarCheck, CalendarClock, ChevronDown, ChevronUp, Clock, Download, FileText, HardHat, History, ListChecks, MapPin, MessageSquare, Paperclip, Plus,
+  ArrowLeft, CalendarCheck, CalendarClock, ChevronDown, ChevronUp, Clock, Download, FileText, HardHat, History, ListChecks, MapPin, MessageSquare, Package, Paperclip, Plus,
   Share2, Square, Timer, User, Users,
 } from 'lucide-react';
 import {
   AddExternalStaffRequest, AssignTicketRequest, ChecklistResultRequest, EndExternalStaffRequest, LinkTicketRequest, ReasonRequest, RecordExternalAttendanceRequest,
   SignoffRequest, TicketPunchInRequest, TicketPunchOutRequest, UpdateTicketRequest,
   type ChecklistResult, type ExternalAttendance, type ExternalAttendanceStatus, type ExternalStaff, type RunningTicket, type TicketDetail as Detail,
-  type TicketPunchResult, type TicketSummary, type TicketTimelogs,
+  type TicketParts, type TicketPunchResult, type TicketSummary, type TicketTimelogs,
 } from '@ageless/shared';
 import { api, downloadFile, errText, formError } from '../api';
 import { useAuth } from '../auth';
-import { addDays, dayLabel, devicePosition, hm, timeIst, todayIst, useLoad, uuidv7, words } from '../hooks';
+import { addDays, dayLabel, devicePosition, hm, timeIst, todayIst, useApi, uuidv7, words } from '../hooks';
 import JobPicker from '../JobPicker';
-import { TICKETS } from '../permissions';
+import { anyInventory, TICKETS } from '../permissions';
+import { invalidate } from '../query';
+import TicketPartsView from './inventory/TicketParts';
 import { TicketUpdates } from './TicketTime';
 import { BillingBadge, TicketBillingBox, useTicketBilling } from '../modules/intercompany/TicketBilling';
 import { Badge, DAY_TONE, Empty, Loading, Modal, Notice, type Tone } from '../ui';
@@ -24,18 +26,19 @@ const stamp = (iso: string) => new Date(iso).toLocaleString('en-IN', { timeZone:
 
 type Dialog = 'edit' | 'assign' | 'link' | 'signoff' | { reason: 'hold' | 'cancel' | 'reopen' | 'reassign-request' } | null;
 const REASON_TITLE = { hold: 'Put on hold', cancel: 'Cancel ticket', reopen: 'Reopen ticket', 'reassign-request': 'Ask to be reassigned' } as const;
-type View = 'home' | 'time' | 'files' | 'notes' | 'checklist' | 'staff' | 'history';
-const VIEW_TITLE: Record<Exclude<View, 'home'>, string> = { time: 'Timelogs', files: 'Files and sign-off', notes: 'Notes', checklist: 'Checklist',
+type View = 'home' | 'time' | 'files' | 'notes' | 'checklist' | 'parts' | 'staff' | 'history';
+const VIEW_TITLE: Record<Exclude<View, 'home'>, string> = { time: 'Timelogs', files: 'Files and sign-off', notes: 'Notes', checklist: 'Checklist', parts: 'Parts',
   staff: 'External staff', history: 'History' };
 
 /**
  * One ticket as a page (#tickets/<id>), laid out like the Froid ticket screen: the ticket card, a grid of tiles
  * (Timelogs, Files, Notes, Checklist, External staff, History) and the main buttons. Each tile opens its own view.
- * Shows every action the signed-in person may take; the API answers each action with the updated ticket.
+ * Shows every action the signed-in person may take; the API answers each action with the updated ticket, which is
+ * shown at once while the ticket lists (and this ticket's other views) are read again.
  */
 export default function TicketPage({ id, onBack }: { id: string; onBack: () => void }) {
   const { can, me } = useAuth();
-  const q = useLoad(() => api<Detail>(`/tickets/${id}`), [id]);
+  const q = useApi<Detail>(`/tickets/${id}`);
   const [view, setView] = useState<View>('home');
   const [dialog, setDialog] = useState<Dialog>(null);
   const [error, setError] = useState('');
@@ -52,14 +55,22 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
   const assignee = !!t && t.assignees.some((a) => a.person.publicId === me?.person.publicId);
   // ticket punch is on the main screen for the ticket's assignees (the backend checks the same); the Timelogs tile keeps the history
   const mayPunch = live && can(TICKETS.work) && assignee;
-  const running = useLoad(() => (mayPunch ? api<RunningTicket[]>('/tickets/time/running') : Promise.resolve([] as RunningTicket[])), [mayPunch]);
+  const running = useApi<RunningTicket[]>(mayPunch ? '/tickets/time/running' : null);
   const timer = running.data?.find((r) => r.ticket.publicId === id);
   // intercompany billing: answered to the department head and the CEO only (null for everyone else)
   const billing = useTicketBilling(id);
+  // the Parts tile: for people with an inventory role (requesters, the store, department heads); the API decides what each sees
+  // (no tile when the API refuses)
+  const parts = useApi<TicketParts>(anyInventory(can) ? `/inventory/tickets/${id}/parts` : null);
+  const openRequests = parts.data?.requests.filter((r) => r.status === 'pending' || r.status === 'approved').length ?? 0;
 
   async function act(fn: () => Promise<Detail | void>, done?: string) {
     setBusy(true); setError(''); setNote('');
-    try { const r = await fn(); if (r) q.setData(r); setDialog(null); if (done) setNote(done); }
+    try {
+      const r = await fn();
+      if (r) { q.setData(r); void invalidate('/tickets'); }   // the lists show the change too
+      setDialog(null); if (done) setNote(done);
+    }
     catch (e) { setError(errText(e)); }
     finally { setBusy(false); }
   }
@@ -81,8 +92,7 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
         const r = await api<TicketPunchResult>('/tickets/punch-in', { method: 'POST', json: parsed.data });
         setNote(r.confirmation?.message ?? 'Punched in on this ticket.');
       }
-      running.reload();
-      q.setData(await api<Detail>(`/tickets/${id}`));
+      await invalidate('/tickets');   // the timer, this ticket (the first punch-in starts it), its timelogs and the lists
     } catch (e) { setError(errText(e)); }
     finally { setBusy(false); }
   }
@@ -92,7 +102,7 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
   }
   function back() {
     setError(''); setNote('');
-    if (view === 'home') onBack(); else { setView('home'); q.reload(); }
+    if (view === 'home') onBack(); else { setView('home'); q.reload(); parts.reload(); }
   }
 
   const head = <div className="tp-bar">
@@ -111,6 +121,7 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
     { key: 'files', label: 'Files', icon: <Paperclip size={22} />, count: t.attachments.length ? String(t.attachments.length) : undefined },
     { key: 'notes', label: 'Notes', icon: <MessageSquare size={22} /> },
     ...(t.checklist.length ? [{ key: 'checklist' as const, label: 'Checklist', icon: <ListChecks size={22} />, count: `${answered}/${t.checklist.length}` }] : []),
+    ...(parts.data ? [{ key: 'parts' as const, label: 'Parts', icon: <Package size={22} />, count: openRequests ? String(openRequests) : undefined }] : []),
     { key: 'staff', label: 'External staff', icon: <HardHat size={22} /> },
     { key: 'history', label: 'History', icon: <History size={22} /> },
   ];
@@ -188,6 +199,7 @@ export default function TicketPage({ id, onBack }: { id: string; onBack: () => v
     </>}
 
     {view === 'time' && <Timelogs t={t} />}
+    {view === 'parts' && <TicketPartsView ticketId={id} />}
     {view === 'notes' && <section className="tp-card"><TicketUpdates ticketId={id} label={t.number} inline /></section>}
     {view === 'staff' && <ExternalStaffSection ticketId={id} canAdd={runSite && live} canMark={t.status !== 'cancelled'} />}
     {view === 'files' && <section className="tp-card">
@@ -242,7 +254,7 @@ function UploadButton({ label, accept, onFile }: { label: string; accept: string
 
 /** Everyone's ticket punches on this ticket (newest first) and the counted time. Punch in / out is on the ticket's main screen. */
 function Timelogs({ t }: { t: Detail }) {
-  const q = useLoad(() => api<TicketTimelogs>(`/tickets/${t.publicId}/timelogs`), [t.publicId]);
+  const q = useApi<TicketTimelogs>(`/tickets/${t.publicId}/timelogs`);
 
   return <section className="tp-card">
     {q.error && <Notice>{q.error}</Notice>}
@@ -320,7 +332,7 @@ function AssignTicket({ company, onClose, run }: { company: string; onClose: () 
 }
 
 function LinkTicket({ t, onClose, run }: { t: Detail; onClose: () => void; run: (b: LinkTicketRequest) => Promise<void> }) {
-  const others = useLoad(() => api<TicketSummary[]>(`/tickets?company=${t.company}&limit=200`), [t.company]);
+  const others = useApi<TicketSummary[]>(`/tickets?company=${t.company}&limit=200`);
   const [error, setError] = useState('');
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -379,9 +391,8 @@ const byDayThenName = (a: ExternalAttendance, b: ExternalAttendance) => b.workDa
  * one their attendance of the last two weeks. The person who added a worker (or a manager) marks it. canMark: the ticket is not cancelled.
  */
 function ExternalStaffSection({ ticketId, canAdd, canMark }: { ticketId: string; canAdd: boolean; canMark: boolean }) {
-  const list = useLoad(() => api<ExternalStaff[]>(`/tickets/${ticketId}/external-staff`), [ticketId]);
-  const attendance = useLoad(() => api<ExternalAttendance[]>(
-    `/tickets/${ticketId}/external-staff/attendance?from=${addDays(todayIst(), -(RECENT_DAYS - 1))}&to=${todayIst()}`), [ticketId]);
+  const list = useApi<ExternalStaff[]>(`/tickets/${ticketId}/external-staff`);
+  const attendance = useApi<ExternalAttendance[]>(`/tickets/${ticketId}/external-staff/attendance?from=${addDays(todayIst(), -(RECENT_DAYS - 1))}&to=${todayIst()}`);
   const [adding, setAdding] = useState(false);
   const [marking, setMarking] = useState<ExternalStaff | null>(null);
   const [error, setError] = useState('');

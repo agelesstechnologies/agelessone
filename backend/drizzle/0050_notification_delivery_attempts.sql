@@ -1,0 +1,1 @@
+ALTER TABLE "core"."notification_deliveries" ADD COLUMN "last_attempt_at" timestamp with time zone;

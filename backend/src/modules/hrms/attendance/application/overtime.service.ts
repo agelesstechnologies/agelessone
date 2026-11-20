@@ -68,6 +68,11 @@ export class OvertimeService {
           workDate: req.workDate, minutes: req.minutes, reason: req.reason, ticketId, requestedBy: ctx.personId, approverPersonId,
         });
         if (noApproval) await this.applyApproval(tx, ctx.tenantId, (await this.repo.lock(tx, ctx.tenantId, publicId))!, null, 'no_approval_required');
+        else if (approverPersonId) {
+          await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: job.legalEntityId, alertCode: 'hrms.overtime_submitted',
+            title: `${await this.core.displayNameOf(tx, job.personId)} asked for overtime`, body: `${req.minutes} min on ${req.workDate}: waiting for your decision.`,
+            link: 'approvals', dedupeKey: `hrms.overtime_submitted:${publicId}`, recipients: { personIds: [approverPersonId] } });
+        }
       });
     } catch (err) {
       if (violatedConstraint(err) === 'overtime_requests_public_id_unique') return this.request(ctx, req); // the same request twice at once
@@ -89,6 +94,9 @@ export class OvertimeService {
     await this.db.transaction(async (tx) => {
       const r = await this.decidable(tx, ctx, publicId, 'approve');
       await this.applyApproval(tx, ctx.tenantId, r, ctx.personId, decidedAs(ctx, r.approverPersonId === ctx.personId));
+      await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: r.legalEntityId, alertCode: 'hrms.overtime_decided',
+        title: 'Your overtime was approved', body: `${r.minutes} min on ${r.workDate}.`, link: 'attendance',
+        dedupeKey: `hrms.overtime_decided:${r.publicId}`, recipients: { personIds: [r.personId] }, except: [ctx.personId] });
     });
     return (await this.repo.request(ctx.tenantId, publicId))!;
   }
@@ -101,6 +109,9 @@ export class OvertimeService {
       await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'overtime.rejected', entity: 'overtime_request',
         entityPublicId: r.publicId, subjectPersonId: r.personId, legalEntityId: r.legalEntityId,
         summary: `Overtime of ${r.minutes} min for ${r.personName} on ${r.workDate} rejected (${as})` });
+      await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: r.legalEntityId, alertCode: 'hrms.overtime_decided',
+        title: 'Your overtime was rejected', body: `${r.minutes} min on ${r.workDate}. Reason: ${req.reason}`, link: 'attendance',
+        dedupeKey: `hrms.overtime_decided:${r.publicId}`, recipients: { personIds: [r.personId] }, except: [ctx.personId] });
     });
     return (await this.repo.request(ctx.tenantId, publicId))!;
   }

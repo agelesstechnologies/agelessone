@@ -7,9 +7,12 @@ import { Badge, Notice } from '../ui';
 
 /**
  * What each role reaches: Employee their own records; Manager and CEO their team; Supervisor (on site only) team, for
- * the tickets they supervise; everyone else the whole tenant.
+ * the tickets they supervise. Inventory: Storekeeper own (the locations they look after), Store in-charge team (every
+ * location of the companies they work in), Inventory controller all (every company), Parts requester own.
+ * Everyone else the whole tenant.
  */
-const SCOPE: Record<string, 'own' | 'team' | 'all'> = { employee: 'own', manager: 'team', supervisor: 'team', ceo: 'team' };
+const SCOPE: Record<string, 'own' | 'team' | 'all'> = { employee: 'own', manager: 'team', supervisor: 'team', ceo: 'team',
+  storekeeper: 'own', store_incharge: 'team', inventory_controller: 'all', parts_requester: 'own' };
 const REACH = { own: 'own records', team: 'their team', all: 'everyone' };
 
 /**

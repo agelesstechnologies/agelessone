@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import {
-  ChangePasswordRequest, CodeSent, CompleteFirstLoginRequest, ForgotPasswordRequest, ForgotPasswordResponse, LoginRequest, LoginResponse, Me,
+  ChangePasswordRequest, CodeSent, CompleteFirstLoginRequest, ForgotPasswordRequest, ForgotPasswordResponse, LoginRequest, LoginResponse, MachineTokenRequest, MachineTokenResponse, Me,
   ResetWithCodeRequest,
 } from '@ageless/shared';
 import { mailFailure, maskEmail, sendMail } from '../../../../platform/mailer';
@@ -17,7 +17,10 @@ import { lockedMessage, secondsLocked, throttleKey, throttleSettings } from '../
 import { CODE_TTL_MS, codeProblem, hashCode, MAX_CODES_PER_HOUR, newCode, sameHash } from '../domain/codes';
 
 export const BCRYPT_ROUNDS = 10;
-interface TokenPayload { sub: string; tid: number; iat: number }
+/** A person's token has sub (the login); a machine's has mid (the credential) instead. */
+interface TokenPayload { sub?: string; mid?: string; tid: number; iat: number }
+/** Machine tokens are short: the connector signs in again when one ends. */
+const MACHINE_TOKEN_SECONDS = 15 * 60;
 type UserRow = NonNullable<Awaited<ReturnType<AuthRepository['findUser']>>>;
 
 /** Sign-in with a phone or email, the token check on every request, and password changes. */
@@ -69,6 +72,36 @@ export class AuthService {
     return new AppError('AUTH_LOCKED', 429, lockedMessage(seconds), { retryAfterSeconds: seconds });
   }
 
+  /**
+   * The Tally connector signs in with its client id and secret. Same answer for an unknown client, a wrong secret and a revoked
+   * credential. Failures are throttled per client and per IP like person sign-ins (429 AUTH_LOCKED).
+   */
+  async machineToken(req: MachineTokenRequest, ip: string | undefined): Promise<MachineTokenResponse> {
+    const s = throttleSettings();
+    const secret = requireEnv('JWT_SECRET');
+    const clientKey = throttleKey('machine', req.clientId, secret);
+    const ipKey = throttleKey('ip', ip ?? 'unknown', secret);
+    const now = new Date();
+    const locked = secondsLocked(await this.repo.lockouts([clientKey, ipKey]), now);
+    if (locked > 0) throw this.lockedError(locked);
+
+    const cred = await this.repo.findMachineByClientId(req.clientId);
+    const matches = await bcrypt.compare(req.secret, cred?.secretHash ?? await this.dummy());
+    if (!cred || !matches || !cred.isActive) {
+      const until = [
+        await this.repo.recordFailure(clientKey, now, s.maxPerLogin, s.windowMs, s.lockoutMs),
+        await this.repo.recordFailure(ipKey, now, s.maxPerIp, s.windowMs, s.lockoutMs),
+      ];
+      const lockedNow = secondsLocked(until, now);
+      if (lockedNow > 0) throw this.lockedError(lockedNow);
+      throw new AppError('AUTH_FAILED', 401, 'Wrong client id or secret');
+    }
+    await this.repo.clearThrottle([clientKey]);
+    await this.repo.markMachineUsed(cred.id);
+    const token = await this.jwt.signAsync({ mid: cred.publicId, tid: cred.tenantId }, { expiresIn: MACHINE_TOKEN_SECONDS });
+    return { token, expiresAt: new Date(Date.now() + MACHINE_TOKEN_SECONDS * 1000).toISOString() };
+  }
+
   /** Called by the guard for every request: a valid token for a usable login, plus today's permissions. */
   async authenticate(token: string): Promise<RequestContext> {
     let payload: TokenPayload;
@@ -78,7 +111,8 @@ export class AuthService {
       if ((err as Error).name === 'TokenExpiredError') throw new AppError('AUTH_EXPIRED', 401, 'Your sign-in has expired; sign in again');
       throw new AppError('AUTH_INVALID', 401, 'Your session has ended. Please sign in again.');
     }
-    const user = await this.repo.findUser(payload.tid, payload.sub);
+    if (payload.mid) return this.authenticateMachine(payload.tid, payload.mid);
+    const user = await this.repo.findUser(payload.tid, payload.sub ?? '');
     if (!user || !this.mayUse(user) || !issuedAfterPasswordChange(payload.iat, user.passwordChangedAt)) {
       throw new AppError('AUTH_INVALID', 401, 'Your session has ended. Please sign in again.');
     }
@@ -86,6 +120,16 @@ export class AuthService {
     return {
       tenantId: user.tenantId, personId: user.personId, personPublicId: user.personPublicId,
       userPublicId: user.publicId, permissions: widestScopes(grants), mustChangePassword: user.mustChangePassword,
+    };
+  }
+
+  /** A machine token is good only while its credential exists in that tenant and has not been revoked. */
+  private async authenticateMachine(tenantId: number, publicId: string): Promise<RequestContext> {
+    const cred = await this.repo.findMachine(tenantId, publicId);
+    if (!cred || !cred.isActive) throw new AppError('AUTH_INVALID', 401, 'This credential is no longer valid.');
+    return {
+      tenantId: cred.tenantId, personId: 0, personPublicId: '', userPublicId: '', permissions: { [cred.permission]: 'all' },
+      machine: { credentialId: cred.id, publicId: cred.publicId, name: cred.name, permission: cred.permission },
     };
   }
 

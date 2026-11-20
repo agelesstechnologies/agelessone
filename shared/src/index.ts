@@ -1,9 +1,14 @@
 /** The zod instance these schemas are built with (tools that extend zod, like the OpenAPI builder, must use this one). */
 export { z } from 'zod';
+export * from './accounts';
+export * from './accounts-tally';
+export * from './accounts-connector';
+export * from './tally-response';
 export * from './errors';
 export * from './common';
 export * from './core/auth';
 export * from './core/policies';
+export * from './core/notifications';
 export * from './events/envelope';
 export * from './hrms/attendance';
 export * from './hrms/calendar';
@@ -21,6 +26,9 @@ export * from './hrms/people';
 export * from './hrms/punch';
 export * from './hrms/skills';
 export * from './intercompany';
+export * from './inventory';
+export * from './inventory-stock';
+export * from './inventory-requests';
 export * from './payroll';
 export * from './tickets';
 export * from './ticket-records';

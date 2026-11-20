@@ -66,9 +66,28 @@ export const POLICIES = {
     value: z.number().int().min(1).max(744), default: 208,
     description: 'Hours a monthly salary pays for, to give a person\'s cost per hour (salary ÷ hours) for cost plus pricing and the margin report (26 days × 8 h for now)',
   },
+  'inventory.parts.ticket_types': {
+    value: z.array(z.string().regex(/^[a-z][a-z0-9_]{1,39}$/, 'Use ticket type codes (lower case, e.g. production)')).max(40),
+    default: ['production', 'workshop', 'installation', 'service', 'site_work'] as string[],
+    description: 'Ticket types (by code) whose assignees may request parts, when they also hold the Parts requester role',
+  },
+  'inventory.requests.head_approval_above_paise': {
+    value: z.number().int().min(0).max(100_000_000_000), default: 1_000_000,
+    description: 'A part request whose estimated value is above this (paise; default ₹10,000) also needs the approval of the ticket department head',
+  },
+  'inventory.requests.reserve_days': {
+    value: z.number().int().min(1).max(365), default: 14,
+    description: 'Days an approved part request keeps its stock reserved, unless the approver sets another date',
+  },
   'payroll.lop_basis': {
     value: z.enum(['calendar_days', 'fixed_30']), default: 'calendar_days' as 'calendar_days' | 'fixed_30',
     description: 'Days a monthly salary is divided by for loss of pay and part months: calendar days of the month, or always 30',
+  },
+  // DECISION: HR & Accounts staff are not appointed yet. Until they are, these roles act as Accounts maker and checker.
+  'accounts.interim_roles': {
+    value: z.object({ maker: z.array(z.string().trim().min(1).max(40)).max(10), checker: z.array(z.string().trim().min(1).max(40)).max(10) }),
+    default: { maker: ['hr'], checker: ['ceo'] } as { maker: string[]; checker: string[] },
+    description: 'Roles that act as Accounts maker (drafts, creates batches) and checker (approves, closes months) until Accounts staff exist',
   },
 } as const;
 export type PolicyKey = keyof typeof POLICIES;

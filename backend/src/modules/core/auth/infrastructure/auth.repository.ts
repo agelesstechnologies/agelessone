@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { DB, Db } from '../../../../platform/db/db.module';
-import { loginCodes, loginThrottle, permissions, persons, roleAssignments, rolePermissions, roles, users } from '../../schema';
+import { loginCodes, loginThrottle, machineCredentials, permissions, persons, roleAssignments, rolePermissions, roles, users } from '../../schema';
 import { Scope } from '../domain/login';
 
 const userColumns = {
@@ -66,6 +66,35 @@ export class AuthRepository {
     const [row] = await this.db.select(userColumns).from(users).innerJoin(persons, eq(persons.id, users.personId))
       .where(and(eq(users.tenantId, tenantId), eq(users.publicId, publicId)));
     return row;
+  }
+
+  // ---- machine credentials (the Tally connector) ----
+
+  async findMachineByClientId(clientId: string) {
+    const [row] = await this.db.select().from(machineCredentials).where(eq(machineCredentials.clientId, clientId));
+    return row;
+  }
+
+  async findMachine(tenantId: number, publicId: string) {
+    const [row] = await this.db.select().from(machineCredentials).where(and(eq(machineCredentials.tenantId, tenantId), eq(machineCredentials.publicId, publicId)));
+    return row;
+  }
+
+  async insertMachine(v: typeof machineCredentials.$inferInsert) {
+    const [row] = await this.db.insert(machineCredentials).values(v).returning();
+    return row!;
+  }
+
+  listMachines(tenantId: number) {
+    return this.db.select().from(machineCredentials).where(eq(machineCredentials.tenantId, tenantId)).orderBy(machineCredentials.id);
+  }
+
+  async revokeMachine(id: number): Promise<void> {
+    await this.db.update(machineCredentials).set({ isActive: false, revokedAt: new Date() }).where(eq(machineCredentials.id, id));
+  }
+
+  async markMachineUsed(id: number): Promise<void> {
+    await this.db.update(machineCredentials).set({ lastUsedAt: new Date() }).where(eq(machineCredentials.id, id));
   }
 
   async markLoggedIn(userId: number): Promise<void> {

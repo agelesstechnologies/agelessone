@@ -16,7 +16,7 @@ const daysFrom = (from: string, to: string) => Math.round((Date.parse(`${to}T00:
  * Overdue escalation, the way approvals escalate: an unfinished ticket past its due date alerts its department head
  * (and its supervisor) the day after; once it is policy tickets.overdue.ceo_after_days days overdue (3 for now) it is also
  * sent to the CEO. The daily job (tickets:daily) takes the steps; each is a timeline event. A new due date starts again.
- * There are no notifications yet: the alerts are lists (GET /tickets/overdue-alerts) on the Overview and the CEO dashboard.
+ * Each step also alerts the people in their bell (CoreFacade.notify); the lists (GET /tickets/overdue-alerts) stay on the Overview and the CEO dashboard.
  */
 @Injectable()
 export class TicketOverdueService {
@@ -49,11 +49,18 @@ export class TicketOverdueService {
           await this.repo.markOverdueAlerted(tx, t.id, due);
           await this.tickets.event(tx, null, ref, 'overdue_head_alerted', { dueDate: due, daysOverdue: days });
           alerted++;
+          const head = await this.repo.departmentHead(tx, t.departmentId);
+          await this.core.notify(tx, { tenantId: t.tenantId, legalEntityId: t.legalEntityId, alertCode: 'tickets.overdue', urgency: 'normal',
+            title: `Ticket ${t.number} is overdue`, body: `${t.title} was due on ${due}.`, link: `tickets/${t.publicId}`,
+            dedupeKey: `tickets.overdue:${t.publicId}:${due}:head`, recipients: { personIds: [t.supervisorPersonId, ...(head ? [head] : [])] } });
         }
         if (toCeo) {
           await this.repo.markOverdueSentToCeo(tx, t.id);
           await this.tickets.event(tx, null, ref, 'overdue_sent_to_ceo', { dueDate: due, daysOverdue: days, reason: `Overdue for ${days} day${days === 1 ? '' : 's'}` });
           sentToCeo++;
+          await this.core.notify(tx, { tenantId: t.tenantId, legalEntityId: t.legalEntityId, alertCode: 'tickets.overdue_ceo', urgency: 'urgent',
+            title: `Ticket ${t.number} is ${days} day${days === 1 ? '' : 's'} overdue`, body: `${t.title} was due on ${due}.`, link: `tickets/${t.publicId}`,
+            dedupeKey: `tickets.overdue_ceo:${t.publicId}:${due}`, recipients: { roles: ['ceo'] } });
         }
       });
     }

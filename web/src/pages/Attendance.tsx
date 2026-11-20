@@ -7,6 +7,7 @@ import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
 import { addDays, dayLabel, devicePosition, hm, timeIst, todayIst, useLoad, useMyEmployments, uuidv7, words } from '../hooks';
 import { ATTENDANCE, TICKETS } from '../permissions';
+import { invalidate } from '../query';
 import { TodaySplit } from './SplitSuggestions';
 import { Badge, DAY_TONE, Empty, Loading, Notice, PageHead, Panel, Tabs, CsvButton } from '../ui';
 import { CorrectionModal, MyRequests, OvertimeModal, RequestApprovals } from './AttendanceRequests';
@@ -22,7 +23,7 @@ export default function Attendance() {
   ];
   const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'today');
   return <>
-    <PageHead eyebrow="HRMS • ATTENDANCE" title="Attendance" subtitle="Daily punch, work hours history, corrections, overtime and the team register." />
+    <PageHead eyebrow="HRMS • ATTENDANCE" title="Attendance" />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'today' && <MyDay />}
     {tab === 'history' && <MyHistory />}
@@ -65,6 +66,7 @@ export function MyDay() {
       setOk(kind === 'in' ? 'You are punched in.' : 'You are punched out.');
       setPunchedOut(kind === 'out');
       today.reload();
+      void invalidate('/tickets');   // the daily punch-out also stops running ticket timers
     } catch (e) { setError(errText(e)); }
     finally { setBusy(false); }
   }

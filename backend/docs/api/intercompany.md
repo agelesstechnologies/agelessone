@@ -9,7 +9,7 @@ invoiced and closed; a **billed month** never changes again. **Reports** (CSV to
 
 Base URL `http://localhost:3000/api`; every call needs `Authorization: Bearer <token>`. Request and answer shapes are
 defined once in `shared/src/intercompany.ts`. Code: `backend/src/modules/intercompany`. Tables: schema `intercompany`
-(migrations `0040_intercompany.sql`, `0041_intercompany_statements.sql`, `0042_intercompany_line_events.sql`). Daily job:
+(migrations `0052_intercompany.sql`, `0053_intercompany_statements.sql`, `0054_intercompany_line_events.sql`). Daily job:
 `intercompany:daily`. Web: `web/src/modules/intercompany/` (menu Accounts › Intercompany; the ticket page's billing box;
 the CEO dashboard's cards).
 

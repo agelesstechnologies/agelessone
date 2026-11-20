@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import {
   CreateDepartmentRequest, CreatePositionRequest, FillPositionRequest, UpdateDepartmentRequest,
@@ -10,16 +10,10 @@ import { dayLabel, useLoad, uuidv7 } from '../hooks';
 import JobPicker, { PersonPicker } from '../JobPicker';
 import { LETTERS, PEOPLE } from '../permissions';
 import LetterTemplates from './LetterTemplates';
-import { Badge, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs, type Tone } from '../ui';
+import { Badge, COMPANIES, CompanyFilter, Empty, FormModal, Loading, Notice, PageHead, Panel, Tabs, type Tone } from '../ui';
 
 type TabKey = 'departments' | 'designations' | 'positions' | 'letters';
-const COMPANIES = [{ code: 'AE', name: 'Ageless Entertainments' }, { code: 'ATPL', name: 'Ageless Technologies' }];
 const POSITION_TONE: Record<string, Tone> = { planned: 'gray', open: 'amber', filled: 'green' };
-
-const CompanyFilter = ({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) =>
-  <label className="inline-field">Company
-    <select id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="">All</option>{COMPANIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select></label>;
 
 export default function Organisation() {
   const { can } = useAuth();
@@ -31,7 +25,7 @@ export default function Organisation() {
   ];
   const [tab, setTab] = useState<TabKey>('departments');
   return <>
-    <PageHead eyebrow="HRMS • ORGANISATION" title="Organisation" subtitle="Departments, designations and the positions each company plans to fill." />
+    <PageHead eyebrow="HRMS • ORGANISATION" title="Organisation" />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'departments' && <Departments />}
     {tab === 'designations' && <Designations />}
@@ -60,28 +54,6 @@ function Departments() {
     {dialog?.kind === 'new' && <NewDepartment onClose={() => setDialog(null)} onSaved={() => { setDialog(null); q.reload(); }} />}
     {dialog?.kind === 'edit' && <EditDepartment dept={dialog.dept} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); q.reload(); }} />}
   </Panel>;
-}
-
-/** Shared form shell: validate, send, report. */
-function FormModal({ title, subtitle, submitLabel, onClose, run, children }: {
-  title: string; subtitle?: string; submitLabel: string; onClose: () => void; run: (f: FormData) => Promise<void> | string; children: React.ReactNode;
-}) {
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  async function submit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const result = run(new FormData(e.currentTarget));
-    if (typeof result === 'string') { setError(result); return; }
-    setBusy(true); setError('');
-    try { await result; } catch (err) { setError(errText(err)); } finally { setBusy(false); }
-  }
-  return <Modal title={title} subtitle={subtitle} onClose={onClose}>
-    <form onSubmit={submit}>
-      {error && <Notice>{error}</Notice>}
-      <div className="form-grid">{children}</div>
-      <div className="modal-foot"><button type="button" className="outline-btn" onClick={onClose}>Cancel</button><button className="primary-btn" disabled={busy}>{busy ? 'Saving…' : submitLabel}</button></div>
-    </form>
-  </Modal>;
 }
 
 function NewDepartment({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {

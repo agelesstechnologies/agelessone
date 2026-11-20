@@ -90,6 +90,12 @@ export class LeaveService {
           days, reason: req.reason, approverPersonId,
         });
         if (noApproval) await this.applyApproval(tx, ctx.tenantId, (await this.repo.lockRequest(tx, ctx.tenantId, publicId))!, null, 'no_approval_required');
+        else if (approverPersonId) {
+          await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: job.legalEntityId, alertCode: 'hrms.leave_submitted',
+            title: `${await this.core.displayNameOf(tx, ctx.personId)} applied for leave`,
+            body: `${req.fromDate === req.toDate ? req.fromDate : `${req.fromDate} to ${req.toDate}`} (${days} day${days === 1 ? '' : 's'}) is waiting for your decision.`,
+            link: 'approvals', dedupeKey: `hrms.leave_submitted:${publicId}`, recipients: { personIds: [approverPersonId] } });
+        }
       });
     } catch (err) {
       if (violatedConstraint(err, '23P01') === 'leave_requests_no_overlap') {
@@ -117,6 +123,9 @@ export class LeaveService {
     await this.db.transaction(async (tx) => {
       const r = await this.decidable(tx, ctx, publicId, 'approve');
       await this.applyApproval(tx, ctx.tenantId, r, ctx.personId, decidedAs(ctx, r.approverPersonId === ctx.personId));
+      await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: r.legalEntityId, alertCode: 'hrms.leave_decided',
+        title: 'Your leave was approved', body: `${r.fromDate === r.toDate ? r.fromDate : `${r.fromDate} to ${r.toDate}`}.`,
+        link: 'leave', dedupeKey: `hrms.leave_decided:${r.publicId}`, recipients: { personIds: [r.personId] }, except: [ctx.personId] });
     });
     return (await this.repo.request(ctx.tenantId, publicId))!;
   }
@@ -129,6 +138,9 @@ export class LeaveService {
       await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'leave.rejected', entity: 'leave_request',
         entityPublicId: r.publicId, subjectPersonId: r.personId, legalEntityId: r.legalEntityId,
         summary: `Leave of ${r.personName} ${r.fromDate} to ${r.toDate} rejected (${as})` });
+      await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: r.legalEntityId, alertCode: 'hrms.leave_decided',
+        title: 'Your leave was rejected', body: `${r.fromDate === r.toDate ? r.fromDate : `${r.fromDate} to ${r.toDate}`}. Reason: ${req.reason}`,
+        link: 'leave', dedupeKey: `hrms.leave_decided:${r.publicId}`, recipients: { personIds: [r.personId] }, except: [ctx.personId] });
     });
     return (await this.repo.request(ctx.tenantId, publicId))!;
   }

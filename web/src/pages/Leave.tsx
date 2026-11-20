@@ -9,6 +9,7 @@ import { VoiceInput } from '../VoiceInput';
 import { addDays, dayLabel, todayIst, useLoad, useMyEmployments, uuidv7, words } from '../hooks';
 import { LEAVE } from '../permissions';
 import { Badge, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs, CsvButton, type Tone } from '../ui';
+import { decided } from './Approvals';
 
 type TabKey = 'mine' | 'approve' | 'report';
 const LEAVE_TONE: Record<string, Tone> = { draft: 'gray', submitted: 'amber', approved: 'green', rejected: 'red', cancelled: 'gray' };
@@ -22,9 +23,7 @@ export default function Leave() {
   ];
   const [tab, setTab] = useState<TabKey>(tabs[0]?.key ?? 'mine');
   return <>
-    <PageHead eyebrow="HRMS • LEAVE" title="Leave" subtitle={can(LEAVE.apply)
-      ? (can(LEAVE.approve) ? 'Apply for leave, check balances, and approve your team\'s requests.' : 'Apply for leave and check your balances.')
-      : 'Approve leave requests and see who is on leave.'} />
+    <PageHead eyebrow="HRMS • LEAVE" title="Leave" />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'mine' && <MyLeave />}
     {tab === 'approve' && <Approvals />}
@@ -176,7 +175,7 @@ function Approvals() {
 
   async function approve(r: LeaveRequestView) {
     setBusyId(r.publicId); setError('');
-    try { await api(`/hrms/leave/requests/${r.publicId}/approve`, { method: 'POST', json: {} }); drop(r.publicId); }
+    try { await api(`/hrms/leave/requests/${r.publicId}/approve`, { method: 'POST', json: {} }); drop(r.publicId); decided(); }
     catch (e) { setError(errText(e)); }
     finally { setBusyId(''); }
   }
@@ -193,7 +192,7 @@ function Approvals() {
               <button className="outline-btn ok" disabled={busyId === r.publicId} onClick={() => void approve(r)}><Check size={13} /> Approve</button>
               <button className="outline-btn danger" onClick={() => setRejecting(r)}><X size={13} /> Reject</button></td></tr>)}</tbody></table></div>}
     </div>
-    {rejecting && <Reject request={rejecting} onClose={() => setRejecting(null)} onDone={() => { drop(rejecting.publicId); setRejecting(null); }} />}
+    {rejecting && <Reject request={rejecting} onClose={() => setRejecting(null)} onDone={() => { drop(rejecting.publicId); setRejecting(null); decided(); }} />}
   </Panel>;
 }
 

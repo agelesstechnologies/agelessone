@@ -1,0 +1,22 @@
+{
+  "name": "@ageless/connector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runs on the Tally server PC: polls the Ageless API for approved Tally batches, posts them to Tally on localhost, reports the result. Only calls out; opens no port.",
+  "main": "dist/main.js",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@ageless/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.7.5",
+    "typescript": "5.6.3",
+    "vitest": "2.1.3"
+  }
+}

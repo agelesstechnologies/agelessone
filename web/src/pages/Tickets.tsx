@@ -6,9 +6,10 @@ import {
 } from '@ageless/shared';
 import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
-import { dayLabel, uuidv7, useLoad, useMyEmployments } from '../hooks';
+import { dayLabel, uuidv7, useApi, useLoad, useMyEmployments } from '../hooks';
 import JobPicker, { PersonPicker } from '../JobPicker';
 import { TICKET_TYPES, TICKETS } from '../permissions';
+import { invalidate } from '../query';
 import { Badge, Empty, Loading, Modal, Notice, PageHead, Panel, Tabs } from '../ui';
 import TicketPage, { STATUS_TONE, statusLabel } from './TicketDetail';
 import TicketReports from './TicketReports';
@@ -56,8 +57,7 @@ export default function Tickets() {
     return <TicketPage id={openId} onBack={() => { if (window.history.length > 1) window.history.back(); else window.location.hash = 'tickets'; }} />;
   }
   return <>
-    <PageHead eyebrow="OPERATIONS • TICKETS" title="Tickets" subtitle="Service work: who does what, for how long, and what is left."
-      action={createsTickets ? <button className="primary-btn" onClick={() => setCreating(true)}><Plus size={16} /> New ticket</button> : undefined} />
+    <PageHead eyebrow="OPERATIONS • TICKETS" title="Tickets"      action={createsTickets ? <button className="primary-btn" onClick={() => setCreating(true)}><Plus size={16} /> New ticket</button> : undefined} />
     <Tabs tabs={tabs} value={tab} onChange={setTab} />
     {tab === 'mine' && <TicketList key={`m${version}`} mine />}
     {tab === 'all' && <TicketList key={`a${version}`} />}
@@ -66,7 +66,7 @@ export default function Tickets() {
     {tab === 'reports' && <TicketReports />}
     {tab === 'types' && <TicketTypes />}
     {tab === 'numbers' && <Numbering />}
-    {creating && <NewTicket onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setVersion((v) => v + 1); }} />}
+    {creating && <NewTicket onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setVersion((v) => v + 1); void invalidate('/tickets'); }} />}
   </>;
 }
 
@@ -76,7 +76,7 @@ function TicketList({ mine }: { mine?: boolean }) {
   const [overdue, setOverdue] = useState(false);
   const path = mine ? `/tickets/mine${status ? `?status=${status}` : ''}`
     : `/tickets?${new URLSearchParams({ limit: '200', ...(status && { status }), ...(company && { company }), ...(overdue && { overdue: 'true' }) })}`;
-  const q = useLoad(() => api<TicketSummary[]>(path), [path]);
+  const q = useApi<TicketSummary[]>(path);
   return <Panel title={mine ? 'My tickets' : 'All tickets'} note={mine ? 'Tickets you are assigned to, supervise or created.' : 'Tickets you may see, newest first.'}>
     <div className="panel-body">
       <div className="filters">
@@ -176,7 +176,7 @@ function Reassignments() {
   const [status, setStatus] = useState('pending');
   const [error, setError] = useState('');
   const [deciding, setDeciding] = useState<{ r: ReassignmentRequest; kind: 'approve' | 'reject' } | null>(null);
-  const q = useLoad(() => api<ReassignmentRequest[]>(`/tickets/reassign-requests${status ? `?status=${status}` : ''}`), [status]);
+  const q = useApi<ReassignmentRequest[]>(`/tickets/reassign-requests${status ? `?status=${status}` : ''}`);
   return <Panel title="Reassignment requests" note="Assignees who asked to hand a ticket over. You see the ones you decide.">
     <div className="panel-body">
       <div className="filters"><label className="inline-field">Status<select id="ra-status" className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -191,7 +191,7 @@ function Reassignments() {
               <button className="text-btn" onClick={() => setDeciding({ r, kind: 'approve' })}>Approve</button>
               <button className="text-btn" onClick={() => setDeciding({ r, kind: 'reject' })}>Reject</button></span>}</td></tr>)}</tbody></table></div>}
     </div>
-    {deciding && <Decide r={deciding.r} kind={deciding.kind} onClose={() => setDeciding(null)} onDone={() => { setDeciding(null); q.reload(); }} onError={setError} />}
+    {deciding && <Decide r={deciding.r} kind={deciding.kind} onClose={() => setDeciding(null)} onDone={() => { setDeciding(null); void invalidate('/tickets'); }} onError={setError} />}
   </Panel>;
 }
 
@@ -216,7 +216,7 @@ function Decide({ r, kind, onClose, onDone, onError }: { r: ReassignmentRequest;
 }
 
 function Numbering() {
-  const q = useLoad(() => api<NumberSeries[]>('/tickets/number-series'));
+  const q = useApi<NumberSeries[]>('/tickets/number-series');
   const [editing, setEditing] = useState<NumberSeries | null>(null);
   return <Panel title="Ticket numbering" note="Each company's prefix and next number. Imported Froid tickets keep their numbers.">
     <div className="panel-body">

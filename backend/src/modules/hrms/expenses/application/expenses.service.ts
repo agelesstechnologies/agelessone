@@ -79,6 +79,13 @@ export class ExpensesService {
             entityPublicId: id, subjectPersonId: ctx.personId, legalEntityId: job.legalEntityId,
             summary: `Expense claim of ${claim.personName} for ${rupees(claim.amountPaise)} approved on submit: no approval required`,
             details: { decidedAs: 'no_approval_required', amountPaise: claim.amountPaise } });
+        } else {
+          // the job's manager decides; with no manager, HR does
+          const manager = job.managerPersonId && job.managerPersonId !== ctx.personId ? job.managerPersonId : null;
+          await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: job.legalEntityId, alertCode: 'hrms.expense_submitted',
+            title: `${await this.core.displayNameOf(tx, ctx.personId)} claimed an expense`,
+            body: `${rupees(req.amountPaise)} for ${req.categoryCode} is waiting for your decision.`, link: 'approvals',
+            dedupeKey: `hrms.expense_submitted:${id}`, recipients: manager ? { personIds: [manager] } : { roles: ['hr'] }, except: [ctx.personId] });
         }
         return id;
       });
@@ -107,6 +114,9 @@ export class ExpensesService {
       await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'expense.approved', entity: 'expense_claim',
         entityPublicId: claim.publicId, subjectPersonId: claim.personId, legalEntityId: claim.legalEntityId,
         summary: `Expense claim of ${claim.personName} approved for ${rupees(amount)} (${as})`, details: { decidedAs: as, amountPaise: amount } });
+      await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: claim.legalEntityId, alertCode: 'hrms.expense_decided',
+        title: 'Your expense claim was approved', body: `${rupees(amount)} approved of ${rupees(claim.amountPaise)} claimed.`, link: 'expenses',
+        dedupeKey: `hrms.expense_decided:${claim.publicId}`, recipients: { personIds: [claim.personId] }, except: [ctx.personId] });
     });
     return (await this.repo.claim(ctx.tenantId, publicId))!;
   }
@@ -119,6 +129,9 @@ export class ExpensesService {
       await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'expense.rejected', entity: 'expense_claim',
         entityPublicId: claim.publicId, subjectPersonId: claim.personId, legalEntityId: claim.legalEntityId,
         summary: `Expense claim of ${claim.personName} for ${rupees(claim.amountPaise)} rejected (${as})` });
+      await this.core.notify(tx, { tenantId: ctx.tenantId, legalEntityId: claim.legalEntityId, alertCode: 'hrms.expense_decided',
+        title: 'Your expense claim was rejected', body: `${rupees(claim.amountPaise)}. Reason: ${req.reason}`, link: 'expenses',
+        dedupeKey: `hrms.expense_decided:${claim.publicId}`, recipients: { personIds: [claim.personId] }, except: [ctx.personId] });
     });
     return (await this.repo.claim(ctx.tenantId, publicId))!;
   }

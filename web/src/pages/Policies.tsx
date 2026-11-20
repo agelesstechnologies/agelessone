@@ -14,9 +14,8 @@ export default function Policies() {
   const [key, setKey] = useState('');
   const q = useLoad(() => api<Policy[]>(`/core/policies${key ? `?key=${key}` : ''}`), [key]);
   return <>
-    <PageHead eyebrow="CORE • POLICIES" title="Policies" subtitle="Company settings that are not final. A new version applies from the date you choose."
-      action={<button className="primary-btn" onClick={() => setAdding(true)}><Plus size={16} /> New version</button>} />
-    <Panel title="Built-in defaults" note="Used when no version is stored.">
+    <PageHead eyebrow="CORE • POLICIES" title="Policies"      action={<button className="primary-btn" onClick={() => setAdding(true)}><Plus size={16} /> New version</button>} />
+    <Panel title="Built-in defaults">
       <div className="panel-body"><div className="table-wrap"><table><thead><tr><th>POLICY</th><th>WHAT IT DOES</th><th>DEFAULT</th></tr></thead>
         <tbody>{KEYS.map((k) => <tr key={k}><td><span className="mono">{k}</span></td><td className="note-cell">{DEFINITIONS[k].description}</td><td>{show(DEFINITIONS[k].default)}</td></tr>)}</tbody></table></div></div>
     </Panel>
