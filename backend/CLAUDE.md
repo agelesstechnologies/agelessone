@@ -31,6 +31,8 @@ backend/
       intercompany/           services one company provides another (ATPL → AE): agreements, rates, billed months,
                               passed-on costs, billable tickets, monthly statements, reports (docs/api/intercompany.md)
       inventory/              each company's units, categories, items, locations (docs/api/inventory.md)
+      design/                 ATPL design jobs from clients (Core customers), drawings, revisions, QC, transmittals,
+                              client responses, reports; AE jobs' tickets billable via IntercompanyFacade (docs/api/design.md)
       sales/ operations/ ...  later modules (README only)
     test/                     test setup and helpers (not part of the build)
   drizzle/                    migrations for the whole database, committed, applied in order

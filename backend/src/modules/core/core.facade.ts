@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { EventEnvelope, POLICIES, PolicyKey, PolicyValue } from '@ageless/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Conn, Tx } from '../../platform/db/db.module';
-import { outbox, personContacts, persons } from './schema';
+import { customers, outbox, personContacts, persons } from './schema';
 import { PolicyService } from './policies/application/policy.service';
 import { ApprovalsService, JobApprovers } from './approvals/approvals.service';
 import { AuditEntry, AuditService } from './audit/audit.service';
@@ -115,6 +115,17 @@ export class CoreFacade {
    */
   getPolicy<K extends PolicyKey>(tenantId: number, key: K, companyId: number | null, onDate: string): Promise<PolicyValue<K>> {
     return this.policies.get(tenantId, key, companyId, onDate, POLICIES[key].default as PolicyValue<K>);
+  }
+
+  /**
+   * A customer of the Core list by public id, or null when the tenant has none. legalEntityId: the group company the
+   * customer is (AE), so work for it is billed through Intercompany; null for an outside customer.
+   */
+  async customer(conn: Conn, tenantId: number, publicId: string): Promise<{ id: number; publicId: string; code: string; name: string; legalEntityId: number | null; status: string } | null> {
+    const [c] = await conn.select({ id: customers.id, publicId: customers.publicId, code: customers.code, name: customers.name,
+      legalEntityId: customers.legalEntityId, status: customers.status })
+      .from(customers).where(and(eq(customers.tenantId, tenantId), eq(customers.publicId, publicId)));
+    return c ?? null;
   }
 
   /** Creates a person and their contacts inside the caller's transaction. The internal id is for foreign keys only. */

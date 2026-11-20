@@ -931,6 +931,17 @@ role, `inventory.department.view`) will see their departments' parts and cost. T
 storekeeper (own), Demo Head the ATPL store in-charge (team) and Demo Technician a parts requester, and adds fictional ATPL
 units, categories, items and locations. Details: `backend/docs/api/inventory.md` (Who sees what).
 
+### Design — `/api/design/...` (full guide: `backend/docs/api/design.md`)
+ATPL's design work. A **design job** (`DJ-025`) comes from a client in the new **Core customer list** (`/api/core/customers`);
+the group companies are customers, and AE is one. The job's **tickets** carry the work; when the client is AE they become
+billable to AE through Intercompany. **Drawings** (`DJ-025-MEC-001`, disciplines from policy) have **revisions** (A, B … for
+preliminary, 0, 1 … for construction) with the PDF, CAD source files and the BOM. A submitted revision never changes.
+**QC** (role Design QC) follows the policy checklist and is never done by the author or the job's assignees, a rule the
+database enforces too. **Transmittals** (`TR-0001`) issue QC-approved revisions, supersede the drawing's earlier issue, and
+come with a PDF cover sheet and a zip. The **client's response** (accepted / returned) is recorded per revision. Five
+**reports** come with CSV. The Designing head (head of the `ATD` department) or an Admin user runs jobs; a company without
+that department takes none.
+
 ### E1. Expense categories — `GET /api/hrms/expenses/categories`
 `[ { "code": "food", "name": "Food", "receiptRequired": false }, { "code": "fuel", "name": "Fuel", "receiptRequired": true }, … ]`
 

@@ -10,6 +10,7 @@ engine (types, tickets, ticket time, reports). Start with the project rules in t
 | [api/people.md](api/people.md) | Guide: persons, contacts, jobs, departments, designations, positions |
 | [api/tickets.md](api/tickets.md) | Guide: ticket types, tickets, ticket time, confirmations and addresses, reports, dashboard |
 | [api/intercompany.md](api/intercompany.md) | Guide: intercompany agreements (ATPL → AE), rate cards, billed months, passed-on costs, tickets billable to the other company |
+| [api/design.md](api/design.md) | Guide: design jobs (ATPL), the Core customer list, drawings and revisions, QC, transmittals (cover sheet, zip), client responses, reports |
 | [security.md](security.md) | **Security**: sign-in and tokens, permissions and scopes, the roles matrix, tenant and company separation, self-approval rules, records that cannot change, sensitive data, files, logs, audit, settings, known gaps |
 | [database/schemas.md](database/schemas.md) | **Database schemas**: every schema and table with its columns, keys, checks, indexes and triggers. Generated from the migrated database. |
 | [database/connections.md](database/connections.md) | **Database connections**: diagrams, links between modules, company-safe keys, every foreign key, what points to what, connections that are not foreign keys, triggers |
@@ -20,4 +21,4 @@ Live API docs while the backend runs: `http://localhost:3000/api/docs` (Swagger 
 
 **Keeping them current.** `api/README.md` and the two `database/` pages are snapshots generated from the app's OpenAPI
 document and the database catalog; regenerate them after endpoints or migrations change. `security.md`, `people.md`,
-`tickets.md` and `intercompany.md` are written by hand and updated with each change.
+`tickets.md`, `intercompany.md` and `design.md` are written by hand and updated with each change.

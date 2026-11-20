@@ -341,3 +341,31 @@ export const notificationPreferences = core.table('notification_preferences', {
   unique('notification_preferences_unique').on(t.personId, t.alertCode),
   check('notification_preferences_alert_code_format', sql`alert_code ~ '^[a-z]+([.][a-z_]+)+$'`),
 ]);
+
+/**
+ * The customer list: who work is done for (design jobs, later sales and service). A company of the group is a customer
+ * too, linked to its legal entity: work one group company does for another is billed through Intercompany. Shared by
+ * every company of the tenant. Never deleted (inactive instead); the code and the linked company never change.
+ */
+export const customers = core.table('customers', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tenantId: bigint('tenant_id', { mode: 'number' }).notNull().references(() => tenants.id),
+  publicId: uuid('public_id').notNull().defaultRandom().unique(),
+  code: varchar('code', { length: 20 }).notNull(),
+  name: text('name').notNull(),
+  /** set when the customer is a company of the group (AE) */
+  legalEntityId: bigint('legal_entity_id', { mode: 'number' }).references(() => legalEntities.id),
+  status: text('status').notNull().default('active'),
+  /** null for the group companies added by migration 0055 and the seed */
+  createdBy: bigint('created_by', { mode: 'number' }).references(() => persons.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: bigint('updated_by', { mode: 'number' }).references(() => persons.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+}, (t) => [
+  unique('customers_tenant_code_unique').on(t.tenantId, t.code),
+  uniqueIndex('customers_one_per_company').on(t.legalEntityId).where(sql`legal_entity_id IS NOT NULL`),
+  check('customers_code_format', sql`code ~ '^[A-Z0-9][A-Z0-9-]{0,19}$'`),
+  check('customers_name_length', sql`char_length(name) BETWEEN 2 AND 200`),
+  check('customers_status_check', sql`status IN ('active','inactive')`),
+  check('customers_updated_fields', sql`(updated_by IS NULL) = (updated_at IS NULL)`),
+]);

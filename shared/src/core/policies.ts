@@ -66,6 +66,33 @@ export const POLICIES = {
     value: z.number().int().min(1).max(744), default: 208,
     description: 'Hours a monthly salary pays for, to give a person\'s cost per hour (salary ÷ hours) for cost plus pricing and the margin report (26 days × 8 h for now)',
   },
+  'design.department_prefix': {
+    value: z.string().trim().regex(/^[A-Z0-9]{1,10}$/, 'Use the department\'s code prefix, e.g. ATD'), default: 'ATD',
+    description: 'The Designing department (by its code prefix): its head runs design jobs; a company without it takes no design jobs',
+  },
+  'design.disciplines': {
+    value: z.array(z.string().regex(/^[A-Z]{2,5}$/, 'Use 2 to 5 capital letters, e.g. MEC')).min(1).max(20),
+    default: ['MEC', 'ELE', 'IOT', 'SW', 'CGI', 'ARC'] as string[],
+    description: 'Drawing disciplines: the middle part of a drawing number (DJ-025-MEC-001)',
+  },
+  'design.qc_checklist': {
+    value: z.array(z.string().trim().min(3).max(200)).min(1).max(30),
+    default: ['Title block complete and correct', 'Dimensions, units and scale checked', 'Matches the client requirements and scope',
+      'Bill of materials matches the drawing', 'Revision note describes the change'] as string[],
+    description: 'What the Design QC reviewer checks on every drawing revision (every item must pass to approve)',
+  },
+  'design.numbering': {
+    value: z.object({
+      jobPrefix: z.string().regex(/^[A-Z]{1,6}$/), jobDigits: z.number().int().min(2).max(6),
+      transmittalPrefix: z.string().regex(/^[A-Z]{1,6}$/), transmittalDigits: z.number().int().min(2).max(6),
+    }),
+    default: { jobPrefix: 'DJ', jobDigits: 3, transmittalPrefix: 'TR', transmittalDigits: 4 } as { jobPrefix: string; jobDigits: number; transmittalPrefix: string; transmittalDigits: number },
+    description: 'Design job numbers (DJ-025) and transmittal numbers (TR-0001): each a series per company',
+  },
+  'design.max_file_mb': {
+    value: z.number().int().min(1).max(100), default: 50,
+    description: 'Largest file (MB) for drawings, source files, bills of materials, QC mark-ups and job attachments',
+  },
   'inventory.parts.ticket_types': {
     value: z.array(z.string().regex(/^[a-z][a-z0-9_]{1,39}$/, 'Use ticket type codes (lower case, e.g. production)')).max(40),
     default: ['production', 'workshop', 'installation', 'service', 'site_work'] as string[],

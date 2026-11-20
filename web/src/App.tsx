@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Activity, ArrowLeftRight, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, ClipboardCheck, ClipboardList, Crown, FileStack, KeyRound, LayoutDashboard, Landmark, LoaderCircle, Lock, LogOut, Menu, Package, Boxes, SlidersHorizontal, Tags, Users, Wallet, Warehouse, X } from 'lucide-react';
+import { Activity, ArrowLeftRight, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, ClipboardCheck, ClipboardList, Crown, DraftingCompass, FileStack, KeyRound, LayoutDashboard, Landmark, LoaderCircle, Lock, LogOut, Menu, Package, Boxes, SlidersHorizontal, Tags, Users, Wallet, Warehouse, X } from 'lucide-react';
 import { useApi } from './hooks';
 import { AuthProvider, useAuth } from './auth';
 import { anyInventory, ATTENDANCE, EXPENSES, INTERCOMPANY, INVENTORY, LEAVE, MANAGEMENT, PAYROLL, PEOPLE, POLICIES, SKILLS, TICKETS, TICKET_TYPES } from './permissions';
 import Accounts from './pages/Accounts';
 import Bell from './Bell';
 import Intercompany from './modules/intercompany/Intercompany';
+import Design from './modules/design/Design';
 import Approvals from './pages/Approvals';
 import Attendance from './pages/Attendance';
 import CeoDashboard from './pages/CeoDashboard';
@@ -30,17 +31,18 @@ import InventorySetup from './pages/inventory/Setup';
 import InventoryStock from './pages/inventory/Stock';
 import ChangePassword from './ChangePassword';
 import { Modal } from './ui';
-import type { AccountsAccess, Grant, IcAccess } from '@ageless/shared';
+import type { AccountsAccess, DesignAccessInfo, Grant, IcAccess } from '@ageless/shared';
 
 type PageKey = 'overview' | 'ceo' | 'people' | 'attendance' | 'expenses' | 'leave' | 'calendar' | 'approvals' | 'payroll' | 'intercompany' | 'skills' | 'tickets' | 'organisation' | 'locks' | 'policies' | 'accounts'
-  | 'inv-requests' | 'inv-stock' | 'inv-documents' | 'inv-items' | 'inv-locations' | 'inv-setup';
+  | 'inv-requests' | 'inv-stock' | 'inv-documents' | 'inv-items' | 'inv-locations' | 'inv-setup' | 'design';
 type GroupKey = 'hrms' | 'accounts' | 'operations' | 'inventory';
 /**
  * What the backend says beyond permissions: accountsView — may see the Accounts section (Accounts roles can come from the
  * interim policy); grants — has cross-company access to request parts (without an inventory role); ic — what the person
- * sees of Intercompany (company heads and approvers are named on agreements, they hold no permission).
+ * sees of Intercompany (company heads and approvers are named on agreements, they hold no permission); design — what the
+ * person may do in Design (the Designing head and the job's ticket assignees hold no permission either).
  */
-interface MenuAccess { accountsView: boolean; grants: boolean; ic: IcAccess | null }
+interface MenuAccess { accountsView: boolean; grants: boolean; ic: IcAccess | null; design: DesignAccessInfo | null }
 interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | GroupKey | 'manage'; show: (can: (p: string) => boolean, others: boolean, scopeOf: (p: string) => string | null, access: MenuAccess) => boolean }
 const invRead = (can: (p: string) => boolean) => can(INVENTORY.view) || can(INVENTORY.items) || can(INVENTORY.locations);
 const stockRead = (can: (p: string) => boolean) => can(INVENTORY.view) || can(INVENTORY.stockPost);
@@ -63,6 +65,9 @@ const NAV: NavItem[] = [
   { key: 'accounts', label: 'Accounts', icon: <Landmark size={18} />, section: 'accounts', show: (_can, _others, _scopeOf, access) => access.accountsView },
   { key: 'skills', label: 'Skills', icon: <Award size={18} />, section: 'hrms', show: (can) => can(SKILLS.view) || can(SKILLS.manage) },
   { key: 'tickets', label: 'Tickets', icon: <Ticket size={18} />, section: 'operations', show: (can) => can(TICKETS.view) || can(TICKETS.work) || can(TICKETS.manage) || can(TICKET_TYPES.view) || can(TICKETS.numbering) },
+  // Design jobs, drawings, QC, transmittals: the Designing head, Admin users, Design QC, design.view and the job's ticket assignees
+  { key: 'design', label: 'Design', icon: <DraftingCompass size={18} />, section: 'operations',
+    show: (_can, _others, _scopeOf, { design }) => !!design && (design.assignedJobs > 0 || design.companies.some((c) => c.enabled && (c.view || c.manage || c.qc))) },
   { key: 'organisation', label: 'Organisation', icon: <Network size={18} />, section: 'workspace', show: (can, others) => others && (can(PEOPLE.manageEmployments) || can(PEOPLE.managePositions) || can(PEOPLE.view)) },
   { key: 'locks', label: 'Month locks', icon: <Lock size={18} />, section: 'manage', show: (can) => can(ATTENDANCE.lockMonth) || can(ATTENDANCE.unlockMonth) },
   { key: 'policies', label: 'Policies', icon: <SlidersHorizontal size={18} />, section: 'manage', show: (can) => can(POLICIES.manage) },
@@ -93,6 +98,7 @@ function Shell() {
   const accountsView = useApi<AccountsAccess>('/accounts/access').data?.view ?? false;
   // Intercompany is shown to company heads, approvers and department heads named on its records (no permission of their own)
   const ic = useApi<IcAccess>(me ? '/intercompany/access' : null).data ?? null;
+  const design = useApi<DesignAccessInfo>(me ? '/design/access' : null).data ?? null;
   const go = useCallback((p: string) => { window.location.hash = p; setMobileNav(false); }, []);
   // people without an inventory role may still have cross-company access to request parts for a ticket
   const noInventory = !!me && !anyInventory(can);
@@ -117,7 +123,7 @@ function Shell() {
   }, [mobileNav]);
   if (!me) return null;
 
-  const items = NAV.filter((n) => n.show(can, seesOthers, scopeOf, { accountsView, grants: (grants.data ?? []).some((g) => g.active), ic }));
+  const items = NAV.filter((n) => n.show(can, seesOthers, scopeOf, { accountsView, grants: (grants.data ?? []).some((g) => g.active), ic, design }));
   // A page the person may not open (typed in the address bar) falls back to the overview.
   const current = items.find((n) => n.key === page) ?? items[0]!;
   const role = me.roles[0]?.name ?? 'No role';
@@ -157,6 +163,7 @@ function Shell() {
         {current.key === 'approvals' && <Approvals />}
         {current.key === 'payroll' && <Payroll />}
         {current.key === 'intercompany' && <Intercompany />}
+        {current.key === 'design' && <Design />}
         {current.key === 'accounts' && <Accounts />}
         {current.key === 'skills' && <Skills />}
         {current.key === 'organisation' && <Organisation />}

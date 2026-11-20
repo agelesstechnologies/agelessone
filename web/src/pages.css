@@ -623,3 +623,38 @@ tr.ic-total td{font-weight:700;color:#19283b;background:#fffdf8}
 .alerts-more{width:100%;border:0;background:#fff;cursor:pointer}
 .alerts-panel .tabs{margin:0 19px 8px}
 .alerts-block{margin-bottom:21px}
+
+/* Design: jobs, drawing register, QC review (desktop first), transmittals */
+.dz-clip{display:block;max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dz-pre{white-space:pre-wrap}
+.dz-group+.dz-group{margin-top:18px}
+.dz-sub{margin:10px 0 4px;font-size:11px;font-weight:600;color:#5b6b80}
+.dz-pick{display:grid;gap:6px;max-height:340px;overflow:auto;margin:10px 0}
+.dz-pick-row{display:flex;align-items:flex-start;gap:10px;border:1px solid #e9edf2;border-radius:8px;padding:9px 12px;font-size:12px;cursor:pointer;background:#fff}
+.dz-pick-row input{width:auto;height:auto;margin-top:2px}
+.dz-pick-row.on{border-color:#f5b445;background:#fffaf0}
+.dz-pick-row.off{opacity:.55;cursor:not-allowed}
+.dz-bar{display:inline-block;width:70px;height:6px;border-radius:3px;background:#eef1f5;margin-right:8px;vertical-align:middle;overflow:hidden}
+.dz-bar i{display:block;height:100%;background:#2e9d5b}
+.qc-review{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr);gap:18px;padding:0 19px 19px}
+.qc-pdf-pane{display:flex;flex-direction:column;gap:8px;min-width:0}
+.qc-pdf{width:100%;height:calc(100vh - 230px);min-height:520px;border:1px solid #e3e8f0;border-radius:8px;background:#f4f6f9}
+.qc-open{align-self:flex-start;text-decoration:none}
+.qc-side{display:flex;flex-direction:column;gap:12px;min-width:0}
+.qc-checklist{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.qc-checklist li{display:grid;gap:6px;border:1px solid #eef1f5;border-radius:8px;padding:9px 10px}
+.qc-item{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px;color:#3a4250}
+.qc-toggle{display:flex;gap:4px;flex:none}
+.qc-toggle button{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 9px;border:1px solid #e3e8f0;border-radius:6px;background:#fff;font:inherit;font-size:11px;color:#5b6b80;cursor:pointer}
+.qc-toggle button.on.pass{background:#e8f6ee;border-color:#2e9d5b;color:#1d7a43}
+.qc-toggle button.on.fail{background:#fdecec;border-color:#e5484d;color:#b42318}
+.qc-field{display:grid;gap:6px;font-size:11px;font-weight:600;color:#555660}
+.qc-field textarea{height:auto;padding:8px}
+.qc-actions{display:flex;justify-content:flex-end;gap:8px;position:sticky;bottom:0;background:#fff;padding:10px 0 2px;border-top:1px solid #eef1f5}
+.qc-done-list{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:4px;font-size:12px}
+.qc-done-list .ok{color:#1d7a43}.qc-done-list .bad{color:#b42318}
+@media (max-width:900px){
+  .qc-review{grid-template-columns:1fr;padding:0 12px 12px}
+  .qc-pdf{height:60vh;min-height:320px}
+  .dz-clip{max-width:none;white-space:normal}
+}

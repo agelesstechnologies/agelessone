@@ -37,32 +37,49 @@ export class TicketBillingService {
   async link(ctx: RequestContext, ticketPublicId: string, req: LinkTicketToWorkRequest): Promise<TicketBilling> {
     const t = await this.ticket(ctx, ticketPublicId);
     this.requireHead(ctx, t);
-    const company = await this.repo.findCompany(ctx.tenantId, req.company);
-    if (!company) throw new AppError('IC_UNKNOWN_COMPANY', 400, `Unknown company ${req.company}`);
+    const company = await this.company(ctx.tenantId, req.company);
     try {
-      await this.db.transaction(async (tx) => {
-        const current = await this.repo.ticketBilling(tx, t.id, true);
-        if (current && current.linkKind === req.kind && current.linkPublicId === req.publicId && current.billableToCompanyId === company.id
-          && current.serviceType === req.serviceType) return; // sent again
-        const before = current ? state(current) : null;
-        const after = billingAfterLink(before, t.legalEntityId, company.id, req.serviceType);
-        if (after === 'SAME_COMPANY') throw new AppError('IC_SAME_COMPANY', 400, `The ticket is ${t.company}'s own work: only work for another company is billed`);
-        if (billingChanged(before, after)) await this.requireUnbilled(tx, t, [before?.billableToCompanyId, after.billableToCompanyId]);
-        const values = { billableToLegalEntityId: after.billableToCompanyId, linkKind: req.kind, linkPublicId: req.publicId, serviceType: req.serviceType,
-          billable: after.billable, notBillableReason: after.notBillableReason, changedBy: ctx.personId, changedAt: new Date() };
-        if (current) await this.repo.updateTicketBilling(tx, current.id, values);
-        else await this.repo.insertTicketBilling(tx, { tenantId: ctx.tenantId, ticketId: t.id, legalEntityId: t.legalEntityId, ...values });
-        await this.core.audit(tx, { tenantId: ctx.tenantId, actorPersonId: ctx.personId, action: 'intercompany.ticket_linked', entity: 'ticket',
-          entityPublicId: t.publicId, legalEntityId: t.legalEntityId,
-          summary: `Ticket ${t.number} linked to ${company.code}'s ${req.kind.replace('_', ' ')}: ${after.billable ? 'billable' : 'not billable'} to ${company.code}`,
-          details: { kind: req.kind, linkPublicId: req.publicId, billableTo: company.code, serviceType: req.serviceType, billable: after.billable,
-            before: before ? { billableTo: current!.billableTo, billable: before.billable, serviceType: before.serviceType } : null } });
-      });
+      await this.db.transaction((tx) => this.applyLink(tx, ctx.tenantId, ctx.personId, t, company, req));
     } catch (err) {
       if (violatedConstraint(err) === 'ic_ticket_billing_ticket_id_unique') return this.link(ctx, ticketPublicId, req); // linked twice at once
       throw err;
     }
     return this.answer(t);
+  }
+
+  /**
+   * The same link inside the caller's transaction, for IntercompanyFacade (e.g. a design job whose client is AE). The
+   * caller has decided who may link; the billing rules and the billed-month check are the same as link().
+   */
+  async linkWithin(tx: Tx, tenantId: number, actorPersonId: number, ticketPublicId: string, req: LinkTicketToWorkRequest): Promise<void> {
+    const t = await this.repo.findTicket(tenantId, ticketPublicId);
+    if (!t) throw new AppError('IC_TICKET_NOT_FOUND', 404, 'Ticket not found');
+    await this.applyLink(tx, tenantId, actorPersonId, t, await this.company(tenantId, req.company), req);
+  }
+
+  private async company(tenantId: number, code: string): Promise<{ id: number; code: string }> {
+    const company = await this.repo.findCompany(tenantId, code);
+    if (!company) throw new AppError('IC_UNKNOWN_COMPANY', 400, `Unknown company ${code}`);
+    return company;
+  }
+
+  private async applyLink(tx: Tx, tenantId: number, actorPersonId: number, t: Ticket, company: { id: number; code: string }, req: LinkTicketToWorkRequest): Promise<void> {
+    const current = await this.repo.ticketBilling(tx, t.id, true);
+    if (current && current.linkKind === req.kind && current.linkPublicId === req.publicId && current.billableToCompanyId === company.id
+      && current.serviceType === req.serviceType) return; // sent again
+    const before = current ? state(current) : null;
+    const after = billingAfterLink(before, t.legalEntityId, company.id, req.serviceType);
+    if (after === 'SAME_COMPANY') throw new AppError('IC_SAME_COMPANY', 400, `The ticket is ${t.company}'s own work: only work for another company is billed`);
+    if (billingChanged(before, after)) await this.requireUnbilled(tx, t, [before?.billableToCompanyId, after.billableToCompanyId]);
+    const values = { billableToLegalEntityId: after.billableToCompanyId, linkKind: req.kind, linkPublicId: req.publicId, serviceType: req.serviceType,
+      billable: after.billable, notBillableReason: after.notBillableReason, changedBy: actorPersonId, changedAt: new Date() };
+    if (current) await this.repo.updateTicketBilling(tx, current.id, values);
+    else await this.repo.insertTicketBilling(tx, { tenantId, ticketId: t.id, legalEntityId: t.legalEntityId, ...values });
+    await this.core.audit(tx, { tenantId, actorPersonId, action: 'intercompany.ticket_linked', entity: 'ticket',
+      entityPublicId: t.publicId, legalEntityId: t.legalEntityId,
+      summary: `Ticket ${t.number} linked to ${company.code}'s ${req.kind.replace('_', ' ')}: ${after.billable ? 'billable' : 'not billable'} to ${company.code}`,
+      details: { kind: req.kind, linkPublicId: req.publicId, billableTo: company.code, serviceType: req.serviceType, billable: after.billable,
+        before: before ? { billableTo: current!.billableTo, billable: before.billable, serviceType: before.serviceType } : null } });
   }
 
   /** Billable or not billable (with a reason). Only a linked ticket; the same answer again changes nothing. */

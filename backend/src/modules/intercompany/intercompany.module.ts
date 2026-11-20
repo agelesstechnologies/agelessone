@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { AgreementsController } from './api/agreements.controller';
 import { TicketBillingController } from './api/ticket-billing.controller';
 import { StatementsController } from './api/statements.controller';
@@ -9,16 +9,19 @@ import { StatementsService } from './application/statements.service';
 import { IcReportsService } from './application/reports.service';
 import { IntercompanyRepository } from './infrastructure/intercompany.repository';
 import { StatementsRepository } from './infrastructure/statements.repository';
+import { IntercompanyFacade } from './intercompany.facade';
 
 /**
  * Intercompany: services one company of the group provides to another (ATPL → AE) — agreements, rate cards, costs
  * passed on, tickets billable to the other company, monthly statements (approval, review, disputes, invoice), reports
  * and the CEO's cards. Reads tickets, jobs, departments, month locks and salaries through their schema.ts; writes only
- * intercompany.*. Guide: docs/api/intercompany.md.
+ * intercompany.*. Guide: docs/api/intercompany.md. Global, like CoreFacade: other modules inject IntercompanyFacade
+ * without importing this file.
  */
+@Global()
 @Module({
   controllers: [TicketBillingController, IcReportsController, StatementsController, AgreementsController],
-  providers: [AgreementsService, TicketBillingService, StatementsService, IcReportsService, IntercompanyRepository, StatementsRepository],
-  exports: [StatementsService],
+  providers: [AgreementsService, TicketBillingService, StatementsService, IcReportsService, IntercompanyRepository, StatementsRepository, IntercompanyFacade],
+  exports: [StatementsService, IntercompanyFacade],
 })
 export class IntercompanyModule {}

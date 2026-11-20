@@ -22,6 +22,13 @@ export const USERS = { manage: 'core.users.manage', team: 'core.users.team' } as
  * so the menu asks GET /intercompany/access.
  */
 export const INTERCOMPANY = { view: 'intercompany.view', manage: 'intercompany.manage' } as const;
+/**
+ * Design: design.view (see jobs, drawings, reports), design.jobs.manage (Admin user: run jobs), design.qc (Design QC).
+ * The Designing head and the job's ticket assignees hold none: the menu asks GET /design/access.
+ */
+export const DESIGN = { view: 'design.view', manage: 'design.jobs.manage', qc: 'design.qc' } as const;
+/** The Core customer list: add and change customers (scope all). */
+export const CUSTOMERS = { manage: 'core.customers.manage' } as const;
 /** Joining letters and their templates: HR and Management (the CEO). */
 export const LETTERS = { manage: 'hrms.letters.manage' } as const;
 /**
@@ -59,6 +66,10 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'hrms.calendar.manage': 'Manage holidays and weekly offs',
   'core.policies.manage': 'Manage company policies',
   'core.users.manage': 'Manage logins and roles',
+  'core.customers.manage': 'Manage the customer list',
+  'design.view': 'See design jobs, drawings and design reports',
+  'design.jobs.manage': 'Run design jobs, issue transmittals, record client responses',
+  'design.qc': 'Review drawing revisions (Design QC)',
   'tickets.site': 'Run the site of own tickets (requirements, external staff, hold)',
   'tickets.report': 'Download the full ticket report (PDF)',
   'inventory.view': 'See inventory: items, locations, stock, documents and values',

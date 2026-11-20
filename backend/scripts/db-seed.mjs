@@ -64,8 +64,13 @@ const roles = [
   { code: 'accounts_executive', name: 'Accounts executive', permissions: ['accounts.make', 'accounts.view', 'payroll.payslip.own'] },
   { code: 'accounts_manager', name: 'Accounts manager', permissions: ['accounts.check', 'accounts.view', 'payroll.payslip.own'] },
   { code: 'hr', name: 'HR', permissions: HR },
-  { code: 'admin_user', name: 'Admin user', permissions: ['tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage'] },
-  { code: 'system_admin', name: 'System admin', permissions: ['core.users.manage', 'core.policies.manage', 'hrms.people.view', 'hrms.attendance.rebuild', 'hrms.month.unlock'] },
+  // Admin user: creates service tickets and design jobs (with the Designing head) and runs them; adds customers.
+  { code: 'admin_user', name: 'Admin user', permissions: ['tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage',
+    'design.jobs.manage', 'design.view', 'core.customers.manage'] },
+  { code: 'system_admin', name: 'System admin', permissions: ['core.users.manage', 'core.policies.manage', 'hrms.people.view', 'hrms.attendance.rebuild', 'hrms.month.unlock',
+    'core.customers.manage'] },
+  // Design QC: reviews submitted drawing revisions (never their own, nor on a job whose tickets they are assigned to).
+  { code: 'design_qc', name: 'Design QC', permissions: ['design.qc', 'design.view'] },
   // Last approver (after the manager, department head and HR); scope team: decides requests that name them.
   // Their own requests need no approval (policy hrms.approvals.auto_approve_roles). The CEO does not apply for leave.
   { code: 'ceo', name: 'CEO', permissions: ['hrms.people.view', 'hrms.expenses.submit', 'hrms.attendance.punch', 'hrms.attendance.approve', 'hrms.leave.approve', 'hrms.leave.report',
@@ -75,7 +80,7 @@ const roles = [
   { code: 'management', name: 'Management', permissions: ['hrms.management', 'hrms.people.view', 'hrms.attendance.view', 'hrms.attendance.approve',
     'hrms.leave.approve', 'hrms.leave.report', 'hrms.expenses.approve', 'hrms.expenses.report', 'hrms.skills.view', 'hrms.dashboard.view',
     'hrms.private.view', 'hrms.private.reveal', 'hrms.letters.manage', 'payroll.payslip.own', 'tickets.types.view', 'tickets.types.manage', 'tickets.view', 'tickets.manage', 'tickets.time.adjust',
-    'tickets.report', 'inventory.view', 'intercompany.view', 'intercompany.manage'] },
+    'tickets.report', 'inventory.view', 'intercompany.view', 'intercompany.manage', 'design.view', 'core.customers.manage'] },
   // Inventory is need-to-know: staff roles hold no inventory permission. Store roles hold the same permissions until the
   // stock steps give each its own approvals; the scope given with the role decides the reach (own: the locations the
   // person looks after; team: every location of the companies they work in; all: every company).
@@ -111,6 +116,11 @@ try {
       (1, 'AE', 'Ageless Entertainments', 'other'),
       (1, 'ATPL', 'Ageless Technologies', 'private_limited')
     ON CONFLICT (tenant_id, code) DO NOTHING`);
+  // The group companies are customers too (AE is the client of ATPL's design jobs; its work is billed by Intercompany).
+  await client.query(`
+    INSERT INTO core.customers (tenant_id, code, name, legal_entity_id)
+    SELECT tenant_id, code, name, id FROM core.legal_entities WHERE tenant_id = 1
+    ON CONFLICT DO NOTHING`);
 
   // Leave types: Sick and Earned (paid, 1 day each a month: policy hrms.leave.monthly_accrual), Leave without pay
   // (unpaid). General leave stays for history but can no longer be applied for.

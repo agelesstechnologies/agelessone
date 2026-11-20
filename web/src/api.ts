@@ -89,6 +89,17 @@ export async function api<T>(path: string, { json, headers, ...options }: Option
   return response.json() as Promise<T>;
 }
 
+/** A file the API sends, with the sign-in token, as a Blob (e.g. a PDF to show in the page through an object URL). */
+export async function fetchBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const response = await send(`${API}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!response.ok) {
+    if (response.status === 401 && token) onUnauthorized();
+    throw await failure(response);
+  }
+  return response.blob();
+}
+
 /** Download a file the API sends (CSV, PDF) with the sign-in token, then save it in the browser. */
 export async function downloadFile(path: string, fallbackName: string): Promise<void> {
   const token = getToken();

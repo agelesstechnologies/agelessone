@@ -161,6 +161,20 @@ also seen by the agreement's two approvers and the heads of departments with tic
 approver accepts or disputes them; **payroll costs (cost per hour, margin) are shown to the CEO only**. See
 [api/intercompany.md](api/intercompany.md).
 
+Design (migration 0055) adds four permissions, which the matrix above does not list yet:
+- `core.customers.manage`: add and change customers (scope all). Held by System admin, Admin user and Management.
+- `design.view`: see design jobs, drawings, transmittals and reports. Held by Management, Admin user and Design QC.
+- `design.jobs.manage`: run design jobs. Held by Admin user; the Designing head needs no permission.
+- `design.qc`: decide QC. Held by the new role **Design QC**.
+
+Scope all counts in every company; own or team counts in the companies where the person holds a job. People assigned to
+a job's tickets see that job and work on its drawings. A design record anyone else asks for answers 404. **QC is never
+done by the revision's author or by anyone assigned to the job's tickets**: the service refuses it, and so does a trigger
+on `design.qc_reviews`. Submitted revisions and their files, QC decisions, transmittals and client responses never change
+(triggers). Uploaded design files are recognised by their bytes, programs and scripts are refused, and they are stored
+under random names and served only as downloads. The client contact on a job is never written to the audit log. See
+[api/design.md](api/design.md).
+
 ## Separation of tenants and companies
 
 - **Tenants.** Every table has `tenant_id`, and every query in the services and repositories filters by the caller's

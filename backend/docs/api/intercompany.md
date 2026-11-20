@@ -181,6 +181,9 @@ a statement with their time is refused until they are linked again (`409 IC_TICK
 
 - **A ticket linked to the other company's project or design request is billable to that company by default**:
   `billableTo: "AE"`, `billable: true`. The project or design request id is stored as given until those registers exist.
+- **Design jobs are design requests.** A ticket linked to an ATPL design job whose client is AE (`POST /design/jobs/{id}/tickets`)
+  is linked here at the same time, with `kind: "design_request"` and the job's `publicId`, through `IntercompanyFacade`
+  (the module's only entry point for others). The same rules apply. See [design.md](design.md).
 - Linked to its own company's work: `400 IC_SAME_COMPANY` (nothing to bill). Linking again to the same company keeps
   the billable decision; linking to another company starts again as billable. The same link again changes nothing.
 - **Not billable needs a reason**: `POST …/billable` `{ "billable": false, "reason": "Warranty rework" }` (without a
