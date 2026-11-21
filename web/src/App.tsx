@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Activity, ArrowLeftRight, Award, Ticket, BriefcaseBusiness, Building2, Network, CalendarDays, CalendarRange, ChevronDown, ClipboardCheck, ClipboardList, Crown, FileStack, KeyRound, LayoutDashboard, Landmark, LoaderCircle, Lock, LogOut, Menu, Package, Boxes, SlidersHorizontal, Tags, Users, Wallet, Warehouse, X } from 'lucide-react';
 import { useApi } from './hooks';
 import { AuthProvider, useAuth } from './auth';
@@ -44,7 +44,7 @@ interface MenuAccess { accountsView: boolean; grants: boolean; ic: IcAccess | nu
 interface NavItem { key: PageKey; label: string; icon: ReactNode; section: 'workspace' | GroupKey | 'manage'; show: (can: (p: string) => boolean, others: boolean, scopeOf: (p: string) => string | null, access: MenuAccess) => boolean }
 const invRead = (can: (p: string) => boolean) => can(INVENTORY.view) || can(INVENTORY.items) || can(INVENTORY.locations);
 const stockRead = (can: (p: string) => boolean) => can(INVENTORY.view) || can(INVENTORY.stockPost);
-import logo from './assets/ageless-logo.webp';
+import logo from './assets/ageless-tech-logo.webp';
 
 /** Every menu item lists the permission that shows it; the backend still checks each request. */
 const NAV: NavItem[] = [
@@ -78,7 +78,16 @@ const NAV: NavItem[] = [
 /** Menu order: Overview first, then Attendance and Tickets, then everything else in the order of NAV. */
 const MENU_FIRST: PageKey[] = ['overview', 'ceo', 'attendance', 'tickets'];
 
-const pageFromHash = (): PageKey => {
+/** The CEO's menu is grouped by module; everything not listed in a group stays at the top. */
+const CEO_GROUPS: { label: string; keys: PageKey[] }[] = [
+  { label: 'HRMS', keys: ['attendance', 'tickets', 'people', 'leave', 'skills', 'calendar'] },
+  { label: 'ACCOUNTS', keys: ['approvals', 'payroll', 'accounts', 'expenses'] },
+  { label: 'INVENTORY', keys: ['inv-requests', 'inv-stock', 'inv-documents', 'inv-items', 'inv-locations', 'inv-setup'] },
+];
+const CEO_TOP: PageKey[] = ['overview', 'ceo'];
+const CEO_BOTTOM: PageKey[] = ['intercompany', 'organisation'];   // after the three groups
+
+const pageFromHash =(): PageKey => {
   const h = window.location.hash.replace('#', '').split('/')[0] ?? '';   // #tickets/<id> is the Tickets page, #inv-documents/<id> the Documents page
   return NAV.some((n) => n.key === h) ? (h as PageKey) : 'overview';
 };
@@ -87,12 +96,16 @@ function Shell() {
   const { me, can, scopeOf, logout, seesOthers } = useAuth();
   const [page, setPage] = useState<PageKey>(pageFromHash);
   const [mobileNav, setMobileNav] = useState(false);
+  const [openGroups, setOpenGroups] = useState<string[]>([]);
   const [confirmOut, setConfirmOut] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
   // Accounts roles can come from the interim policy (HR, CEO), so the backend says who may see the section.
-  const accountsView = useApi<AccountsAccess>('/accounts/access').data?.view ?? false;
+  const accountsReq = useApi<AccountsAccess>('/accounts/access');
+  const accountsView = accountsReq.data?.view ?? false;
   // Intercompany is shown to company heads, approvers and department heads named on its records (no permission of their own)
-  const ic = useApi<IcAccess>(me ? '/intercompany/access' : null).data ?? null;
+  const icReq = useApi<IcAccess>(me ? '/intercompany/access' : null);
+  const ic = icReq.data ?? null;
+  const accessLoading = accountsReq.loading || icReq.loading;   // these menu entries arrive after the page: reserve their space
   const go = useCallback((p: string) => { window.location.hash = p; setMobileNav(false); }, []);
   // people without an inventory role may still have cross-company access to request parts for a ticket
   const noInventory = !!me && !anyInventory(can);
@@ -109,6 +122,11 @@ function Shell() {
     window.scrollTo(0, 0);
     document.querySelector('.content')?.scrollTo?.(0, 0);
   }, [page]);
+  // Going to a page opens its group (the person can still close it afterwards).
+  useEffect(() => {
+    const g = CEO_GROUPS.find((x) => x.keys.includes(page));
+    if (g) setOpenGroups((o) => o.includes(g.label) ? o : [...o, g.label]);
+  }, [page]);
   useEffect(() => {
     if (!mobileNav) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileNav(false); };
@@ -124,17 +142,34 @@ function Shell() {
   const initials = me.person.displayName.split(/\s+/).slice(0, 2).map((s) => s[0]).join('').toUpperCase();
   const link = (n: NavItem) => <a key={n.key} href={`#${n.key}`} className={`${n.key === current.key ? 'active' : ''} `} onClick={() => setMobileNav(false)}>
     {n.icon}{n.label}</a>;
+  const isCeo = scopeOf(MANAGEMENT) === 'all';
   const menu = [...MENU_FIRST.flatMap((k) => items.filter((n) => n.key === k)), ...items.filter((n) => n.section !== 'manage' && !MENU_FIRST.includes(n.key))];
 
   return <div className="app-shell">
     {mobileNav && <div className="nav-scrim" onClick={() => setMobileNav(false)} />}
     <aside className={`sidebar ${mobileNav ? 'show' : ''}`}>
-      <div className="brand"><img className="brand-logo" src={logo} alt="Ageless Entertainments" /><button className="icon-button mobile-close" onClick={() => setMobileNav(false)} aria-label="Close menu"><X size={18} /></button></div>
+      <div className="brand"><img className="brand-logo" src={logo} alt="Ageless Technologies" /><button className="icon-button mobile-close" onClick={() => setMobileNav(false)} aria-label="Close menu"><X size={18} /></button></div>
       <div className="workspace"><div className="workspace-icon"><Building2 size={18} /></div><div><b>Ageless Group</b><small>Organization</small></div><ChevronDown size={15} /></div>
       <div className="nav-label">WORKSPACE</div>
-      <nav>
+      {isCeo ? <>
+        <nav>{menu.filter((n) => CEO_TOP.includes(n.key)).map(link)}</nav>
+        {CEO_GROUPS.map((g) => {
+          const rows = menu.filter((n) => g.keys.includes(n.key));
+          if (!rows.length) return null;
+          // the group holding the open page stays open; the others open and close on click
+          const open = openGroups.includes(g.label);
+          return <Fragment key={g.label}>
+            <button type="button" className={`nav-group ${open ? 'open' : ''}`} aria-expanded={open}
+              onClick={() => setOpenGroups((o) => o.includes(g.label) ? o.filter((x) => x !== g.label) : [...o, g.label])}>
+              <span>{g.label}</span><ChevronDown size={15} /></button>
+            {open && <nav className="nav-sub">{rows.map(link)}</nav>}
+          </Fragment>;
+        })}
+        <nav>{menu.filter((n) => CEO_BOTTOM.includes(n.key)).map(link)}</nav>
+      </> : <nav>
         {menu.map(link)}
-      </nav>
+      </nav>}
+      {accessLoading && <div className="nav-skeleton" aria-hidden><i /><i /></div>}
       {items.some((n) => n.section === 'manage') && <><div className="nav-label manage-label">MANAGE</div><nav>{items.filter((n) => n.section === 'manage').map(link)}</nav></>}
       <div className="sidebar-bottom">
         <div className="profile"><div className="avatar avatar-blue">{initials}</div><div><b>{me.person.displayName}</b><small>{role}</small></div>

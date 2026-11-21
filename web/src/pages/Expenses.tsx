@@ -150,11 +150,11 @@ function NewClaim({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
         <label>Amount (₹)<input id="claim-amount" name="amount" type="number" inputMode="decimal" min="0.01" step="0.01" required placeholder="0.00" /></label>
         <div>
           <label htmlFor="claim-receipt">Receipt {needsReceipt ? <span className="optional">required</span> : <span className="optional">optional</span>}</label>
-          <div style={{ border: '1px solid #e3e7ee', borderRadius: 5, background: '#fff', padding: '6px 9px', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+          <div style={{ border: '1px solid #33434E', borderRadius: 5, background: "#202A34", padding: '6px 9px', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
             <input id="claim-receipt" name="receipt" type="file" accept="image/jpeg,image/png,application/pdf" required={needsReceipt && !photo}
               style={{ border: 0, padding: 0, height: 'auto', background: 'transparent', width: '100%' }} />
             <button type="button" onClick={startCamera}
-              style={{ font: 'inherit', fontSize: 13, padding: '1px 6px', border: '1px solid #767676', borderRadius: 3, background: '#efefef', color: '#000', cursor: 'pointer' }}>
+              style={{ font: 'inherit', fontSize: 13, padding: '1px 6px', border: '1px solid #33434E', borderRadius: 3, background: 'transparent', color: "#E4EAEF", cursor: 'pointer' }}>
               {photo ? 'Retake photo' : 'Click a photo'}</button>
           </div>
         </div>

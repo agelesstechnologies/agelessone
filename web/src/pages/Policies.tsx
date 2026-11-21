@@ -5,6 +5,8 @@ import { api, errText, formError } from '../api';
 import { dayLabel, todayIst, useLoad, uuidv7 } from '../hooks';
 import { Empty, Loading, Modal, Notice, PageHead, Panel } from '../ui';
 
+/** Plain name for a policy key, e.g. core.auth.session_hours -> Session hours (the key stays the stored value). */
+const policyLabel = (k: string) => { const last = k.split('.').pop() ?? k; return last.charAt(0).toUpperCase() + last.slice(1).replace(/_/g, ' '); };
 const KEYS = Object.keys(DEFINITIONS) as PolicyKey[];
 const isFlag = (k: PolicyKey) => typeof DEFINITIONS[k].default === 'boolean';
 const show = (v: unknown) => (typeof v === 'boolean' ? (v ? 'Yes' : 'No') : String(v));
@@ -17,17 +19,17 @@ export default function Policies() {
     <PageHead eyebrow="CORE • POLICIES" title="Policies"      action={<button className="primary-btn" onClick={() => setAdding(true)}><Plus size={16} /> New version</button>} />
     <Panel title="Built-in defaults">
       <div className="panel-body"><div className="table-wrap"><table><thead><tr><th>POLICY</th><th>WHAT IT DOES</th><th>DEFAULT</th></tr></thead>
-        <tbody>{KEYS.map((k) => <tr key={k}><td><span className="mono">{k}</span></td><td className="note-cell">{DEFINITIONS[k].description}</td><td>{show(DEFINITIONS[k].default)}</td></tr>)}</tbody></table></div></div>
+        <tbody>{KEYS.map((k) => <tr key={k}><td><span title={k}>{policyLabel(k)}</span></td><td className="note-cell">{DEFINITIONS[k].description}</td><td>{show(DEFINITIONS[k].default)}</td></tr>)}</tbody></table></div></div>
     </Panel>
     <Panel title="Stored versions" note="Newest first.">
       <div className="panel-body">
         <div className="filters"><label className="inline-field">Policy
           <select id="pol-key" className="input" value={key} onChange={(e) => setKey(e.target.value)}>
-            <option value="">All policies</option>{KEYS.map((k) => <option key={k} value={k}>{k}</option>)}</select></label></div>
+            <option value="">All policies</option>{KEYS.map((k) => <option key={k} value={k}>{policyLabel(k)}</option>)}</select></label></div>
         {q.error && <Notice>{q.error}</Notice>}
         {q.loading && !q.data ? <Loading /> : !q.data?.length ? <Empty title="No stored versions" text="The built-in defaults apply." /> :
           <div className="table-wrap"><table><thead><tr><th>POLICY</th><th>VALUE</th><th>FOR</th><th>FROM</th><th>VERSION</th><th>APPROVED BY</th></tr></thead>
-            <tbody>{q.data.map((p) => <tr key={p.publicId}><td><span className="mono">{p.key}</span></td><td>{show(p.value)}</td><td>{p.company ?? 'Whole group'}</td>
+            <tbody>{q.data.map((p) => <tr key={p.publicId}><td><span title={p.key}>{policyLabel(p.key)}</span></td><td>{show(p.value)}</td><td>{p.company ?? 'Whole group'}</td>
               <td>{dayLabel(p.effectiveFrom)}</td><td>{p.version}</td><td>{p.approvedBy.displayName}</td></tr>)}</tbody></table></div>}
       </div>
       {adding && <NewVersion onClose={() => setAdding(false)} onSaved={() => { setAdding(false); q.reload(); }} />}
@@ -58,7 +60,7 @@ function NewVersion({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
     <form onSubmit={submit}>
       {error && <Notice>{error}</Notice>}
       <div className="form-grid">
-        <label className="span-two">Policy<select id="newpol-key" value={key} onChange={(e) => setKey(e.target.value as PolicyKey)}>{KEYS.map((k) => <option key={k} value={k}>{k}</option>)}</select></label>
+        <label className="span-two">Policy<select id="newpol-key" value={key} onChange={(e) => setKey(e.target.value as PolicyKey)}>{KEYS.map((k) => <option key={k} value={k}>{policyLabel(k)}</option>)}</select></label>
         <label>Value{isFlag(key)
           ? <select id="newpol-value" name="value" key={key} defaultValue={String(DEFINITIONS[key].default)}><option value="true">Yes</option><option value="false">No</option></select>
           : <input id="newpol-value" name="value" key={key} type="number" required defaultValue={Number(DEFINITIONS[key].default)} />}</label>

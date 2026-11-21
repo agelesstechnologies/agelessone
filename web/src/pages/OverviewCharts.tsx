@@ -5,7 +5,7 @@ import { hm, useLoad } from '../hooks';
 import { Empty, Loading, Notice, Panel } from '../ui';
 
 /** Charts are drawn with plain SVG/CSS (no chart library). Colours follow the blue theme; status colours stay green / amber / red. */
-const C = { present: '#2f9e6e', half: '#8bd0b0', leave: '#b47200', absent: '#d9534f', missed: '#e0a43a', off: '#c9d6ee' };
+const C = { present: '#13E28B', half: '#0FA968', leave: '#F5B942', absent: '#F06464', missed: '#F5B942', off: '#33434E' };
 
 const pct = (n: number | null | undefined) => (n == null ? '—' : `${Math.round(n)}%`);
 
@@ -42,28 +42,28 @@ function DailyBars({ daily }: { daily: Dashboard['attendance']['daily'] }) {
   return <div className="areachart" role="img" aria-label="Daily attendance for the month">
     <svg viewBox={`0 0 ${W} ${H}`} className="chart-svg">
       <defs>
-        <linearGradient id="barg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ffc94d" /><stop offset="100%" stopColor="#d68c00" /></linearGradient>
-        <linearGradient id="trendg" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#ffd98a" /><stop offset="100%" stopColor="#d68c00" /></linearGradient>
+        <linearGradient id="barg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#33a6e0" /><stop offset="100%" stopColor="#006FB3" /></linearGradient>
+        <linearGradient id="trendg" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#66b8e8" /><stop offset="100%" stopColor="#006FB3" /></linearGradient>
         <filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
       </defs>
-      {grid.map((g) => <line key={g} x1={L} x2={W - R} y1={y(max * g)} y2={y(max * g)} stroke="#e2e8f0" />)}
-      {rows.map((d, i) => <line key={d.date} x1={cx(i)} x2={cx(i)} y1={T} y2={H - B} stroke="#f1f5f9" />)}
-      <line x1={L} x2={W - R} y1={H - B} y2={H - B} stroke="#cbd5e1" />
+      {grid.map((g) => <line key={g} x1={L} x2={W - R} y1={y(max * g)} y2={y(max * g)} stroke="#33434E" />)}
+      {rows.map((d, i) => <line key={d.date} x1={cx(i)} x2={cx(i)} y1={T} y2={H - B} stroke="#202A34" />)}
+      <line x1={L} x2={W - R} y1={H - B} y2={H - B} stroke="#44566A" />
       {rows.map((d, i) => {
         const bh = H - B - y(total(d)), ah = Math.min(bh, H - B - y(attended(d)));
         const on = hover == null || hover === i;
         return <g key={d.date} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} opacity={on ? 1 : 0.55}>
           <rect x={cx(i) - slot / 2} y={T - 20} width={slot} height={H - T - B + 20} fill="transparent" />
-          <rect x={cx(i) - bw / 2} y={H - B - bh} width={bw} height={Math.max(4, bh)} rx="4" fill="#f5a100" fillOpacity="0.16" stroke="#f5a100" strokeOpacity="0.4" />
+          <rect x={cx(i) - bw / 2} y={H - B - bh} width={bw} height={Math.max(4, bh)} rx="4" fill="#0086D6" fillOpacity="0.16" stroke="#0086D6" strokeOpacity="0.4" />
           <rect x={cx(i) - bw / 2} y={H - B - ah} width={bw} height={Math.max(4, ah)} rx="4" fill="url(#barg)" filter="url(#glow)" />
         </g>;
       })}
       <g pointerEvents="none" strokeLinejoin="round" strokeLinecap="round" fill="none">
-        <path d={zig} stroke="#ff9a1f" strokeWidth="10" opacity="0.45" filter="url(#glow)" />
-        <path d={zig} stroke="#ff9a1f" strokeWidth="4" />
-        <path d={zig} stroke="#ffe2b0" strokeWidth="1.4" />
+        <path d={zig} stroke="#00B5B5" strokeWidth="10" opacity="0.45" filter="url(#glow)" />
+        <path d={zig} stroke="#00B5B5" strokeWidth="4" />
+        <path d={zig} stroke="#9be8e8" strokeWidth="1.4" />
       </g>
-      <polygon points="0,0 -18,-10 -13,0 -18,10" transform={`translate(${last[0] + 8},${last[1]}) rotate(${ang}) scale(1.1)`} fill="#ff9a1f" stroke="#ffe2b0" strokeWidth="1" filter="url(#glow)" pointerEvents="none" />
+      <polygon points="0,0 -18,-10 -13,0 -18,10" transform={`translate(${last[0] + 8},${last[1]}) rotate(${ang}) scale(1.1)`} fill="#00B5B5" stroke="#9be8e8" strokeWidth="1" filter="url(#glow)" pointerEvents="none" />
       {rows.map((d, i) => i % every === 0 ? <text key={d.date} x={cx(i)} y={H - 8} textAnchor="middle" className="chart-tick">{Number(d.date.slice(8))}</text> : null)}
     </svg>
     {hover != null && h && <div className="chart-tip" style={{ left: `${(cx(hover) / W) * 100}%`, transform: `translateX(${hover > rows.length / 2 ? '-105%' : '5%'})` }}>
@@ -81,8 +81,8 @@ function Legend({ items }: { items: [string, string][] }) {
 /** Donut of the month's job-days by status. */
 function Donut({ split }: { split: Dashboard['attendance']['split'] }) {
   const parts: [string, number, string][] = [
-    ['Present', split.present, '#f5a100'], ['Half day', split.halfDay, '#ffd98a'], ['Leave', split.leave, '#a86a00'],
-    ['Missed punch', split.missedPunch, '#64748b'], ['Absent', split.absent, '#b3261e'],
+    ['Present', split.present, '#0086D6'], ['Half day', split.halfDay, '#66b8e8'], ['Leave', split.leave, '#66b8e8'],
+    ['Missed punch', split.missedPunch, '#9BAAB5'], ['Absent', split.absent, '#F06464'],
   ];
   const total = parts.reduce((s, p) => s + p[1], 0);
   if (!total) return <Empty title="Nothing to show yet" />;
@@ -90,7 +90,7 @@ function Donut({ split }: { split: Dashboard['attendance']['split'] }) {
   let offset = 0;
   return <div className="donut-wrap">
     <svg viewBox="0 0 140 140" className="donut" role="img" aria-label="Attendance split">
-      <circle cx="70" cy="70" r={R} fill="none" stroke="#fff6e0" strokeWidth="16" />
+      <circle cx="70" cy="70" r={R} fill="none" stroke="#33434E" strokeWidth="16" />
       {parts.filter((p) => p[1] > 0).map(([name, v, color]) => {
         const len = (v / total) * CIRC;
         const el = <circle key={name} cx="70" cy="70" r={R} fill="none" stroke={color} strokeWidth="16"
@@ -135,7 +135,7 @@ export function OverviewCharts({ company, month }: { company?: string; month?: s
       <Panel title="Daily attendance" note={`${data.attendance.from} to ${data.attendance.to}`}>
         <div className="panel-body">
           <DailyBars daily={data.attendance.daily} />
-          <Legend items={[['Attended (solid)', '#f5a100'], ['Everyone else (light)', '#fbd990']]} />
+          <Legend items={[['Attended (solid)', '#0086D6'], ['Everyone else (light)', '#66b8e8']]} />
         </div>
       </Panel>
       <Panel title="Month split" note="Job-days by status"><div className="panel-body"><Donut split={data.attendance.split} /></div></Panel>

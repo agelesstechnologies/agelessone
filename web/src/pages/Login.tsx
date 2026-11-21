@@ -3,7 +3,7 @@ import { Eye, EyeOff, LoaderCircle } from 'lucide-react';
 import { ForgotPasswordRequest, LoginRequest, ResetWithCodeRequest, type ForgotPasswordResponse, type LoginResponse } from '@ageless/shared';
 import { api, errText, formError } from '../api';
 import { useAuth } from '../auth';
-import logo from '../assets/ageless-logo.webp';
+import logo from '../assets/ageless-tech-logo.webp';
 import loginBg from '../assets/login-bg.webp';
 
 /** Demo logins from the development seed (backend/scripts/db-seed.mjs). Shown only in `pnpm dev`. */
@@ -49,7 +49,7 @@ export default function Login() {
 
   return <div className="login-page">
     <aside className="login-hero" style={{ backgroundImage: `url(${loginBg})` }}>
-      <img className="login-logo" src={logo} alt="Ageless Entertainments" />
+      <img className="login-logo" src={logo} alt="Ageless Technologies" />
     </aside>
 
     <main className="login-main">

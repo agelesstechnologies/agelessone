@@ -5,6 +5,7 @@ import App from './App';
 import { queryClient } from './query';
 import './style.css';
 import './pages.css';
+import './theme.css';
 import { installSelectMenu } from './selectMenu';
 installSelectMenu();
 import { installDatePicker } from './datePicker';

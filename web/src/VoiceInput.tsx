@@ -67,7 +67,7 @@ export function VoiceInput({ id, name, placeholder, maxLength, required }: {
       <input id={id} name={name} value={value} onChange={(e) => setValue(e.target.value)} placeholder={placeholder}
         maxLength={maxLength} required={required} style={{ flex: 1, minWidth: 0, marginTop: 0 }} />
       <button type="button" className="outline-btn" onClick={toggle} aria-label={listening ? 'Stop voice input' : 'Speak instead of typing'}
-        title={listening ? 'Stop' : 'Speak'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: listening ? '#c0392b' : undefined }}>
+        title={listening ? 'Stop' : 'Speak'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: listening ? '#F06464' : undefined }}>
         {listening ? <Square size={14} /> : <Mic size={14} />}{listening ? 'Listening…' : 'Voice'}</button>
     </span>
     {error && <small className="sub" role="alert">{error}</small>}

@@ -12,7 +12,7 @@ import { LETTERS, USERS } from '../permissions';
 import { invalidate } from '../query';
 
 type ListResponse = { items: PersonListItem[]; page: number; pageSize: number; total: number };
-const initials = (name:string) => name.split(/s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase();
+const initials = (name:string) => name.trim().split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase();
 const colors = ['lavender','mint','peach','blue','rose'];
 
 export default function People() {

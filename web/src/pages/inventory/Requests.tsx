@@ -74,7 +74,7 @@ function RequestList() {
       <div className="filters">
         <CompanyFilter id="rq-company" value={company} onChange={filter(setCompany)} />
         <label className="inline-field">Status<select id="rq-status" className="input" value={status} onChange={(e) => filter(setStatus)(e.target.value)}>
-          <option value="">All</option>{PartRequestStatus.options.map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
+          <option value="">All</option>{PartRequestStatus.options.map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}</select></label>
         {decides && <label className="inline-field check-row"><input type="checkbox" checked={mine} onChange={(e) => { setMine(e.target.checked); setPage(1); }} /> Only mine</label>}
       </div>
       {q.error && <Notice>{q.error}</Notice>}
