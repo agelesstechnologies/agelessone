@@ -129,13 +129,10 @@ select option:checked{background:var(--brand-blue);color:#fff}
 .notice-ok{background:#13E28B1f;border:1px solid #13E28B66;color:#13E28B}
 
 /* ---- Login ---- */
-.login-page{background:var(--bg-primary)}
-.login-hero{background:radial-gradient(90% 70% at 85% 10%,#0086D633 0%,transparent 60%),radial-gradient(70% 60% at 10% 90%,#00B5B52e 0%,transparent 60%),
-  linear-gradient(#ffffff08 1px,transparent 1px) 0 0/44px 44px,linear-gradient(90deg,#ffffff08 1px,transparent 1px) 0 0/44px 44px,var(--bg-primary)!important;
-  align-items:center;justify-content:center}
+.login-page{background-color:#04121c;background-size:cover;background-position:left top;background-repeat:no-repeat}
+.login-hero{background:none!important;min-height:0!important;align-items:center;justify-content:center}
 .login-hero::after{display:none}
-.login-logo{width:min(440px,80%)!important;border-radius:14px;filter:none;align-self:center!important}
-.login-main{background:var(--bg-primary)}
+.login-main{background:transparent}
 .login-form{background:var(--bg-card);border:1px solid var(--border-color);border-radius:14px;padding:32px;max-width:420px}
 .login-help,.login-hint,.login-caps{color:var(--text-muted);font-size:12px}
 .password-field .reveal{background:transparent;color:var(--text-muted)}
